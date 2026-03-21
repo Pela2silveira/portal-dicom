@@ -1,4 +1,4 @@
-# Portal2 Spec-Driven Workflow
+# Portal Spec-Driven Workflow
 
 This folder is set up for a human-in-the-loop spec-driven development flow, based on the multi-agent approach already used in `portal`, but adapted for `portal2` so you can review and steer decisions before coding.
 
