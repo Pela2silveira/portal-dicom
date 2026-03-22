@@ -6,7 +6,9 @@
 - **MVP scope is tightly controlled**: clear exclusions (no auth, no sessions/JWT) reduces complexity and accelerates delivery.
 - **The public landing page is already useful** even without real auth: it gives the project a credible entry point and makes the portal feel like a product instead of just an integration stack.
 - **Brand alignment with ANDES** is a good product decision for user familiarity in Neuquén.
+- **Mobile responsiveness is the right requirement early** because both patient and physician entry flows are likely to be opened from phones.
 - **User-perceived performance is addressed** by enforcing “OHIF reads only from local Orthanc cache,” decoupling viewer latency from remote PACS.
+- **Separating portal workflow from OHIF viewer responsibilities** is the right product move for both patient and physician journeys.
 - **Concurrent search + streaming results (SSE/WS)** is aligned with “fast feedback” UX for multi-node queries.
 - **Dedup by `StudyInstanceUID` with `locations[]`** is the right abstraction for a federated PACS experience.
 - **Retrieve is explicit (button / endpoint)** which keeps behavior predictable for early integrations and testing.
@@ -16,6 +18,9 @@
   - a public landing page with patient/professional entry flows,
   - an operational search/retrieve/view workflow.
   The boundary between them is not yet formally specified.
+- **The role of OHIF vs portal must be explicit**:
+  - if OHIF keeps a native study list enabled, patients could conceptually “see everything” in the local cache;
+  - hiding the list in OHIF is useful for UX, but not enough as a product-level access design.
 - **The public landing shows future auth concepts** (`OTP`, `LDAP provincial`, `MFA`) that are intentionally not implemented in the MVP. This must be stated clearly in specs and acceptance criteria to avoid stakeholder confusion.
 - **Search semantics across nodes are not normalized**:
   - Differences in remote QIDO behavior (fuzzy name matching, date handling, character sets) can yield inconsistent results.
@@ -26,10 +31,10 @@
 
 ### Concrete decisions the human should make next
 1. **Portal surface split**: confirm whether the landing page and the operator search UI are the same surface or two separate routes/views.
-2. **Patient path after OTP**: define where a validated patient is sent next in a future phase.
-3. **Professional path after login**: define whether a validated physician lands in the same OHIF/search workflow as the operator flow.
-4. **Minimum search filters to support in MVP** across QIDO and C-FIND (dates, modalities, patient_id, patient_name) and what to do when a node can’t support a filter.
-5. **What fields are displayed to the operator** in results (PatientName/ID, StudyDate/Time, Modality, Description, Source nodes, Cache status).
+2. **Patient viewer model**: confirm that patients use a portal-owned filtered study list and never the native OHIF study list.
+3. **Physician workflow model**: confirm that physicians use a portal-owned asynchronous search panel, not the native OHIF study list.
+4. **Minimum physician panel fields**: define the exact remote PACS metadata shown in results (node, availability, retrieve state, local cache presence, last sync/latency if needed).
+5. **Minimum search filters to support in MVP** across QIDO and C-FIND (dates, modalities, patient_id, patient_name) and what to do when a node can’t support a filter.
 
 ---
 
@@ -47,6 +52,9 @@
 - **Nginx path exposure needs tightening**:
   - There are now multiple route families (`/`, `/ohif/`, `/dicom-web/`, `/dicomweb/`, `/portal-assets/`, root OHIF bundles) and they must stay intentionally partitioned.
   - Orthanc REST admin endpoints must not be reachable through the proxy.
+- **UX-level hiding is not security**:
+  - disabling OHIF study list is not a substitute for controlling which studies are exposed by the portal/backend;
+  - patient lists must be portal-authored and authorization-aware.
 - **Orthanc DICOM port exposure (4242)**: opening it to broader networks can allow unauthorized C-STORE into cache unless constrained (AE whitelist, firewall rules, TLS, or at least network segmentation).
 - **Token handling**:
   - Where and how tokens are cached, TTL handling, refresh on 401, and avoiding logging tokens are not explicit.
@@ -70,6 +78,7 @@
 - **Separation of concerns** is sensible: Orthanc for image storage + DICOMweb, Postgres for jobs/config/audit, Go backend for orchestration.
 - **Pinning OHIF to `ohif/app:v3.11.1`** is an operational improvement over `latest`.
 - **Explicit retention policy** (7 days + max disk) and a purge mechanism is included, preventing uncontrolled disk growth.
+- **An asynchronous physician workflow** fits the reality of remote PACS latency and retrieve timing much better than trying to use OHIF as the primary search tool.
 - **SSE recommended over WS** simplifies reverse proxying, scaling, and troubleshooting.
 
 ### Risks / ambiguities

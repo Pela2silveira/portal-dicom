@@ -17,6 +17,7 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 * **Nginx:** servir contenido estático y actuar como reverse proxy para backend y visor.
 * **Landing pública del portal:** página inicial servida por Nginx con branding **RedImagenesNQN** e identidad visual inspirada en **ANDES**.
 * **Experiencia de ingreso pública:** selector visual de perfil `Paciente` / `Profesional`.
+* **Responsive móvil:** la landing pública y las superficies del portal deben ser utilizables en teléfonos y tablets, con layout adaptativo y controles táctiles cómodos.
 * **Integración con HIS:** el sistema debe permitir configurar credenciales, API keys, URLs base y parámetros necesarios para futuras consultas al HIS.
 * **Configuración de PACS remotos:** el sistema debe permitir cargar detalles de conexión para nodos dcm4chee remotos.
 * **Visualización desacoplada:** OHIF debe consumir estudios desde el Orthanc local y no desde los PACS remotos.
@@ -41,14 +42,15 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 * **UI visible en MVP:** formulario visual con `DNI / usuario` y `contraseña`.
 * **Estado actual:** sólo maqueta funcional de interfaz; no hay autenticación real ni sesión.
 * **Objetivo de integración posterior:** autenticación contra **LDAP provincial** y segundo factor **MFA** para médicos.
-* **Alcance funcional futuro:** acceso total a la base de datos de todos los PACS conectados, con búsqueda manual mediante filtros.
+* **Alcance funcional futuro:** acceso a una consola propia del portal con búsqueda manual mediante filtros, estado federado por PACS remoto, disponibilidad local, estado de retrieve y apertura puntual en el visor.
 
 ### 3.2 Flujo público visible en MVP: Ingreso de Pacientes
 * **UI visible en MVP:** formulario visual con `Documento`, acción `Enviar OTP` e ingreso de `Código OTP`.
 * **Estado actual:** sólo maqueta funcional de interfaz; no hay OTP real ni sesión.
 * **Objetivo de integración posterior:** validación de `DNI + OTP` vía SMS/Email.
 * **Identidad (HIS Integration):** en fase posterior, el sistema consultará un servicio REST del HIS para obtener los identificadores asociados al DNI del paciente.
-* **Búsqueda Implícita futura:** al validar correctamente el ingreso de paciente, se disparará la búsqueda automática en los PACS configurados.
+* **Búsqueda Implícita futura:** al validar correctamente el ingreso de paciente, el portal armará una lista propia de estudios autorizados para ese paciente.
+* **Restricción funcional futura:** el paciente no debe navegar la base completa del caché local ni la lista nativa de estudios de OHIF.
 
 ---
 
@@ -89,7 +91,34 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 * **Configuración del Visor:** OHIF consume datos únicamente del PACS local mediante protocolos DICOMweb (`WADO-RS`).
 * **Aislamiento:** El visor no conoce la existencia de los PACS remotos, solo interactúa con el caché.
 * **Ruta de publicación:** OHIF se publica bajo `/ohif/` y consume el DICOMweb local bajo `/dicom-web/`.
-* **Listado de estudios:** el estudio debe ser visible en la lista de OHIF cuando `showStudyList = true` y la fuente DICOMweb apunte al Orthanc local.
+* **Rol del visor:** OHIF debe comportarse como visor puntual de estudios/series autorizados, no como superficie principal de búsqueda o navegación.
+* **Listado de estudios:** la study list nativa de OHIF es una decisión de UX y no debe considerarse un mecanismo de restricción de acceso.
+* **Pacientes:** no deben usar la study list nativa de OHIF. Deben ver una lista propia del portal con sus estudios autorizados.
+* **Médicos:** no deben depender de la study list nativa de OHIF como workflow principal. Deben usar un panel propio del portal con búsqueda, estado federado y retrieve.
+
+## 6.1 Superficies de UI futuras
+
+### 6.1.1 Superficie Paciente
+* Lista propia del portal con estudios autorizados del paciente.
+* Posibles filtros simples orientados a experiencia de paciente:
+  * fecha;
+  * modalidad;
+  * descripción resumida;
+  * estado de disponibilidad.
+* Acción principal: abrir un estudio puntual en OHIF.
+* La experiencia debe ser responsive y usable en móvil.
+
+### 6.1.2 Superficie Médico
+* Panel propio del portal para búsqueda federada y operación.
+* Debe incluir, como mínimo:
+  * filtros de búsqueda;
+  * lista de resultados;
+  * origen o nodos PACS remotos;
+  * disponibilidad local en caché;
+  * estado de retrieve;
+  * acción de retrieve;
+  * acción de visualización puntual en OHIF.
+* La experiencia debe ser responsive y usable en móvil, al menos para consulta y validación rápida.
 
 ---
 

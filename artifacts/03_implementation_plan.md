@@ -17,6 +17,7 @@
 - Orthanc configurado (DICOM + DICOMweb) accesible **solo** vía Nginx HTTP; DICOM port 4242 publicado según compose (LAN).
 - OHIF configurado y pinneado a `ohif/app:v3.11.1`, consumiendo DICOMweb en `/dicom-web` (a través de Nginx).
 - Landing pública con branding `RedImagenesNQN`, assets propios y referencia visual ANDES.
+- Landing pública responsive para dispositivos móviles.
 
 **Dependencies**
 - Ninguna externa (no requiere PACS remoto real).
@@ -77,6 +78,8 @@
     - flujo visual `Documento + OTP`
     - flujo visual `DNI / usuario + contraseña`
     - textos alineados con roadmap `LDAP provincial + MFA` para médicos
+    - aclaración visual de que el portal es la superficie de acceso y OHIF es el visor
+    - adaptación responsive para teléfonos y tablets
   - Form con campos MVP: `patient_id`, `patient_name`, `date_from`, `date_to`, `modalities`
   - Tabla incremental con columnas requeridas: `PatientName`, `PatientID`, `StudyDate`, `StudyTime`, `ModalitiesInStudy`, `StudyDescription`, `source nodes`, `cache status`
   - Conexión SSE y render incremental.
@@ -114,6 +117,7 @@
   - Botón “Retrieve” por resultado (si `cache.present=false`)
   - Estado del job (poll simple al backend)
   - “Visualizar” deshabilitado hasta `job=done` (decisión humana ya confirmada)
+  - Apertura de OHIF sólo sobre estudios puntuales seleccionados desde el portal
 
 **Dependencies**
 - Milestone 3 (búsqueda y UI listos; se requiere `StudyInstanceUID` real).
@@ -154,7 +158,32 @@
 
 ---
 
-## Milestone 6 — Retención: purga Orthanc 7 días + limpieza Postgres 30 días (cron backend)
+## Milestone 6 — Patient list surface + physician async panel
+**Goal**: Separar formalmente las superficies de paciente y profesional para que OHIF no sea la lista principal de estudios.
+
+**Deliverables**
+- Patient surface:
+  - endpoint backend para `patient studies`
+  - lista propia del portal con estudios autorizados
+  - apertura puntual en OHIF
+- Physician surface:
+  - endpoint/backend para búsqueda federada
+  - lista con nodos remotos, disponibilidad local, estado de retrieve y acciones
+  - retrieve asincrónico visible en UI
+- Configuración de OHIF:
+  - study list nativa deshabilitada para los flujos finales de paciente y médico
+
+**Dependencies**
+- Milestones 3–5.
+- Definición posterior del modelo de auth real para paciente y profesional.
+
+**Exit criteria (testable)**
+- El paciente navega solo estudios del portal y no ve la study list nativa de OHIF.
+- El profesional opera desde un panel propio del portal y abre OHIF solo sobre estudios seleccionados.
+
+---
+
+## Milestone 7 — Retención: purga Orthanc 7 días + limpieza Postgres 30 días (cron backend)
 **Goal**: Evitar crecimiento ilimitado de caché y tablas operativas, con tareas auditables e idempotentes.
 
 **Deliverables**
@@ -176,7 +205,7 @@
 
 ---
 
-## Milestone 7 — End-to-end hardening MVP (proxy allowlist + token handling + test suite)
+## Milestone 8 — End-to-end hardening MVP (proxy allowlist + token handling + test suite)
 **Goal**: Cerrar el MVP con controles mínimos y pruebas repetibles.
 
 **Deliverables**
@@ -212,6 +241,7 @@
 - **Milestone 3 (parcialmente bloqueado)**: requiere URLs/hostnames de PACS remotos y Keycloak details para validar QIDO-RS real; se puede avanzar con nodo mock/lab.
 - **Milestone 4 (dependiente del entorno)**: requiere conectividad DIMSE real (C-MOVE) desde PACS remoto hacia Orthanc local.
 - **Milestone 5 (bloqueado)**: requiere decisión/confirmación de **endpoints Orthanc REST para orquestar C-GET** (payloads y comportamiento esperado).
+- **Milestone 6 (parcialmente bloqueado)**: requiere definición funcional exacta de la lista del paciente y del panel del médico cuando se conecten los flujos reales de autenticación.
 
 ---
 

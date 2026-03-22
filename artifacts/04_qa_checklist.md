@@ -15,6 +15,10 @@
 - [Ready] Public landing page is part of the MVP surface and is served by Nginx.
 - [Ready] Public landing reflects current UX decisions: patient `Documento + OTP` and physician `DNI / usuario + contraseña`.
 - [Ready] Physician future target auth is documented as `LDAP provincial + MFA`, but remains out of MVP implementation scope.
+- [Ready] Mobile responsiveness is an explicit requirement for the landing and portal-owned surfaces.
+- [Ready] OHIF is treated as a viewer surface, not the primary patient or physician search surface.
+- [Missing] Patient portal study list contract: exact fields, sorting, filtering, and what defines an “authorized study”.
+- [Missing] Physician panel contract: exact columns for remote PACS context, retrieve state, cache status, and user actions.
 - [Ready] API surface defined for health, config, search (SSE), retrieve jobs, cache status.
 - [Ready] Search streaming uses SSE (not WS); UI renders incremental results.
 - [Missing] Concrete SSE event schema contract (field names, ordering guarantees, retry behavior, terminal `done`, and error payload structure).
@@ -34,6 +38,7 @@
 - [Needs Decision] Orthanc REST orchestration for C-GET: exact endpoints/payloads to trigger C-GET and expected responses (blocking for Milestone 5).
 - [Ready] OHIF consumes only local Orthanc via `/dicom-web` proxied by Nginx, with `/dicomweb` retained only as compatibility alias if needed.
 - [Ready] OHIF image is pinned (`ohif/app:v3.11.1`) instead of using `latest`.
+- [Missing] Final OHIF mode configuration for actor-specific flows (study list disabled for patient and physician surfaces once portal-owned lists exist).
 - [Missing] OHIF configuration artifact committed/templated for environment-specific base URLs and routes (and validated that no remote DICOMweb endpoints can be configured).
 
 ### Operability
@@ -56,3 +61,5 @@
 5. **Tooling choice for DIMSE**: confirm dcmtk is acceptable inside the backend container (package source/version) and whether any licensing/compliance constraints apply.
 6. **SSE contract finalization**: confirm event types/payload fields and client retry behavior (so UI + backend + tests align).
 7. **Future auth contract for physicians**: confirm the provincial LDAP integration boundary and MFA factor type to avoid later UX rework in the public landing.
+8. **Patient study-list contract**: confirm what exact metadata and filtering the patient list should expose.
+9. **Physician panel contract**: confirm the exact operational metadata to expose for remote PACS, availability, and retrieve state.

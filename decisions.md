@@ -26,9 +26,16 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The landing page should use visual identity inspired by the `andes/app` application.
 - The landing page includes a visible patient flow with `Documento + OTP` as a UI-only flow in the MVP.
 - The landing page includes a visible physician flow with `DNI / usuario + contraseña` as a UI-only flow in the MVP.
+- The landing page and portal-owned UI surfaces must be responsive for mobile devices.
 - Physician authentication is still out of MVP implementation scope, but the target future integration is `LDAP provincial + MFA`.
 - Patient OTP validation is still out of MVP implementation scope, but the target future integration remains `DNI + OTP`.
 - Portal-specific static assets such as logo and favicon must be served independently from OHIF assets.
+- OHIF is a viewer surface, not the primary search or access surface.
+- Patient access must use a portal-owned study list filtered to authorized patient studies.
+- Patient access must not rely on the native OHIF study list.
+- Physician access must use a portal-owned search and workflow panel.
+- Physician workflow should be asynchronous and must expose remote PACS context, local cache presence, and retrieve state before opening OHIF.
+- The native OHIF study list is a UX choice only and must not be treated as an access-control mechanism.
 - The initial remote dcm4chee node uses `AE Title = PACSHPN`.
 - The initial remote dcm4chee node uses DICOM port `11112`.
 - The initial remote dcm4chee node supports `C-MOVE`.
@@ -69,6 +76,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - OHIF is pinned to `ohif/app:v3.11.1` instead of using `latest`.
 - OHIF must read the local cache through `/dicom-web/`.
 - OHIF study list must remain enabled in local operation.
+- For final patient and physician flows, the native OHIF study list should be disabled unless explicitly needed for a technical operator surface.
 
 ## Open Inputs From User
 - HIS base URL, authentication method, API key format, and required query parameters.

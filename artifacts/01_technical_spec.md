@@ -15,9 +15,13 @@
 - La identidad visual de la landing toma como referencia la app **ANDES**.
 - El flujo visible de paciente en la landing usa `Documento + OTP` como experiencia UI.
 - El flujo visible de profesional en la landing usa `DNI / usuario + contraseña` como experiencia UI.
+- La landing y las superficies propias del portal deben ser **responsive** para dispositivos móviles.
 - La integración futura objetivo para profesionales es **LDAP provincial + MFA**.
 - OHIF está fijado a `ohif/app:v3.11.1`.
 - El visor consume el caché local por la ruta `/dicom-web/`.
+- OHIF debe tratarse como **visor** y no como superficie primaria de búsqueda o control de acceso.
+- El paciente debe navegar una lista propia del portal, no la study list nativa de OHIF.
+- El médico debe trabajar sobre un panel propio del portal con búsqueda federada y retrieve asíncrono.
 
 ### Supuestos del MVP
 - El acceso al stack en desarrollo será por red controlada (p. ej. LAN/VPN); no se expone Internet “abierto” sin hardening adicional.
@@ -48,6 +52,15 @@ Proveer un portal operativo mínimo capaz de:
   - Buscar (invoca backend).
   - Ver resultados parciales (SSE o WebSocket).
   - Botón *Retrieve* y *Visualizar*.
+- **UI Futura Paciente**:
+  - lista propia del portal con estudios autorizados;
+  - filtros simples y estado de disponibilidad;
+  - acción de apertura puntual en OHIF.
+- **UI Futura Profesional**:
+  - búsqueda federada en PACS remotos;
+  - resultados enriquecidos con contexto operativo;
+  - retrieve bajo demanda;
+  - apertura puntual en OHIF.
 - **Backend Go (Aggregator/Coordinator)**:
   - Conectores a PACS remotos (QIDO-RS / C-FIND).
   - Orquestación de retrieve (C-MOVE/C-GET).
@@ -78,6 +91,11 @@ Proveer un portal operativo mínimo capaz de:
 - **Profesional** (sin auth real en MVP): visualiza el flujo de acceso basado en DNI/usuario y contraseña.
 - **Servicios remotos PACS**: responden QIDO-RS/C-FIND y envían estudios al Orthanc local vía C-STORE tras un C-MOVE/C-GET.
 - **OHIF**: consume DICOMweb desde Orthanc local.
+
+## 3.1 Principio de separación de superficies
+- El **portal** decide qué estudios listar y qué acciones exponer por actor.
+- **OHIF** solo visualiza estudios puntuales ya autorizados o seleccionados.
+- La study list nativa de OHIF no constituye control de acceso ni debe usarse como frontera funcional para pacientes.
 
 ---
 
@@ -144,6 +162,24 @@ Proveer un portal operativo mínimo capaz de:
 2. OHIF consulta QIDO/WADO contra `nginx -> orthanc`.
 3. Orthanc sirve instancias desde caché local.
 
+### 5.3.1 Flujo futuro de paciente
+1. El portal valida identidad del paciente.
+2. El backend compone una lista propia de estudios autorizados para ese paciente.
+3. El paciente selecciona un estudio en el portal.
+4. El portal abre OHIF directamente sobre ese estudio.
+5. El paciente no navega la study list nativa de OHIF.
+
+### 5.3.2 Flujo futuro de profesional
+1. El profesional ingresa al portal mediante autenticación institucional.
+2. El profesional usa un panel propio de búsqueda federada.
+3. El portal muestra resultados con:
+   - nodos PACS remotos;
+   - disponibilidad local;
+   - estado de retrieve;
+   - acciones operativas.
+4. El profesional dispara retrieve bajo demanda cuando corresponda.
+5. El portal abre OHIF sobre el estudio puntual seleccionado.
+
 ### 5.4 Landing pública y acceso futuro
 1. El usuario accede a `/` y visualiza la landing institucional.
 2. Selecciona `Paciente` o `Profesional`.
@@ -160,6 +196,7 @@ Proveer un portal operativo mínimo capaz de:
 - **Solo Nginx** expone puertos al exterior del compose.
 - Backend, Postgres y Orthanc quedan en red docker interna (sin publicar puertos, salvo necesidad de DICOM).
 - Los assets del portal público deben servirse desde una ruta propia para no colisionar con los assets raíz de OHIF.
+- El acceso a estudios para pacientes o médicos no debe depender solo de ocultar o mostrar la study list nativa del visor.
 
 ### 6.2 Puertos (propuesta)
 - Nginx: `80` (dev) y opcional `443` (si se agrega TLS).

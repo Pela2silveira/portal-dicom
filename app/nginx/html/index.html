@@ -55,11 +55,13 @@
         display: flex;
         align-items: flex-start;
         gap: 14px;
+        min-width: 0;
       }
 
       .brand-logo {
         display: block;
         width: min(300px, 56vw);
+        flex-shrink: 0;
       }
 
       .brand-logo img {
@@ -70,6 +72,7 @@
 
       .brand-copy {
         padding-top: 6px;
+        min-width: 0;
       }
 
       .eyebrow {
@@ -99,6 +102,7 @@
         color: var(--accent-dark);
         font-size: 0.9rem;
         font-weight: 700;
+        max-width: 100%;
       }
 
       .status-pill::before {
@@ -126,6 +130,7 @@
         border: 1px solid rgba(0, 0, 0, 0.06);
         border-radius: 0;
         box-shadow: var(--shadow);
+        min-width: 0;
       }
 
       .intro {
@@ -271,6 +276,7 @@
         color: #ffffff;
         cursor: pointer;
         transition: background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+        min-width: 0;
       }
 
       .role-button:hover {
@@ -358,6 +364,7 @@
         padding: 14px 18px;
         font: inherit;
         font-weight: 700;
+        text-align: center;
         cursor: pointer;
         transition: transform 160ms ease, background 160ms ease, opacity 160ms ease;
       }
@@ -433,9 +440,53 @@
       }
 
       @media (max-width: 719px) {
+        .shell {
+          width: min(100% - 24px, 1160px);
+          padding: 18px 0 28px;
+        }
+
         .masthead {
           align-items: flex-start;
           flex-direction: column;
+          gap: 12px;
+        }
+
+        .brand {
+          width: 100%;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .brand-logo {
+          width: min(280px, 78vw);
+        }
+
+        .brand-copy {
+          padding-top: 0;
+        }
+
+        .status-pill {
+          width: 100%;
+          justify-content: center;
+        }
+
+        .intro,
+        .auth-body {
+          padding-left: 20px;
+          padding-right: 20px;
+        }
+
+        .intro h2 {
+          font-size: clamp(1.8rem, 10vw, 2.7rem);
+        }
+
+        .footer-links {
+          flex-direction: column;
+          align-items: flex-start;
+         }
+
+        .footer-links a {
+          width: fit-content;
         }
       }
 
@@ -447,6 +498,61 @@
           gap: 6px;
           align-items: flex-start;
           flex-direction: column;
+        }
+
+        .role-switch {
+          grid-template-columns: 1fr;
+        }
+
+        .row {
+          grid-template-columns: 1fr;
+        }
+
+        .action,
+        .action-secondary,
+        .action-primary {
+          width: 100%;
+        }
+
+        .field-group input,
+        .action {
+          min-height: 50px;
+        }
+      }
+
+      @media (max-width: 479px) {
+        .shell {
+          width: min(100% - 16px, 1160px);
+          padding-top: 12px;
+        }
+
+        .intro,
+        .auth-body {
+          padding-left: 16px;
+          padding-right: 16px;
+        }
+
+        .auth-top,
+        .auth-bottom {
+          padding-left: 16px;
+          padding-right: 16px;
+        }
+
+        .eyebrow {
+          letter-spacing: 0.09em;
+        }
+
+        .brand h1 {
+          font-size: 1.45rem;
+        }
+
+        .auth-header h3 {
+          font-size: 1.35rem;
+        }
+
+        .micro,
+        .note {
+          padding: 13px 14px;
         }
       }
     </style>
