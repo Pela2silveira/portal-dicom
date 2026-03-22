@@ -585,7 +585,13 @@
       const flows = document.querySelectorAll("[data-flow]");
       const otpButton = document.getElementById("send-otp");
       const patientDocument = document.getElementById("patient-document");
+      const patientOtp = document.getElementById("patient-otp");
       const otpFeedback = document.getElementById("otp-feedback");
+      const patientValidateButton = document.querySelector('[data-flow="patient"] .action-primary');
+      const physicianDni = document.getElementById("physician-dni");
+      const physicianPassword = document.getElementById("physician-password");
+      const physicianLoginButton = document.querySelector('[data-flow="physician"] .action-primary');
+      const physicianNote = document.querySelector('[data-flow="physician"] .note');
 
       function activateRole(role) {
         roleButtons.forEach(button => {
@@ -616,6 +622,62 @@
           "OTP solicitado para el documento " +
           documentValue +
           ". Este envio es visual por ahora y se integrara con el servicio real en el proximo paso.";
+      });
+
+      patientValidateButton.addEventListener("click", () => {
+        const documentValue = patientDocument.value.trim();
+        const otpValue = patientOtp.value.trim();
+
+        otpFeedback.classList.remove("hidden", "warning");
+
+        if (!documentValue) {
+          otpFeedback.textContent = "Ingrese su documento antes de continuar.";
+          otpFeedback.classList.add("warning");
+          return;
+        }
+
+        if (!otpValue) {
+          otpFeedback.textContent = "Ingrese cualquier codigo OTP para avanzar en este flujo mock.";
+          otpFeedback.classList.add("warning");
+          return;
+        }
+
+        otpFeedback.textContent =
+          "Ingreso simulado exitoso para el documento " +
+          documentValue +
+          ". Redirigiendo al visor...";
+
+        window.setTimeout(() => {
+          window.location.href = "/ohif/";
+        }, 700);
+      });
+
+      physicianLoginButton.addEventListener("click", () => {
+        const dniValue = physicianDni.value.trim();
+        const passwordValue = physicianPassword.value.trim();
+
+        physicianNote.classList.remove("warning");
+
+        if (!dniValue) {
+          physicianNote.textContent = "Ingrese su DNI o usuario antes de continuar.";
+          physicianNote.classList.add("warning");
+          return;
+        }
+
+        if (!passwordValue) {
+          physicianNote.textContent = "Ingrese cualquier contraseña para avanzar en este flujo mock.";
+          physicianNote.classList.add("warning");
+          return;
+        }
+
+        physicianNote.textContent =
+          "Ingreso profesional simulado para " +
+          dniValue +
+          ". Redirigiendo al visor...";
+
+        window.setTimeout(() => {
+          window.location.href = "/ohif/";
+        }, 700);
       });
     </script>
   </body>
