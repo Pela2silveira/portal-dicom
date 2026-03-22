@@ -1,0 +1,102 @@
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      backend:
+        condition: service_healthy
+      ohif:
+        condition: service_started
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/html:/usr/share/nginx/html:ro
+    networks:
+      - frontend_net
+      - backend_net
+
+  backend:
+    build:
+      context: ./backend
+    env_file:
+      - .env
+    environment:
+      APP_ENV: ${APP_ENV:-dev}
+      LISTEN_ADDR: ${BACKEND_LISTEN_ADDR:-:8081}
+      POSTGRES_DSN: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      ORTHANC_URL: ${ORTHANC_URL:-http://orthanc:8042}
+      CONFIG_PATH: ${CONFIG_PATH:-/app/config/config.json}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      orthanc:
+        condition: service_healthy
+    volumes:
+      - ./config:/app/config:ro
+    networks:
+      - backend_net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  postgres:
+    image: postgres:16-alpine
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - backend_net
+
+  orthanc:
+    image: jodogne/orthanc-plugins:latest
+    env_file:
+      - .env
+    environment:
+      VERBOSE_ENABLED: "true"
+      ORTHANC__NAME: ${ORTHANC_NAME:-RedImagenesNQN-orthanc}
+      ORTHANC__AUTHENTICATIONENABLED: "false"
+      ORTHANC__REMOTEACCESSALLOWED: "true"
+    ports:
+      - "${ORTHANC_HTTP_BIND:-127.0.0.1:8042}:8042"
+      - "${ORTHANC_DICOM_BIND:-127.0.0.1:4242}:4242"
+    volumes:
+      - ./orthanc/orthanc.json:/etc/orthanc/orthanc.json:ro
+      - orthanc-db:/var/lib/orthanc/db
+      - orthanc-storage:/var/lib/orthanc/storage
+    networks:
+      - backend_net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8042/system"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  ohif:
+    image: ohif/app:v3.11.1
+    volumes:
+      - ./ohif/app-config.js:/usr/share/nginx/html/app-config.js:ro
+      - ./ohif/mjs.types.conf:/etc/nginx/conf.d/zz-mjs-types.conf:ro
+    networks:
+      - frontend_net
+
+networks:
+  frontend_net:
+  backend_net:
+
+volumes:
+  postgres-data:
+  orthanc-db:
+  orthanc-storage:

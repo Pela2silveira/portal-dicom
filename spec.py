@@ -213,7 +213,7 @@ def run_all(llm: ChatOpenAI) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Spec-driven workflow for portal2.")
+    parser = argparse.ArgumentParser(description="Spec-driven workflow for RedImagenesNQN.")
     parser.add_argument(
         "step",
         choices=["architect", "debate", "plan", "qa", "run"],

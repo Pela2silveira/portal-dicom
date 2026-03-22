@@ -1,0 +1,169 @@
+# Design Review — Portal DICOM Agregador + Caché (MVP)
+
+## Product Review
+
+### What’s good
+- **MVP scope is tightly controlled**: clear exclusions (no auth, no sessions/JWT) reduces complexity and accelerates delivery.
+- **The public landing page is already useful** even without real auth: it gives the project a credible entry point and makes the portal feel like a product instead of just an integration stack.
+- **Brand alignment with ANDES** is a good product decision for user familiarity in Neuquén.
+- **User-perceived performance is addressed** by enforcing “OHIF reads only from local Orthanc cache,” decoupling viewer latency from remote PACS.
+- **Concurrent search + streaming results (SSE/WS)** is aligned with “fast feedback” UX for multi-node queries.
+- **Dedup by `StudyInstanceUID` with `locations[]`** is the right abstraction for a federated PACS experience.
+- **Retrieve is explicit (button / endpoint)** which keeps behavior predictable for early integrations and testing.
+
+### Risks / ambiguities
+- **There are now two UI surfaces with different purposes**:
+  - a public landing page with patient/professional entry flows,
+  - an operational search/retrieve/view workflow.
+  The boundary between them is not yet formally specified.
+- **The public landing shows future auth concepts** (`OTP`, `LDAP provincial`, `MFA`) that are intentionally not implemented in the MVP. This must be stated clearly in specs and acceptance criteria to avoid stakeholder confusion.
+- **Search semantics across nodes are not normalized**:
+  - Differences in remote QIDO behavior (fuzzy name matching, date handling, character sets) can yield inconsistent results.
+  - Legacy C-FIND query capabilities may not match QIDO filters (e.g., modality/date ranges).
+- **Definition of “study ready to view”** may be confusing if retrieve completes but images are still arriving; the “stable window polling” is pragmatic but can lead to perceived flakiness.
+- **Dedup conflict resolution** (metadata discrepancies across nodes) is not defined (e.g., PatientName differs; which one is displayed?).
+- **HIS integration is “config only”** but already includes specific Andes MPI endpoint behavior in the decision log; risk of scope creep if stakeholders expect it to work in MVP.
+
+### Concrete decisions the human should make next
+1. **Portal surface split**: confirm whether the landing page and the operator search UI are the same surface or two separate routes/views.
+2. **Patient path after OTP**: define where a validated patient is sent next in a future phase.
+3. **Professional path after login**: define whether a validated physician lands in the same OHIF/search workflow as the operator flow.
+4. **Minimum search filters to support in MVP** across QIDO and C-FIND (dates, modalities, patient_id, patient_name) and what to do when a node can’t support a filter.
+5. **What fields are displayed to the operator** in results (PatientName/ID, StudyDate/Time, Modality, Description, Source nodes, Cache status).
+
+---
+
+## Security Review
+
+### What’s good
+- **Single HTTP ingress via Nginx** and internal service networking is a strong baseline for MVP containment.
+- **Portal assets are now separated from OHIF assets**, which reduces accidental routing collisions and makes static serving easier to reason about.
+- **Secrets externalized** (env vars / mounted files) and “secret refs” in config is the right pattern.
+- **Keycloak client_credentials flow** for dcm4chee REST is explicitly defined (token retrieval + bearer usage).
+- **Technical audit logging** is included early, which helps incident triage and integration debugging.
+
+### Risks / ambiguities
+- **MVP has no end-user auth**, but the system can still expose PHI if reachable beyond a controlled network. The spec relies on an assumption (“LAN/VPN”), but hard controls are not fully spelled out.
+- **Nginx path exposure needs tightening**:
+  - There are now multiple route families (`/`, `/ohif/`, `/dicom-web/`, `/dicomweb/`, `/portal-assets/`, root OHIF bundles) and they must stay intentionally partitioned.
+  - Orthanc REST admin endpoints must not be reachable through the proxy.
+- **Orthanc DICOM port exposure (4242)**: opening it to broader networks can allow unauthorized C-STORE into cache unless constrained (AE whitelist, firewall rules, TLS, or at least network segmentation).
+- **Token handling**:
+  - Where and how tokens are cached, TTL handling, refresh on 401, and avoiding logging tokens are not explicit.
+- **Audit content**: logging patient identifiers (patient_id, name, DNI) is sensitive; MVP says “technical audit,” but it will likely capture PHI unless explicitly minimized/redacted.
+
+### Concrete decisions the human should make next
+1. **Network exposure rule for MVP**: confirm “only localhost” vs “LAN/VPN” and required firewalling expectations.
+2. **Nginx allowlist for Orthanc**: which exact Orthanc endpoints are proxied (`/dicom-web/*` only) and deny everything else.
+3. **Public route contract**: confirm that `/portal-assets/` is the reserved namespace for portal-owned static assets.
+4. **Orthanc hardening baseline**:
+   - Enable authentication for Orthanc REST even internally? (recommended if any risk of lateral access)
+   - AE Title checks / known modalities / known remote AEs.
+5. **Logging policy**: what PHI is permitted in logs and Postgres tables for MVP; define redaction/hashing rules now to avoid rework later.
+
+---
+
+## Operations Review
+
+### What’s good
+- **Compose-based “one command up”** with volumes and migrations is a clear operational goal for repeatable dev/test environments.
+- **Separation of concerns** is sensible: Orthanc for image storage + DICOMweb, Postgres for jobs/config/audit, Go backend for orchestration.
+- **Pinning OHIF to `ohif/app:v3.11.1`** is an operational improvement over `latest`.
+- **Explicit retention policy** (7 days + max disk) and a purge mechanism is included, preventing uncontrolled disk growth.
+- **SSE recommended over WS** simplifies reverse proxying, scaling, and troubleshooting.
+
+### Risks / ambiguities
+- **Retrieve completion detection** via “stable window” polling can be noisy operationally:
+  - Large studies may have long gaps; false “complete.”
+  - Retries and timeouts need careful tuning per modality/network.
+- **DIMSE tooling in containers**: if using dcmtk CLI, the image size and OS deps increase; also need consistent error parsing and robust timeouts.
+- **Observability gaps**:
+  - No explicit metrics (queue depth, retrieve durations, per-node latency, Orthanc storage growth).
+  - Logs exist, but without dashboards/alerts troubleshooting will be manual.
+- **Data model size growth**: `integration_audit` and `search_*` tables can grow quickly even in MVP; need retention/cleanup strategy.
+- **Orthanc purge implementation choice**: backend cron is controllable, but must be robust (idempotent, safe deletes, handles in-progress retrieve).
+
+### Concrete decisions the human should make next
+1. **How retrieves are executed**: dcmtk CLI inside backend container vs separate “dicom-tools” sidecar container.
+2. **Operational retention for Postgres logs/audit**: e.g., keep 7/30/90 days; purge job.
+3. **Basic metrics**: decide minimal MVP instrumentation (Prometheus endpoints? at least structured logs + key counters).
+4. **Backup expectations**:
+   - Postgres volume backup needed for MVP?
+   - Orthanc cache is ephemeral by design; confirm no backup required.
+5. **Resource limits**: default CPU/mem constraints in Compose and maximum concurrent retrieves/search fanout to protect local machine.
+
+---
+
+## Decision Proposals
+
+1. **Decision name:** MVP UI Scope  
+   **Recommended option:** Keep **two explicit UI surfaces** in the spec:
+   - public landing page on `/`
+   - operational search/retrieve/view workflow behind its own route/view.
+   **Why this option is recommended:** It matches the implementation already in progress and avoids mixing public entry UX with technical operator workflows.  
+   **Alternatives to consider:**  
+   - Merge both concerns into one single page.
+   - API-only + Postman collection + documented OHIF deep-link (fastest engineering).
+
+2. **Decision name:** Streaming Protocol for Search Results  
+   **Recommended option:** **SSE** for MVP.  
+   **Why this option is recommended:** Works well behind Nginx, simpler than WebSockets, unidirectional fits “server pushes partial results.”  
+   **Alternatives to consider:**  
+   - WebSockets if you need cancelation, bidirectional control, or richer interaction.  
+   - Long polling (simpler but worse UX and higher overhead).
+
+3. **Decision name:** Orthanc Exposure Through Nginx  
+   **Recommended option:** Proxy **only DICOMweb paths** needed by OHIF under `/dicom-web/...`, keep `/dicomweb/...` only as a compatibility alias, and explicitly **deny** Orthanc admin REST endpoints.  
+   **Why this option is recommended:** Reduces accidental exposure of privileged Orthanc functionality while preserving viewer operation.  
+   **Alternatives to consider:**  
+   - Put Orthanc behind its own auth even internally (stronger but more setup).  
+   - Allow full Orthanc REST temporarily in dev (faster debugging, higher risk).
+
+4. **Decision name:** Retrieve Mechanism per Node  
+   **Recommended option:** Default to **C-MOVE**, with per-node fallback to **C-GET** configurable.  
+   **Why this option is recommended:** Matches your decision log (remote supports C-MOVE), aligns with typical PACS routing, and keeps backend simpler when Orthanc is Move SCP.  
+   **Alternatives to consider:**  
+   - Only C-MOVE in MVP (simplest; may fail in some sites).  
+   - Only C-GET (avoids inbound connectivity to Orthanc but changes networking assumptions).
+
+5. **Decision name:** Retrieve Completion Criteria  
+   **Recommended option:** Use **polling with “stable window”** + global timeout, but also record a “possibly_incomplete” terminal state if stability is reached too quickly or instance count is very low.  
+   **Why this option is recommended:** Keeps MVP deterministic while reducing false positives and supporting operational debugging.  
+   **Alternatives to consider:**  
+   - Determine expected instance count from remote metadata (more complex; not always reliable).  
+   - Integrate Orthanc/DICOM receive logs/events if available (more invasive).
+
+6. **Decision name:** Logging & PHI Handling in MVP  
+   **Recommended option:** Implement a **PII/PHI-minimizing logging policy** now: store identifiers in operational tables only when required; redact/hash patient_name/DNI in `integration_audit` and application logs.  
+   **Why this option is recommended:** Prevents accidental PHI spillage into logs (which are routinely copied/shared), while still enabling troubleshooting.  
+   **Alternatives to consider:**  
+   - Log everything in dev only (fastest, but risky and hard to unwind).  
+   - Full PHI logging with strict access controls (overkill for MVP, conflicts with “no auth”).
+
+7. **Decision name:** Postgres Retention for Operational Tables  
+   **Recommended option:** Add a **DB cleanup job** (backend cron) for `integration_audit`, `search_requests`, `search_node_runs` (e.g., keep 30 days by default, configurable).  
+   **Why this option is recommended:** Prevents unbounded growth and keeps the MVP operable over time.  
+   **Alternatives to consider:**  
+   - No cleanup in MVP (acceptable only for very short-lived dev).  
+   - Time-partitioned tables (more complex, better for long-term scale).
+
+8. **Decision name:** Containerization of DIMSE Tools (Legacy / Retrieve)  
+   **Recommended option:** Use a **sidecar container** (e.g., `dicom-tools`) that includes dcmtk, invoked by backend via exec/HTTP RPC.  
+   **Why this option is recommended:** Keeps the Go backend image smaller/cleaner, isolates OS dependencies, and simplifies future replacement (library vs CLI).  
+   **Alternatives to consider:**  
+   - Install dcmtk directly in backend container (simpler wiring, bigger image).  
+   - Use a Go native DIMSE library (less shelling out, but higher integration risk).
+
+9. **Decision name:** TLS for MVP Entry Point  
+   **Recommended option:** **HTTP only on localhost for MVP** (per decision log `http://localhost:8080`), but document a **staging/on-prem TLS profile** (Nginx terminates TLS) as a follow-up.  
+   **Why this option is recommended:** Matches the current human decision and avoids certificate friction, while keeping a clear path for secure deployment.  
+   **Alternatives to consider:**  
+   - Enable TLS immediately with self-signed certs (more realistic, more overhead).  
+   - Terminate TLS upstream (load balancer) and keep Nginx HTTP internally.
+
+10. **Decision name:** Source of Truth for “Cached Study Index”  
+   **Recommended option:** Treat **Orthanc as the truth**, with Postgres `cached_studies` as an **operational index** that can be rebuilt (best-effort).  
+   **Why this option is recommended:** Avoids split-brain; if Postgres is wrong, you can re-verify against Orthanc.  
+   **Alternatives to consider:**  
+   - Postgres as truth and Orthanc as opaque store (harder, fragile).  
+   - No cached index table at all (simpler, slower UX and more Orthanc calls).

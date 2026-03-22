@@ -7,7 +7,7 @@ Este sistema es un portal web de imágenes médicas diseñado para centralizar e
 
 ## 2. Alcance del MVP Inicial
 
-El primer entregable debe enfocarse en una base operativa mínima, sin autenticación de usuarios finales.
+El primer entregable debe enfocarse en una base operativa mínima. No se implementará autenticación real de usuarios finales en este primer corte, pero sí se define y expone la experiencia de ingreso pública del portal.
 
 ### 2.1 En alcance para el MVP
 * **Infraestructura con Docker Compose:** levantar todos los servicios base del sistema localmente.
@@ -15,32 +15,40 @@ El primer entregable debe enfocarse en una base operativa mínima, sin autentica
 * **Backend en Go:** servicio agregador para consultar nodos remotos, gestionar retrieves y exponer endpoints internos del portal.
 * **Base de datos de aplicación:** PostgreSQL para almacenar configuración operativa, jobs de retrieve, auditoría técnica y metadatos locales.
 * **Nginx:** servir contenido estático y actuar como reverse proxy para backend y visor.
+* **Landing pública del portal:** página inicial servida por Nginx con branding **RedImagenesNQN** e identidad visual inspirada en **ANDES**.
+* **Experiencia de ingreso pública:** selector visual de perfil `Paciente` / `Profesional`.
 * **Integración con HIS:** el sistema debe permitir configurar credenciales, API keys, URLs base y parámetros necesarios para futuras consultas al HIS.
 * **Configuración de PACS remotos:** el sistema debe permitir cargar detalles de conexión para nodos dcm4chee remotos.
 * **Visualización desacoplada:** OHIF debe consumir estudios desde el Orthanc local y no desde los PACS remotos.
+* **Portal assets propios:** el logo, favicon y assets de la landing deben ser servidos por Nginx sin mezclarse con los assets del contenedor OHIF.
 
 ### 2.2 Fuera de alcance en este MVP
-* Login de médicos.
-* Login de pacientes.
-* OTP por SMS o Email.
+* Login real de médicos.
+* Login real de pacientes.
+* OTP real por SMS o Email.
 * Gestión de sesiones.
 * JWT para restricción de acceso a OHIF.
 * Permisos finos por usuario.
 * Share links o links temporales.
+* Integración real con LDAP provincial.
+* Implementación real de MFA para médicos.
 
 ---
 
 ## 3. Modelos de Acceso y Autenticación
 
-### 3.1 Fase posterior: Login de Médicos
-* **Alcance:** Acceso total a la base de datos de todos los PACS conectados.
-* **Búsqueda:** Manual mediante filtros (Rango de fechas, Modalidad, Nombre, DNI).
-* **Acción:** Selección de estudios para visualización bajo demanda.
+### 3.1 Flujo público visible en MVP: Ingreso de Médicos
+* **UI visible en MVP:** formulario visual con `DNI / usuario` y `contraseña`.
+* **Estado actual:** sólo maqueta funcional de interfaz; no hay autenticación real ni sesión.
+* **Objetivo de integración posterior:** autenticación contra **LDAP provincial** y segundo factor **MFA** para médicos.
+* **Alcance funcional futuro:** acceso total a la base de datos de todos los PACS conectados, con búsqueda manual mediante filtros.
 
-### 3.2 Fase posterior: Login de Pacientes
-* **Acceso Seguro:** Validación de DNI + OTP (One-Time Password) vía SMS/Email.
-* **Identidad (HIS Integration):** El sistema consulta un servicio REST del HIS para obtener todos los identificadores (ID local, ID nacional, etc.) asociados al DNI del paciente.
-* **Búsqueda Implícita:** Al iniciar sesión, se dispara automáticamente la búsqueda en todos los PACS utilizando el array de IDs obtenidos.
+### 3.2 Flujo público visible en MVP: Ingreso de Pacientes
+* **UI visible en MVP:** formulario visual con `Documento`, acción `Enviar OTP` e ingreso de `Código OTP`.
+* **Estado actual:** sólo maqueta funcional de interfaz; no hay OTP real ni sesión.
+* **Objetivo de integración posterior:** validación de `DNI + OTP` vía SMS/Email.
+* **Identidad (HIS Integration):** en fase posterior, el sistema consultará un servicio REST del HIS para obtener los identificadores asociados al DNI del paciente.
+* **Búsqueda Implícita futura:** al validar correctamente el ingreso de paciente, se disparará la búsqueda automática en los PACS configurados.
 
 ---
 
@@ -80,6 +88,8 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 * **Integración:** Una vez que el estudio está en el PACS local, el botón "Visualizar" abre OHIF.
 * **Configuración del Visor:** OHIF consume datos únicamente del PACS local mediante protocolos DICOMweb (`WADO-RS`).
 * **Aislamiento:** El visor no conoce la existencia de los PACS remotos, solo interactúa con el caché.
+* **Ruta de publicación:** OHIF se publica bajo `/ohif/` y consume el DICOMweb local bajo `/dicom-web/`.
+* **Listado de estudios:** el estudio debe ser visible en la lista de OHIF cuando `showStudyList = true` y la fuente DICOMweb apunte al Orthanc local.
 
 ---
 
@@ -92,6 +102,12 @@ El entorno de desarrollo del MVP debe incluir:
 * `postgres`: persistencia operativa del sistema.
 * `nginx`: reverse proxy y servicio de contenido estático.
 * `ohif`: visor conectado al Orthanc local.
+
+### 7.1.1 Estado operativo actual del stack
+* La imagen del visor usada debe ser `ohif/app` con tag fijo, evitando `latest`.
+* El stack actual utiliza `ohif/app:v3.11.1`.
+* Nginx publica el portal y el visor sobre `http://localhost:8080`.
+* El HTTP admin de Orthanc puede estar disponible sólo para localhost cuando se requiera operación local.
 
 ### 7.2 Persistencia esperada en PostgreSQL
 La base debe contemplar como mínimo:
@@ -106,8 +122,10 @@ El sistema debe estar preparado para recibir por configuración:
 * API key o credenciales equivalentes del HIS;
 * URL base y parámetros del HIS;
 * AE Title, host, puerto, base URL DICOMweb y credenciales de cada PACS remoto dcm4chee;
+* host de Keycloak, realm, `client_id` y `client_secret` para obtener tokens OAuth2 de los PACS remotos cuando aplique;
 * parámetros del Orthanc local;
 * settings de Nginx para exponer backend, visor y estáticos.
+* settings separados para assets del portal público, para evitar colisiones con assets servidos por OHIF.
 
 ---
 
@@ -145,8 +163,51 @@ El sistema debe estar preparado para recibir por configuración:
 * Registro técnico de consultas, retrieves, errores de integración y sincronización.
 * Secretos y credenciales manejados por variables de entorno o archivos de configuración fuera del código.
 * La exposición pública del stack debe pasar por Nginx.
+* Los puertos directos de Orthanc deben poder limitarse a `127.0.0.1` para operación local.
+* Para PACS remotos dcm4chee, el backend debe poder obtener un token OAuth2 por `client_credentials` contra Keycloak y reutilizarlo para invocar la API REST del archivo.
 
 ### 9.2 Fase posterior
 * Registro de cada DNI consultado, por qué usuario (Médico/Paciente) y desde qué IP.
 * El acceso a OHIF debe estar vinculado a la sesión activa del portal.
 * Implementación de JWT en el proxy de imágenes para restringir el acceso a nivel de StudyInstanceUID en OHIF.
+
+---
+
+## 10. Contrato de Integración con dcm4chee-arc-light
+
+### 10.1 Fuente de verdad de la API remota
+Para el MVP, la integración con PACS remotos dcm4chee debe tomar como contrato la especificación OpenAPI/Swagger oficial provista por dcm4chee-arc-light.
+
+### 10.2 Capacidades usadas en el MVP
+El MVP debe apoyarse en estas capacidades del PACS remoto:
+* **QIDO-RS** para búsqueda de estudios.
+* **WADO-RS** para consultas de validación o compatibilidad si hiciera falta, aunque OHIF seguirá consumiendo desde Orthanc local.
+* **MOVE / C-MOVE** para recuperar estudios hacia el Orthanc local.
+
+### 10.3 Capacidades fuera del primer slice
+Estas capacidades del Swagger de dcm4chee no son prioridad del primer slice:
+* PAM-RS para gestión administrativa de pacientes;
+* operaciones de cambio de Patient ID;
+* operaciones de rechazo, merge o mantenimiento administrativo del archivo remoto.
+
+### 10.4 Autenticación esperada para dcm4chee
+Cuando un PACS remoto esté protegido por Keycloak, el backend debe:
+1. solicitar un `access_token` vía `grant_type=client_credentials`;
+2. usar `client_id` y `client_secret` provistos por configuración;
+3. enviar el token como `Authorization: Bearer <token>` en las llamadas REST al PACS remoto.
+
+### 10.5 Ejemplo de patrón de autenticación remota
+Patrón de referencia provisto para el entorno:
+
+```bash
+TOKEN=$(curl -s -k \
+  --data "grant_type=client_credentials&client_id=${CLIENT_ID}&client_secret=${CLIENT_SECRET}" \
+  https://${KEYCLOAK_HOST}/auth/realms/dcm4che/protocol/openid-connect/token \
+  | jq '.access_token' | tr -d '"')
+```
+
+Luego el backend debe reutilizar ese token para invocar endpoints REST del archivo remoto bajo una ruta tipo:
+
+```text
+https://${PACS_HOST}/dcm4chee-arc/aets/${AET}/rs/...
+```

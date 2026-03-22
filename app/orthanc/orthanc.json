@@ -1,0 +1,21 @@
+{
+  "Name": "RedImagenesNQN-orthanc",
+  "StorageDirectory": "/var/lib/orthanc/storage",
+  "IndexDirectory": "/var/lib/orthanc/db",
+  "HttpPort": 8042,
+  "DicomPort": 4242,
+  "RemoteAccessAllowed": true,
+  "AuthenticationEnabled": false,
+  "RegisteredUsers": {},
+  "DicomAet": "ORTHANC",
+  "DicomCheckCalledAet": false,
+  "DicomAlwaysAllowEcho": true,
+  "Plugins": [
+    "/usr/local/share/orthanc/plugins"
+  ],
+  "OrthancExplorerEnabled": true,
+  "DicomWeb": {
+    "Enable": true,
+    "Root": "/dicom-web/"
+  }
+}
