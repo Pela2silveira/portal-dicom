@@ -181,6 +181,7 @@
   - retrieve asincrónico visible en UI
   - primer slice funcional con `GET /api/physician/results?username=<dni>` sobre `physician_recent_queries` sembradas en DB hasta integrar búsqueda federada real
   - primer retrieve real desde la grilla con `POST /api/physician/retrieve` y actualización de estado local contra DB/Orthanc
+  - búsqueda remota real por QIDO cuando el profesional aplica filtros, dejando `recent queries` solo como fallback sin filtros
 - Configuración de OHIF:
   - study list nativa deshabilitada para los flujos finales de paciente y médico
 

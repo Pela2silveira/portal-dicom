@@ -187,6 +187,9 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 
 ### Backend Contract For Physician Surface
 
+- `GET /api/physician/results`
+  - with active filters, runs remote QIDO search against the configured PACS node
+  - without filters, may return persisted recent queries as a fallback
 - `GET /api/search/stream`
   - SSE stream for federated search results
 - `POST /api/physician/retrieve`

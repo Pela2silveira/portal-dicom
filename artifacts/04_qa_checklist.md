@@ -28,6 +28,7 @@
 - [Ready] Physician surface is no longer static-only: it already consumes `GET /api/physician/results` from the backend and filters seeded recent-query rows by user input.
 - [Ready] Physician surface now exposes a first real `Retrieve` action via `POST /api/physician/retrieve`, with result rows refreshed from DB/Orthanc state after completion.
 - [Ready] Physician filters no longer start prefilled in the current UX, and retrieve actions differentiate `en curso`, `listo`, and `reintentar`.
+- [Ready] Physician search with active filters now executes remote QIDO against the configured PACS node; only the no-filter state falls back to persisted recent queries.
 - [Ready] Relational model for patient cache, HIS alternate identifiers, known study UIDs, physician recent searches, and auth/session state is documented in `artifacts/06_data_model.md`.
 - [Ready] API surface defined for health, config, search (SSE), retrieve jobs, cache status.
 - [Ready] Search streaming uses SSE (not WS); UI renders incremental results.

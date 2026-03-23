@@ -581,6 +581,13 @@ func (a *App) handlePhysicianResults(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+func hasPhysicianFilters(filters PhysicianSearchFilters) bool {
+	return strings.TrimSpace(filters.PatientName) != "" ||
+		strings.TrimSpace(filters.DateFrom) != "" ||
+		strings.TrimSpace(filters.DateTo) != "" ||
+		strings.TrimSpace(filters.Modality) != ""
+}
+
 func (a *App) handlePhysicianRetrieve(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1624,6 +1631,185 @@ func (a *App) ensurePhysicianSeed(ctx context.Context, username string) (Physici
 	return physician, nil
 }
 
+func (a *App) searchPhysicianResultsFromSingleNode(ctx context.Context, physician PhysicianSummary, filters PhysicianSearchFilters) ([]PhysicianResult, error) {
+	if len(a.externalConfig.PACSNodes) != 1 {
+		return nil, fmt.Errorf("physician qido flow requires exactly one pacs node, found %d", len(a.externalConfig.PACSNodes))
+	}
+
+	node := a.externalConfig.PACSNodes[0]
+	if strings.ToLower(node.Protocol) != "qido_rs" {
+		return nil, fmt.Errorf("physician qido flow requires qido_rs node, found %s", node.Protocol)
+	}
+
+	searchStartedAt := time.Now()
+	a.log("info", "physician_qido_search_started", map[string]any{
+		"physician_id": physician.ID,
+		"username":     physician.Username,
+		"node_id":      node.ID,
+		"patient_name": filters.PatientName,
+		"date_from":    filters.DateFrom,
+		"date_to":      filters.DateTo,
+		"modality":     filters.Modality,
+	})
+
+	token, err := a.fetchPACSBearerToken(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("fetch pacs token for %s: %w", node.ID, err)
+	}
+
+	endpoint, err := url.Parse(strings.TrimRight(node.DICOMwebBaseURL, "/") + "/studies")
+	if err != nil {
+		return nil, fmt.Errorf("build qido url: %w", err)
+	}
+
+	query := endpoint.Query()
+	query.Set("limit", "50")
+	query.Add("includefield", "StudyInstanceUID")
+	query.Add("includefield", "StudyDate")
+	query.Add("includefield", "StudyDescription")
+	query.Add("includefield", "ModalitiesInStudy")
+	query.Add("includefield", "PatientName")
+	query.Add("includefield", "PatientID")
+	if filters.PatientName != "" {
+		query.Set("PatientName", filters.PatientName)
+	}
+	if filters.Modality != "" {
+		query.Set("ModalitiesInStudy", filters.Modality)
+	}
+	if filters.DateFrom != "" || filters.DateTo != "" {
+		query.Set("StudyDate", buildQIDODateRange(filters.DateFrom, filters.DateTo))
+	}
+	endpoint.RawQuery = query.Encode()
+
+	a.log("info", "physician_qido_request_started", map[string]any{
+		"physician_id": physician.ID,
+		"username":     physician.Username,
+		"node_id":      node.ID,
+		"url":          endpoint.String(),
+	})
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("build physician qido request: %w", err)
+	}
+	req.Header.Set("Accept", "application/dicom+json, application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	res, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("execute physician qido request: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+		return nil, fmt.Errorf("physician qido bad status %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var payload []qidoResponseItem
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		if !errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("decode physician qido response: %w", err)
+		}
+		payload = []qidoResponseItem{}
+	}
+
+	results := make([]PhysicianResult, 0, len(payload))
+	for _, item := range payload {
+		studyUID := dicomFirstString(item, "0020000D")
+		if studyUID == "" {
+			continue
+		}
+
+		result := PhysicianResult{
+			StudyInstanceUID: studyUID,
+			PatientName:      dicomFirstPersonName(item, "00100010"),
+			PatientID:        dicomFirstString(item, "00100020"),
+			StudyDate:        dicomFirstString(item, "00080020"),
+			StudyDescription: dicomFirstString(item, "00081030"),
+			Modalities:       dicomStringList(item, "00080061"),
+			Locations:        []string{node.Name},
+			CacheStatus:      "not_local",
+			RetrieveStatus:   "idle",
+			PartialFilter:    false,
+		}
+
+		cacheStatus, retrieveStatus, viewerURL, err := a.getStudyOperationalState(ctx, studyUID, result.CacheStatus, result.RetrieveStatus)
+		if err != nil {
+			return nil, fmt.Errorf("resolve physician qido state for %s: %w", studyUID, err)
+		}
+		result.CacheStatus = cacheStatus
+		result.RetrieveStatus = retrieveStatus
+		result.ViewerURL = viewerURL
+		results = append(results, result)
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].StudyDate == results[j].StudyDate {
+			return results[i].StudyInstanceUID < results[j].StudyInstanceUID
+		}
+		return results[i].StudyDate > results[j].StudyDate
+	})
+
+	if err := a.persistPhysicianRecentQuery(ctx, physician.ID, filters, results); err != nil {
+		return nil, fmt.Errorf("persist physician recent query: %w", err)
+	}
+
+	a.log("info", "physician_qido_search_completed", map[string]any{
+		"physician_id": physician.ID,
+		"username":     physician.Username,
+		"node_id":      node.ID,
+		"result_count": len(results),
+		"duration_ms":  time.Since(searchStartedAt).Milliseconds(),
+	})
+
+	return results, nil
+}
+
+func buildQIDODateRange(dateFrom, dateTo string) string {
+	from := strings.ReplaceAll(strings.TrimSpace(dateFrom), "-", "")
+	to := strings.ReplaceAll(strings.TrimSpace(dateTo), "-", "")
+	switch {
+	case from != "" && to != "":
+		return from + "-" + to
+	case from != "":
+		return from + "-"
+	case to != "":
+		return "-" + to
+	default:
+		return ""
+	}
+}
+
+func (a *App) persistPhysicianRecentQuery(ctx context.Context, physicianID string, filters PhysicianSearchFilters, results []PhysicianResult) error {
+	payload := map[string]any{
+		"patient_name": filters.PatientName,
+		"date_from":    filters.DateFrom,
+		"date_to":      filters.DateTo,
+		"modalities":   []string{},
+		"results":      results,
+	}
+	if filters.Modality != "" {
+		payload["modalities"] = []string{filters.Modality}
+	}
+
+	queryJSON, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	_, err = a.db.ExecContext(ctx, `
+		INSERT INTO physician_recent_queries (
+			physician_id, query_json, result_count, searched_at, expires_at
+		) VALUES (
+			$1::uuid, $2::jsonb, $3, now(), now() + interval '7 days'
+		)
+	`, physicianID, string(queryJSON), len(results))
+	return err
+}
+
 func (a *App) listPatientStudies(ctx context.Context, patientID string, filters PatientStudiesFilter) ([]PatientStudy, error) {
 	query := `
 		SELECT
@@ -1713,6 +1899,18 @@ func (a *App) listPatientStudies(ctx context.Context, patientID string, filters 
 }
 
 func (a *App) listPhysicianResults(ctx context.Context, physicianID string, filters PhysicianSearchFilters) ([]PhysicianResult, error) {
+	if hasPhysicianFilters(filters) {
+		physician := PhysicianSummary{ID: physicianID}
+		if err := a.db.QueryRowContext(ctx, `
+			SELECT username, COALESCE(dni, ''), COALESCE(full_name, '')
+			FROM physicians
+			WHERE id = $1::uuid
+		`, physicianID).Scan(&physician.Username, &physician.DNI, &physician.FullName); err != nil {
+			return nil, fmt.Errorf("load physician summary: %w", err)
+		}
+		return a.searchPhysicianResultsFromSingleNode(ctx, physician, filters)
+	}
+
 	rows, err := a.db.QueryContext(ctx, `
 		SELECT query_json
 		FROM physician_recent_queries

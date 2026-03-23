@@ -42,6 +42,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Physician workflow should be asynchronous and must expose remote PACS context, local cache presence, and retrieve state before opening OHIF.
 - The first functional physician panel is now backed by `GET /api/physician/results`, with DB-seeded recent-query rows per username until real federated search is implemented.
 - The physician panel now exposes a first real `Retrieve` action backed by `POST /api/physician/retrieve`, reusing Orthanc `C-GET` and recalculating local state from `cached_studies`, `retrieve_jobs`, and Orthanc.
+- The current physician panel now switches to real remote QIDO search whenever the operator applies filters; only the no-filter state keeps using persisted recent queries as a fallback.
 - The database must cache patient identity anchors, alternate identifiers from HIS, known authorized study UIDs, physician recent searches, and future session state.
 - Physician credentials must not be stored in clear text; only session state, auth events, and encrypted provider-issued auth material are allowed.
 - Observability metrics should not be persisted in PostgreSQL for now; use structured logs and optional in-memory stats instead.
