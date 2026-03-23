@@ -22,6 +22,7 @@
 - OHIF debe tratarse como **visor** y no como superficie primaria de búsqueda o control de acceso.
 - El paciente debe navegar una lista propia del portal, no la study list nativa de OHIF.
 - El médico debe trabajar sobre un panel propio del portal con búsqueda federada y retrieve asíncrono.
+- Los contratos explícitos de ambas superficies se documentan en `artifacts/05_ui_contracts.md`.
 
 ### Supuestos del MVP
 - El acceso al stack en desarrollo será por red controlada (p. ej. LAN/VPN); no se expone Internet “abierto” sin hardening adicional.
@@ -197,6 +198,7 @@ Proveer un portal operativo mínimo capaz de:
 - Backend, Postgres y Orthanc quedan en red docker interna (sin publicar puertos, salvo necesidad de DICOM).
 - Los assets del portal público deben servirse desde una ruta propia para no colisionar con los assets raíz de OHIF.
 - El acceso a estudios para pacientes o médicos no debe depender solo de ocultar o mostrar la study list nativa del visor.
+- La restricción futura debe validarse en backend/proxy por sesión activa del portal y `StudyInstanceUID` permitido.
 
 ### 6.2 Puertos (propuesta)
 - Nginx: `80` (dev) y opcional `443` (si se agrega TLS).

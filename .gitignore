@@ -1,7 +1,9 @@
 .venv/
 .env
 app/.env
-artifacts/
+artifacts/*
+!artifacts/
+!artifacts/*.md
 __pycache__/
 *.pyc
 .DS_Store

@@ -17,8 +17,8 @@
 - [Ready] Physician future target auth is documented as `LDAP provincial + MFA`, but remains out of MVP implementation scope.
 - [Ready] Mobile responsiveness is an explicit requirement for the landing and portal-owned surfaces.
 - [Ready] OHIF is treated as a viewer surface, not the primary patient or physician search surface.
-- [Missing] Patient portal study list contract: exact fields, sorting, filtering, and what defines an “authorized study”.
-- [Missing] Physician panel contract: exact columns for remote PACS context, retrieve state, cache status, and user actions.
+- [Ready] Patient portal study list contract is documented in `artifacts/05_ui_contracts.md`, including fields, sort, filters, actions, and availability states.
+- [Ready] Physician panel contract is documented in `artifacts/05_ui_contracts.md`, including filters, columns, states, and actions.
 - [Ready] API surface defined for health, config, search (SSE), retrieve jobs, cache status.
 - [Ready] Search streaming uses SSE (not WS); UI renders incremental results.
 - [Missing] Concrete SSE event schema contract (field names, ordering guarantees, retry behavior, terminal `done`, and error payload structure).
@@ -40,6 +40,7 @@
 - [Ready] OHIF image is pinned (`ohif/app:v3.11.1`) instead of using `latest`.
 - [Missing] Final OHIF mode configuration for actor-specific flows (study list disabled for patient and physician surfaces once portal-owned lists exist).
 - [Missing] OHIF configuration artifact committed/templated for environment-specific base URLs and routes (and validated that no remote DICOMweb endpoints can be configured).
+- [Ready] Future access-control requirement is explicit: backend/proxy must validate active session + allowed `StudyInstanceUID` for viewer/image access; hidden OHIF UI is not sufficient.
 
 ### Operability
 - [Ready] One-command `docker compose up` is a hard acceptance criterion.

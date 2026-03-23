@@ -176,10 +176,12 @@
 **Dependencies**
 - Milestones 3–5.
 - Definición posterior del modelo de auth real para paciente y profesional.
+- Publicar contratos explícitos de UI y handoff a viewer para paciente y profesional.
 
 **Exit criteria (testable)**
 - El paciente navega solo estudios del portal y no ve la study list nativa de OHIF.
 - El profesional opera desde un panel propio del portal y abre OHIF solo sobre estudios seleccionados.
+- La protección futura del viewer queda pendiente para backend/proxy por sesión activa + `StudyInstanceUID`.
 
 ---
 

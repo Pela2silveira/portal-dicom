@@ -107,6 +107,7 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
   * estado de disponibilidad.
 * Acción principal: abrir un estudio puntual en OHIF.
 * La experiencia debe ser responsive y usable en móvil.
+* El contrato explícito de esta superficie queda definido en `artifacts/05_ui_contracts.md`.
 
 ### 6.1.2 Superficie Médico
 * Panel propio del portal para búsqueda federada y operación.
@@ -119,6 +120,7 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
   * acción de retrieve;
   * acción de visualización puntual en OHIF.
 * La experiencia debe ser responsive y usable en móvil, al menos para consulta y validación rápida.
+* El contrato explícito de esta superficie queda definido en `artifacts/05_ui_contracts.md`.
 
 ---
 
@@ -199,6 +201,7 @@ El sistema debe estar preparado para recibir por configuración:
 * Registro de cada DNI consultado, por qué usuario (Médico/Paciente) y desde qué IP.
 * El acceso a OHIF debe estar vinculado a la sesión activa del portal.
 * Implementación de JWT en el proxy de imágenes para restringir el acceso a nivel de StudyInstanceUID en OHIF.
+* La autorización efectiva no debe depender de ocultar la study list del visor: el backend/proxy debe validar sesión activa + `StudyInstanceUID` permitido en cada acceso de viewer e imágenes.
 
 ---
 

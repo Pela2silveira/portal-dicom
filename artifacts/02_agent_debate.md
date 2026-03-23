@@ -55,6 +55,9 @@
 - **UX-level hiding is not security**:
   - disabling OHIF study list is not a substitute for controlling which studies are exposed by the portal/backend;
   - patient lists must be portal-authored and authorization-aware.
+- **Viewer protection still needs a real future boundary**:
+  - backend/proxy enforcement must validate active session + allowed `StudyInstanceUID`;
+  - this should not be left implicit in viewer configuration.
 - **Orthanc DICOM port exposure (4242)**: opening it to broader networks can allow unauthorized C-STORE into cache unless constrained (AE whitelist, firewall rules, TLS, or at least network segmentation).
 - **Token handling**:
   - Where and how tokens are cached, TTL handling, refresh on 401, and avoiding logging tokens are not explicit.
@@ -66,6 +69,8 @@
 3. **Public route contract**: confirm that `/portal-assets/` is the reserved namespace for portal-owned static assets.
 4. **Orthanc hardening baseline**:
    - Enable authentication for Orthanc REST even internally? (recommended if any risk of lateral access)
+5. **Actor UI contracts**:
+   - freeze the patient and physician screen contracts in dedicated artifacts before wiring real auth and retrieve UX.
    - AE Title checks / known modalities / known remote AEs.
 5. **Logging policy**: what PHI is permitted in logs and Postgres tables for MVP; define redaction/hashing rules now to avoid rework later.
 

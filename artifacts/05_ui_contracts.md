@@ -1,0 +1,198 @@
+# 05 UI Contracts
+
+## Purpose
+
+This artifact defines the explicit UI contracts for the two future portal-owned access surfaces:
+
+- patient study list
+- physician search and workflow panel
+
+These contracts are intentionally separate from OHIF. OHIF remains a viewer surface only.
+
+## Global Rules
+
+- The portal is the primary access surface for both actors.
+- OHIF is opened only for a specific authorized study or series.
+- Hiding the native OHIF study list is a UX choice and is not a security control.
+- Real access control, when implemented, must be enforced in the backend and image proxy by active portal session and allowed `StudyInstanceUID`.
+- All portal-owned surfaces must be responsive and usable on mobile for consultation workflows.
+
+## Patient Contract
+
+### Purpose
+
+Allow a patient to see only their authorized studies and open one selected study in OHIF.
+
+### Entry Surface
+
+- Public landing flow: `Documento + OTP`
+- Current implementation is mock only.
+- Future real implementation validates patient identity before exposing the list.
+
+### Screen Model
+
+- Patient summary header
+- Authorized study list
+- Simple filters
+- Per-study action: `Ver estudio`
+
+### Allowed Fields In The List
+
+- `studyInstanceUID`
+- `studyDate`
+- `modalitiesInStudy`
+- `studyDescription`
+- `availabilityStatus`
+
+### Allowed Filters
+
+- `date_from`
+- `date_to`
+- `modality`
+- free text is out of scope for the first patient surface
+
+### Allowed Sort
+
+- default sort: newest `studyDate` first
+
+### Availability States
+
+- `available_local`: study is already in local Orthanc and can be opened now
+- `pending_retrieve`: study is expected but not yet available for viewing
+- `unavailable`: study exists in patient authorization scope but is not currently retrievable
+- `error`: retrieval or authorization resolution failed
+
+### Allowed Actions
+
+- `Ver estudio` when `availabilityStatus = available_local`
+- passive refresh of the list
+
+### Explicitly Forbidden Actions
+
+- free search over all studies in cache
+- visibility of remote PACS nodes
+- manual retrieve trigger
+- direct navigation through the native OHIF study list
+
+### OHIF Handoff
+
+- Portal opens OHIF for a specific `studyInstanceUID`
+- OHIF should not expose a global study list in the final patient flow
+
+### Backend Contract For Patient Surface
+
+- `GET /api/patient/studies`
+  - returns only studies authorized for the active patient session
+- `GET /api/patient/studies/:studyInstanceUID/access`
+  - returns whether the session can open the study and the viewer route or token material needed by the final design
+
+### Future Security Constraint
+
+- Backend and proxy must restrict OHIF/image access by active session and allowed `StudyInstanceUID`
+- Patient visibility in the portal is necessary but not sufficient without this enforcement
+
+## Physician Contract
+
+### Purpose
+
+Allow a physician to search, inspect, and retrieve studies from remote PACS nodes, then open a selected study in OHIF.
+
+### Entry Surface
+
+- Public landing flow: `DNI / usuario + contraseña`
+- Current implementation is mock only
+- Future real implementation target: `LDAP provincial + MFA`
+
+### Screen Model
+
+- Search filter bar
+- Search execution status
+- Federated results table
+- Per-study actions
+- Optional retrieve job activity summary
+
+### Search Filters
+
+- `patient_id`
+- `patient_name`
+- `date_from`
+- `date_to`
+- `modalities`
+
+### Result Columns
+
+- `patientName`
+- `patientID`
+- `studyDate`
+- `studyTime`
+- `modalitiesInStudy`
+- `studyDescription`
+- `locations[]`
+- `cacheStatus`
+- `retrieveStatus`
+- `partialFilter`
+
+### Result Semantics
+
+- One logical row per deduplicated `StudyInstanceUID`
+- `locations[]` accumulates all remote nodes where the study exists
+- Preferred metadata source follows the existing node priority rule
+- Cache state is shown separately from descriptive study metadata
+
+### Cache States
+
+- `not_local`
+- `local_partial`
+- `local_complete`
+
+### Retrieve States
+
+- `idle`
+- `queued`
+- `running`
+- `done`
+- `failed`
+
+### Allowed Actions
+
+- `Buscar`
+- `Retrieve`
+- `Visualizar` only when the study is available in local Orthanc
+
+### Visualizar Enablement Rule
+
+- `Visualizar` is enabled only after local availability is confirmed
+- In the current design baseline this aligns with retrieve state `done` plus cache confirmation
+
+### Explicitly Required Context
+
+- remote PACS location list
+- local cache presence
+- retrieve progress or terminal state
+- partial-filter warning when a node could not apply all requested filters
+
+### OHIF Handoff
+
+- Portal opens OHIF for a selected `studyInstanceUID`
+- OHIF is not the primary search or workflow surface
+
+### Backend Contract For Physician Surface
+
+- `GET /api/search/stream`
+  - SSE stream for federated search results
+- `POST /api/retrieve/jobs`
+  - create retrieve job for selected `studyInstanceUID`
+- `GET /api/retrieve/jobs/:id`
+  - retrieve job status
+- `GET /api/cache/studies/:studyInstanceUID`
+  - local cache availability
+
+### Future Security Constraint
+
+- Backend and proxy must restrict OHIF/image access by active session and allowed `StudyInstanceUID`
+- Physician access should reflect authorization context and not rely on hidden viewer UI
+
+## Contract Status
+
+- These contracts are the current functional baseline for future patient and physician portal-owned surfaces.
+- Current landing implementation remains a visual/mock entry flow only.

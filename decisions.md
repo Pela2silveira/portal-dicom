@@ -36,6 +36,8 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Physician access must use a portal-owned search and workflow panel.
 - Physician workflow should be asynchronous and must expose remote PACS context, local cache presence, and retrieve state before opening OHIF.
 - The native OHIF study list is a UX choice only and must not be treated as an access-control mechanism.
+- Future real access control must be enforced by backend/proxy using active portal session and allowed `StudyInstanceUID`, not by viewer visibility rules alone.
+- The explicit patient and physician UI contracts live in `artifacts/05_ui_contracts.md`.
 - The initial remote dcm4chee node uses `AE Title = PACSHPN`.
 - The initial remote dcm4chee node uses DICOM port `11112`.
 - The initial remote dcm4chee node supports `C-MOVE`.
