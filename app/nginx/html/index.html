@@ -242,6 +242,23 @@
         color: var(--ink);
       }
 
+      .site-footer-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 16px;
+        margin-top: 8px;
+      }
+
+      .site-footer-links a {
+        color: var(--accent-dark);
+        text-decoration: none;
+        border-bottom: 1px solid rgba(0, 39, 56, 0.2);
+      }
+
+      .site-footer-links a:hover {
+        border-color: var(--accent);
+      }
+
       .footer-logo {
         display: block;
         width: min(220px, 48vw);
@@ -835,6 +852,10 @@
       <footer class="site-footer">
         <div class="site-footer-copy">
           <strong>RedImagenesNQN</strong> integra acceso, consulta y visualizacion de estudios por imagen desde un unico portal.
+          <div class="site-footer-links">
+            <a href="https://salud.neuquen.gob.ar/" target="_blank" rel="noopener noreferrer">Salud Neuquen</a>
+            <a href="https://app.andes.gob.ar/auth/login" target="_blank" rel="noopener noreferrer">ANDES</a>
+          </div>
         </div>
         <a class="footer-logo" href="/" aria-label="ANDES">
           <img src="/portal-assets/andes-logo-wide.svg" alt="ANDES">
