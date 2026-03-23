@@ -161,34 +161,18 @@
         font-size: 1rem;
       }
 
-      .intro-grid {
-        display: grid;
-        gap: 12px;
+      .intro-focus {
         margin-top: 18px;
-      }
-
-      .micro {
-        padding: 14px 16px 13px;
+        padding: 18px 18px 16px;
         border-radius: 0;
         border: 1px solid rgba(255, 255, 255, 0.14);
         background: rgba(255, 255, 255, 0.08);
       }
 
-      .micro strong,
-      .micro span {
-        display: block;
-      }
-
-      .micro strong {
-        margin-bottom: 6px;
-        font-size: 0.82rem;
-        text-transform: uppercase;
-        letter-spacing: 0.12em;
-        color: rgba(255, 255, 255, 0.72);
-      }
-
-      .micro span {
-        font-size: 0.94rem;
+      .intro-focus p {
+        margin: 0;
+        color: rgba(255, 255, 255, 0.88);
+        font-size: 0.98rem;
       }
 
       .auth {
@@ -744,7 +728,7 @@
           font-size: 1.35rem;
         }
 
-        .micro,
+        .intro-focus,
         .note {
           padding: 13px 14px;
         }
@@ -768,20 +752,8 @@
         <section class="panel intro">
           <p class="eyebrow">Ingreso</p>
           <h2>El acceso comienza aca.</h2>
-          <p>
-            Seleccione su perfil para continuar con el recorrido correspondiente y abrir
-            su espacio de consulta o gestion.
-          </p>
-
-          <div class="intro-grid">
-            <article class="micro">
-              <strong>Paciente</strong>
-              <span>Consulta su lista de estudios y recupera disponibilidad cuando sea necesario.</span>
-            </article>
-            <article class="micro">
-              <strong>Profesional</strong>
-              <span>Busca estudios, revisa disponibilidad y opera recuperaciones antes de abrir el visor.</span>
-            </article>
+          <div class="intro-focus">
+            <p>Seleccione su perfil para continuar.</p>
           </div>
 
         </section>
