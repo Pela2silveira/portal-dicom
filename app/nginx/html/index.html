@@ -112,26 +112,6 @@
         width: 100%;
       }
 
-      .auth-top {
-        min-height: 66px;
-        padding: 0 22px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        background: var(--accent);
-        color: #ffffff;
-      }
-
-      .auth-top strong {
-        font-size: 0.95rem;
-        letter-spacing: 0.02em;
-      }
-
-      .auth-top span {
-        font-size: 0.85rem;
-        opacity: 0.88;
-      }
-
       .auth-body {
         padding: 24px 22px 22px;
         background: var(--accent-dark);
@@ -148,11 +128,6 @@
         letter-spacing: -0.03em;
       }
 
-      .auth-header p {
-        margin: 0;
-        color: rgba(255, 255, 255, 0.78);
-      }
-
       .auth-lead {
         margin-bottom: 16px;
         padding: 14px 16px;
@@ -161,13 +136,13 @@
       }
 
       .auth-lead h3 {
-        margin: 0 0 4px;
+        margin: 0;
         font-size: 1.3rem;
         letter-spacing: -0.03em;
       }
 
       .auth-lead p {
-        margin: 0;
+        margin: 6px 0 0;
         color: rgba(255, 255, 255, 0.88);
       }
 
@@ -618,14 +593,6 @@
       }
 
       @media (max-width: 639px) {
-        .auth-top {
-          min-height: auto;
-          padding: 14px 18px;
-          gap: 6px;
-          align-items: flex-start;
-          flex-direction: column;
-        }
-
         .role-switch {
           grid-template-columns: 1fr;
         }
@@ -658,7 +625,6 @@
           padding-right: 16px;
         }
 
-        .auth-top,
         .workspace-header {
           padding-left: 16px;
           padding-right: 16px;
@@ -697,11 +663,6 @@
 
       <main class="hero">
         <section class="panel auth">
-          <div class="auth-top">
-            <strong>Acceso RedImagenesNQN</strong>
-            <span>Neuquen</span>
-          </div>
-
           <div class="auth-body">
             <div class="auth-lead">
               <h3>El acceso comienza aca.</h3>
@@ -756,7 +717,7 @@
               <button class="action action-primary" type="button">Continuar</button>
 
               <div class="note note-neutral">
-                Acceso institucional.
+                Ingreso institucional.
               </div>
             </section>
           </div>
