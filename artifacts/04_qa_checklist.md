@@ -21,6 +21,7 @@
 - [Ready] OHIF is treated as a viewer surface, not the primary patient or physician search surface.
 - [Ready] Patient portal study list contract is documented in `artifacts/05_ui_contracts.md`, including fields, sort, filters, actions, and availability states.
 - [Ready] Patient surface is no longer static-only: it already consumes `GET /api/patient/studies` from the backend and its first load triggers QIDO by `PatientID=<dni>` against the single configured PACS node.
+- [Ready] Patient surface already exposes a manual `Retrieve` action for `pending_retrieve` studies via `POST /api/patient/retrieve`, with list refresh after completion.
 - [Ready] Physician panel contract is documented in `artifacts/05_ui_contracts.md`, including filters, columns, states, and actions.
 - [Ready] Physician surface is no longer static-only: it already consumes `GET /api/physician/results` from the backend and filters seeded recent-query rows by user input.
 - [Ready] Relational model for patient cache, HIS alternate identifiers, known study UIDs, physician recent searches, and auth/session state is documented in `artifacts/06_data_model.md`.
@@ -40,7 +41,7 @@
 - [Ready] Remote DIMSE basics captured (initial node AE Title `PACSHPN`, port `11112`, supports C-MOVE).
 - [Needs Decision] DIMSE network topology confirmation: remote PACS can reach **local Orthanc** as Move SCP on `4242` (routing/NAT/firewall/VPN specifics).
 - [Ready] Retrieve architecture principle is explicit: study transfer is PACS-to-PACS (Orthanc ↔ remoto), while the backend only orchestrates and observes.
-- [Needs Decision] Orthanc REST orchestration for retrieve (`C-MOVE` / `C-GET`): exact endpoints/payloads and expected responses.
+- [Ready] First Orthanc REST retrieve contract is implemented for patient `C-GET`: `PUT /modalities/{id}` + `POST /modalities/{id}/get`, followed by Orthanc polling on `StudyInstanceUID`.
 - [Ready] OHIF consumes only local Orthanc via `/dicom-web` proxied by Nginx, with `/dicomweb` retained only as compatibility alias if needed.
 - [Ready] OHIF image is pinned (`ohif/app:v3.11.1`) instead of using `latest`.
 - [Missing] Final OHIF mode configuration for actor-specific flows (study list disabled for patient and physician surfaces once portal-owned lists exist).
@@ -53,6 +54,7 @@
 - [Missing] Deterministic startup ordering/healthchecks (postgres ready → migrations → backend ready; orthanc ready → backend health returns `orthanc_ok`).
 - [Ready] Database migrations automation is defined and implemented in the backend startup using versioned SQL files plus `schema_migrations`.
 - [Partial] Observability baseline started: the patient sync path now emits structured JSON logs for token request, QIDO request, sync durations, and study counts. Metrics persistence in PostgreSQL is explicitly out for now; broader metrics and non-patient flows remain pending.
+- [Partial] Patient retrieve now emits job and completion logs through the same backend logger, but still needs explicit smoke coverage against a reachable remote PACS.
 - [Missing] Runbook content list and ownership (how to add PACS nodes, test search/retrieve/view, troubleshoot common failures).
 - [Missing] Automated smoke tests for compose: health endpoint, SSE contract, proxy negative tests (Orthanc admin blocked), basic retrieve state machine (even against lab/mock).
 - [Needs Decision] Test strategy for “remote PACS not available” in CI: include a lab Orthanc/dcm4chee container as a simulated remote vs. mock handler only.
@@ -62,7 +64,7 @@
 ## Minimum Decisions Needed Before Coding
 1. **Nginx DICOMweb allowlist**: confirm the exact Orthanc DICOMweb paths OHIF needs (to implement allow/deny + negative tests).
 2. **DIMSE reachability**: confirm whether remote PACS can reach local Orthanc `AE/host/port` for C-MOVE in the target MVP environment (firewall/NAT/VPN specifics).
-3. **Retrieve orchestration contract**: confirm the exact Orthanc REST endpoints/payloads to initiate `C-MOVE` / `C-GET` (and required Orthanc config for remote modalities).
+3. **Retrieve smoke validation**: verify the implemented Orthanc REST `C-GET` contract against a reachable remote PACS and capture expected success/error payloads.
 4. **Integration credentials delivery**: provide Keycloak token endpoint/realm + dcm4chee DICOMweb base URL(s) + how `client_id/client_secret` are supplied (env vs mounted file) for dev/testing.
 5. **Orthanc retrieve contract**: confirm how remote PACS nodes must be registered in Orthanc and which REST payloads are needed to trigger retrieve.
 6. **SSE contract finalization**: confirm event types/payload fields and client retry behavior (so UI + backend + tests align).

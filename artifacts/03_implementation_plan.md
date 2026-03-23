@@ -155,8 +155,7 @@
 - Milestone 4 (jobs + polling ya implementados).
 
 **Blocked until open decision is resolved**
-- **Sí (bloqueante)**: “Which exact Orthanc REST endpoints and payloads will be used for C-GET orchestration”.  
-  Sin esto, no se puede implementar C-GET de manera interoperable y testeable.
+- Resuelto para el primer slice: `PUT /modalities/{id}` para asegurar el remoto y `POST /modalities/{id}/get` para disparar `C-GET` desde Orthanc.
 
 **Exit criteria (testable)**
 - Con un nodo configurado como `get`, `POST /api/retrieve` completa con `done` y el estudio se visualiza en OHIF.
@@ -173,6 +172,7 @@
   - lista propia del portal con estudios autorizados
   - apertura puntual en OHIF
   - primer slice funcional con QIDO `PatientID=<dni>` contra el único nodo PACS configurado y sincronización en `patient_study_access`
+  - primer retrieve funcional con botón `Retrieve`, `POST /api/patient/retrieve` y orquestación `C-GET` vía Orthanc REST
   - observabilidad estructurada del sync paciente: token, QIDO, duración y conteos
   - sin persistir métricas de observabilidad en Postgres; sólo logs y futuros stats en memoria
 - Physician surface:
@@ -190,6 +190,7 @@
 
 **Exit criteria (testable)**
 - El paciente navega solo estudios del portal y no ve la study list nativa de OHIF.
+- Los estudios `pending_retrieve` del paciente pueden recuperarse manualmente y pasan a `available_local` antes de abrir OHIF.
 - El profesional opera desde un panel propio del portal y abre OHIF solo sobre estudios seleccionados.
 - La protección futura del viewer queda pendiente para backend/proxy por sesión activa + `StudyInstanceUID`.
 

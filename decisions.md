@@ -35,6 +35,8 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Patient access must use a portal-owned study list filtered to authorized patient studies.
 - Patient access must not rely on the native OHIF study list.
 - The patient surface is now backed by `GET /api/patient/studies`, and its initial load performs `QIDO-RS /studies?PatientID=<dni>` against the single configured PACS node, persisting the synchronized rows in Postgres.
+- The patient surface now exposes a manual `Retrieve` action backed by `POST /api/patient/retrieve`.
+- The current patient retrieve implementation uses Orthanc REST to `PUT /modalities/{id}` and `POST /modalities/{id}/get`, polling Orthanc until the study becomes local.
 - Physician access must use a portal-owned search and workflow panel.
 - Physician workflow should be asynchronous and must expose remote PACS context, local cache presence, and retrieve state before opening OHIF.
 - The first functional physician panel is now backed by `GET /api/physician/results`, with DB-seeded recent-query rows per username until real federated search is implemented.
@@ -93,9 +95,6 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Remote dcm4chee nodes: hostnames, DICOMweb base URLs, REST credentials, and Keycloak host details.
 - Andes HIS base URL in the target environment.
 - Confirmation of the exact auth flow for Andes in the target environment.
-
-## Questions To Revisit During Spec
-- Which exact Orthanc REST endpoints and payloads will be used for retrieve orchestration (`C-MOVE` / `C-GET`) in the implementation.
 
 ## Notes For Agents
 - Prefer pragmatic, secure defaults.

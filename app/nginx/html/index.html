@@ -1020,6 +1020,7 @@
       function labelForStatus(status) {
         if (status === "available_local") return "Disponible en cache";
         if (status === "pending_retrieve") return "Pendiente retrieve";
+        if (status === "remote_available") return "Disponible en remoto";
         if (status === "unavailable") return "No disponible";
         return status || "Estado desconocido";
       }
@@ -1042,7 +1043,7 @@
 
             const action = study.viewer_url
               ? '<a class="action action-primary" href="' + escapeHTML(study.viewer_url) + '">Visualizar estudio</a>'
-              : '<button class="action ghost" type="button">No disponible todavía</button>';
+              : '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '">Retrieve</button>';
 
             return (
               '<article class="study-item">' +
@@ -1185,6 +1186,26 @@
         renderPhysicianResults(payload);
       }
 
+      async function triggerPatientRetrieve(studyInstanceUID) {
+        const response = await fetch("/api/patient/retrieve", {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            document_number: activePatientDocument,
+            study_instance_uid: studyInstanceUID
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error("patient retrieve request failed");
+        }
+
+        return response.json();
+      }
+
       roleButtons.forEach(button => {
         button.addEventListener("click", () => activateRole(button.dataset.role));
       });
@@ -1205,6 +1226,29 @@
         } catch (error) {
           patientStudyList.innerHTML =
             '<div class="empty-state">No se pudieron cargar los estudios del paciente.</div>';
+        }
+      });
+
+      patientStudyList.addEventListener("click", async event => {
+        const button = event.target.closest("[data-patient-retrieve]");
+        if (!button) {
+          return;
+        }
+
+        const studyInstanceUID = button.getAttribute("data-patient-retrieve");
+        if (!studyInstanceUID || !activePatientDocument) {
+          return;
+        }
+
+        button.disabled = true;
+        button.textContent = "Recuperando...";
+
+        try {
+          await triggerPatientRetrieve(studyInstanceUID);
+          await loadPatientStudies(activePatientDocument);
+        } catch (error) {
+          button.disabled = false;
+          button.textContent = "Retrieve";
         }
       });
 

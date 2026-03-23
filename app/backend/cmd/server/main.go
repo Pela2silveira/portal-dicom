@@ -80,6 +80,18 @@ type PatientStudy struct {
 	ViewerURL          string   `json:"viewer_url,omitempty"`
 }
 
+type PatientRetrieveRequest struct {
+	DocumentNumber   string `json:"document_number"`
+	StudyInstanceUID string `json:"study_instance_uid"`
+}
+
+type PatientRetrieveResponse struct {
+	JobID            string `json:"job_id"`
+	StudyInstanceUID string `json:"study_instance_uid"`
+	Status           string `json:"status"`
+	ViewerURL        string `json:"viewer_url,omitempty"`
+}
+
 type qidoResponseItem map[string]dicomJSONAttribute
 
 type dicomJSONAttribute struct {
@@ -269,6 +281,7 @@ func main() {
 	mux.HandleFunc("/api/health", app.handleHealth)
 	mux.HandleFunc("/api/config", app.handleConfig(appliedMigrations))
 	mux.HandleFunc("/api/patient/studies", app.handlePatientStudies)
+	mux.HandleFunc("/api/patient/retrieve", app.handlePatientRetrieve)
 	mux.HandleFunc("/api/physician/results", app.handlePhysicianResults)
 
 	app.log("info", "server_starting", map[string]any{
@@ -448,6 +461,54 @@ func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
 		Patient:        patient,
 		Filters:        filters,
 		Studies:        studies,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (a *App) handlePatientRetrieve(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var reqBody PatientRetrieveRequest
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		http.Error(w, "invalid json body", http.StatusBadRequest)
+		return
+	}
+
+	reqBody.DocumentNumber = strings.TrimSpace(reqBody.DocumentNumber)
+	reqBody.StudyInstanceUID = strings.TrimSpace(reqBody.StudyInstanceUID)
+	if reqBody.DocumentNumber == "" || reqBody.StudyInstanceUID == "" {
+		http.Error(w, "document_number and study_instance_uid are required", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
+
+	patient, err := a.ensurePatientRecord(ctx, reqBody.DocumentNumber)
+	if err != nil {
+		a.log("error", "patient_retrieve_prepare_failed", map[string]any{
+			"document_number": reqBody.DocumentNumber,
+			"error":           err.Error(),
+		})
+		http.Error(w, "failed to prepare patient retrieve", http.StatusInternalServerError)
+		return
+	}
+
+	resp, err := a.performPatientRetrieve(ctx, patient, reqBody.StudyInstanceUID)
+	if err != nil {
+		a.log("error", "patient_retrieve_failed", map[string]any{
+			"document_number":   reqBody.DocumentNumber,
+			"patient_id":        patient.ID,
+			"study_instance_uid": reqBody.StudyInstanceUID,
+			"error":             err.Error(),
+		})
+		http.Error(w, "failed to retrieve patient study", http.StatusBadGateway)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -662,7 +723,7 @@ func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient Pati
 			return patient, fmt.Errorf("marshal patient qido study: %w", err)
 		}
 
-		availabilityStatus := "remote_available"
+		availabilityStatus := "pending_retrieve"
 		if study.ViewerURL != "" {
 			availabilityStatus = "available_local"
 			availableLocalCount++
@@ -695,6 +756,81 @@ func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient Pati
 	})
 
 	return patient, nil
+}
+
+func (a *App) performPatientRetrieve(ctx context.Context, patient PatientSummary, studyInstanceUID string) (PatientRetrieveResponse, error) {
+	node, sourceNodeID, err := a.getPatientSourceNode(ctx, patient.ID, studyInstanceUID)
+	if err != nil {
+		return PatientRetrieveResponse{}, err
+	}
+
+	jobID, err := a.insertRetrieveJob(ctx, studyInstanceUID, sourceNodeID, "patient", patient.ID)
+	if err != nil {
+		return PatientRetrieveResponse{}, fmt.Errorf("insert retrieve job: %w", err)
+	}
+
+	startedAt := time.Now()
+	if err := a.updateRetrieveJobStatus(ctx, jobID, "running", "", "", 0, true); err != nil {
+		return PatientRetrieveResponse{}, fmt.Errorf("mark retrieve running: %w", err)
+	}
+
+	a.log("info", "patient_retrieve_started", map[string]any{
+		"patient_id":         patient.ID,
+		"study_instance_uid": studyInstanceUID,
+		"source_node_id":     sourceNodeID,
+		"job_id":             jobID,
+	})
+
+	if err := a.ensureOrthancModality(ctx, node); err != nil {
+		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), "", 0, false)
+		return PatientRetrieveResponse{}, fmt.Errorf("ensure orthanc modality: %w", err)
+	}
+
+	if err := a.startOrthancCGet(ctx, node, studyInstanceUID); err != nil {
+		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), "", 0, false)
+		return PatientRetrieveResponse{}, fmt.Errorf("orthanc c-get failed: %w", err)
+	}
+
+	localReady, orthancStudyID, err := a.waitForStudyInOrthanc(ctx, studyInstanceUID, 2*time.Second, 20*time.Second)
+	if err != nil {
+		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), orthancStudyID, 0, false)
+		return PatientRetrieveResponse{}, fmt.Errorf("wait for retrieved study: %w", err)
+	}
+	if !localReady {
+		err := errors.New("study not available in orthanc after c-get")
+		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), orthancStudyID, 0, false)
+		return PatientRetrieveResponse{}, err
+	}
+
+	if err := a.markPatientStudyAvailableLocal(ctx, patient.ID, studyInstanceUID, orthancStudyID, sourceNodeID); err != nil {
+		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), orthancStudyID, 0, false)
+		return PatientRetrieveResponse{}, fmt.Errorf("mark patient study available: %w", err)
+	}
+
+	if err := a.upsertCachedStudy(ctx, studyInstanceUID, orthancStudyID, []string{sourceNodeID}, "local_complete"); err != nil {
+		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), orthancStudyID, 0, false)
+		return PatientRetrieveResponse{}, fmt.Errorf("upsert cached study: %w", err)
+	}
+
+	if err := a.updateRetrieveJobStatus(ctx, jobID, "done", "", orthancStudyID, 0, false); err != nil {
+		return PatientRetrieveResponse{}, fmt.Errorf("mark retrieve done: %w", err)
+	}
+
+	a.log("info", "patient_retrieve_completed", map[string]any{
+		"patient_id":          patient.ID,
+		"study_instance_uid":  studyInstanceUID,
+		"source_node_id":      sourceNodeID,
+		"job_id":              jobID,
+		"orthanc_study_id":    orthancStudyID,
+		"duration_ms":         time.Since(startedAt).Milliseconds(),
+	})
+
+	return PatientRetrieveResponse{
+		JobID:            jobID,
+		StudyInstanceUID: studyInstanceUID,
+		Status:           "done",
+		ViewerURL:        "/ohif/",
+	}, nil
 }
 
 func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConfig, documentNumber string) ([]PatientStudy, string, error) {
@@ -763,7 +899,7 @@ func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConf
 			StudyDate:          dicomFirstString(item, "00080020"),
 			StudyDescription:   dicomFirstString(item, "00081030"),
 			ModalitiesInStudy:  dicomStringList(item, "00080061"),
-			AvailabilityStatus: "remote_available",
+			AvailabilityStatus: "pending_retrieve",
 			AuthorizationBasis: "patient_document_qido_match",
 		}
 
@@ -867,10 +1003,15 @@ func (a *App) fetchPACSBearerToken(ctx context.Context, node PACSNodeConfig) (st
 }
 
 func (a *App) isStudyAvailableLocal(ctx context.Context, studyUID string) (bool, error) {
+	ok, _, err := a.findOrthancStudy(ctx, studyUID)
+	return ok, err
+}
+
+func (a *App) findOrthancStudy(ctx context.Context, studyUID string) (bool, string, error) {
 	endpoint := strings.TrimRight(a.cfg.OrthancURL, "/") + "/dicom-web/studies?StudyInstanceUID=" + url.QueryEscape(studyUID) + "&limit=1"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return false, fmt.Errorf("build orthanc qido request: %w", err)
+		return false, "", fmt.Errorf("build orthanc qido request: %w", err)
 	}
 	req.Header.Set("Accept", "application/dicom+json, application/json")
 	if a.cfg.OrthancUser != "" {
@@ -879,21 +1020,232 @@ func (a *App) isStudyAvailableLocal(ctx context.Context, studyUID string) (bool,
 
 	res, err := a.httpClient.Do(req)
 	if err != nil {
-		return false, fmt.Errorf("execute orthanc qido request: %w", err)
+		return false, "", fmt.Errorf("execute orthanc qido request: %w", err)
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
-		return false, fmt.Errorf("orthanc qido bad status %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
+		return false, "", fmt.Errorf("orthanc qido bad status %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	var payload []qidoResponseItem
 	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
-		return false, fmt.Errorf("decode orthanc qido response: %w", err)
+		return false, "", fmt.Errorf("decode orthanc qido response: %w", err)
 	}
 
-	return len(payload) > 0, nil
+	if len(payload) == 0 {
+		return false, "", nil
+	}
+
+	lookupReq, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(a.cfg.OrthancURL, "/")+"/tools/find", strings.NewReader(`{"Level":"Study","Query":{"StudyInstanceUID":"`+studyUID+`"}}`))
+	if err != nil {
+		return true, "", nil
+	}
+	lookupReq.Header.Set("Content-Type", "application/json")
+	if a.cfg.OrthancUser != "" {
+		lookupReq.SetBasicAuth(a.cfg.OrthancUser, a.cfg.OrthancPass)
+	}
+	lookupRes, err := a.httpClient.Do(lookupReq)
+	if err != nil {
+		return true, "", nil
+	}
+	defer lookupRes.Body.Close()
+	if lookupRes.StatusCode < 200 || lookupRes.StatusCode >= 300 {
+		return true, "", nil
+	}
+	var ids []string
+	if err := json.NewDecoder(lookupRes.Body).Decode(&ids); err != nil || len(ids) == 0 {
+		return true, "", nil
+	}
+
+	return true, ids[0], nil
+}
+
+func (a *App) getPatientSourceNode(ctx context.Context, patientID, studyInstanceUID string) (PACSNodeConfig, string, error) {
+	var sourceJSONRaw []byte
+	if err := a.db.QueryRowContext(ctx, `
+		SELECT source_json
+		FROM patient_study_access
+		WHERE patient_id = $1::uuid
+		  AND study_instance_uid = $2
+	`, patientID, studyInstanceUID).Scan(&sourceJSONRaw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return PACSNodeConfig{}, "", errors.New("patient study not found")
+		}
+		return PACSNodeConfig{}, "", err
+	}
+
+	var source struct {
+		SourceNodeID string `json:"source_node_id"`
+	}
+	_ = json.Unmarshal(sourceJSONRaw, &source)
+	if source.SourceNodeID == "" {
+		if len(a.externalConfig.PACSNodes) == 1 {
+			return a.externalConfig.PACSNodes[0], a.externalConfig.PACSNodes[0].ID, nil
+		}
+		return PACSNodeConfig{}, "", errors.New("source node id missing for patient study")
+	}
+
+	for _, node := range a.externalConfig.PACSNodes {
+		if node.ID == source.SourceNodeID {
+			return node, source.SourceNodeID, nil
+		}
+	}
+
+	return PACSNodeConfig{}, "", fmt.Errorf("unknown source node id %q", source.SourceNodeID)
+}
+
+func (a *App) insertRetrieveJob(ctx context.Context, studyUID, sourceNodeID, actorType, actorID string) (string, error) {
+	var jobID string
+	err := a.db.QueryRowContext(ctx, `
+		INSERT INTO retrieve_jobs (
+			study_instance_uid, source_node_id, requested_by_actor_type, requested_by_actor_id, status
+		) VALUES (
+			$1, (SELECT id FROM pacs_nodes WHERE code = $2), $3, $4::uuid, 'queued'
+		)
+		RETURNING id::text
+	`, studyUID, sourceNodeID, actorType, actorID).Scan(&jobID)
+	return jobID, err
+}
+
+func (a *App) updateRetrieveJobStatus(ctx context.Context, jobID, status, errMsg, orthancStudyID string, instancesReceived int, setStarted bool) error {
+	query := `
+		UPDATE retrieve_jobs
+		SET status = $2,
+		    error = NULLIF($3, ''),
+		    orthanc_study_id = NULLIF($4, ''),
+		    instances_received = NULLIF($5, 0),
+		    finished_at = CASE WHEN $2 IN ('done', 'failed') THEN now() ELSE finished_at END
+	`
+	args := []any{jobID, status, errMsg, orthancStudyID, instancesReceived}
+	if setStarted {
+		query += `, started_at = now()`
+	}
+	query += ` WHERE id = $1::uuid`
+	_, err := a.db.ExecContext(ctx, query, args...)
+	return err
+}
+
+func (a *App) ensureOrthancModality(ctx context.Context, node PACSNodeConfig) error {
+	payload, err := json.Marshal(map[string]any{
+		"AET":            node.AET,
+		"Host":           node.DICOMHost,
+		"Port":           node.DICOMPort,
+		"RetrieveMethod": "C-GET",
+	})
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, strings.TrimRight(a.cfg.OrthancURL, "/")+"/modalities/"+url.PathEscape(node.ID), strings.NewReader(string(payload)))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if a.cfg.OrthancUser != "" {
+		req.SetBasicAuth(a.cfg.OrthancUser, a.cfg.OrthancPass)
+	}
+
+	res, err := a.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+		return fmt.Errorf("orthanc modality put bad status %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
+func (a *App) startOrthancCGet(ctx context.Context, node PACSNodeConfig, studyInstanceUID string) error {
+	payload, err := json.Marshal(map[string]any{
+		"Level": "Study",
+		"Resources": []map[string]string{
+			{"StudyInstanceUID": studyInstanceUID},
+		},
+		"Timeout": 60,
+	})
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(a.cfg.OrthancURL, "/")+"/modalities/"+url.PathEscape(node.ID)+"/get", strings.NewReader(string(payload)))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if a.cfg.OrthancUser != "" {
+		req.SetBasicAuth(a.cfg.OrthancUser, a.cfg.OrthancPass)
+	}
+
+	res, err := a.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+		return fmt.Errorf("orthanc c-get bad status %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
+func (a *App) waitForStudyInOrthanc(ctx context.Context, studyUID string, pollInterval, timeout time.Duration) (bool, string, error) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		available, orthancStudyID, err := a.findOrthancStudy(ctx, studyUID)
+		if err != nil {
+			return false, "", err
+		}
+		if available {
+			return true, orthancStudyID, nil
+		}
+		select {
+		case <-ctx.Done():
+			return false, "", ctx.Err()
+		case <-time.After(pollInterval):
+		}
+	}
+	return false, "", nil
+}
+
+func (a *App) markPatientStudyAvailableLocal(ctx context.Context, patientID, studyUID, orthancStudyID, sourceNodeID string) error {
+	_, err := a.db.ExecContext(ctx, `
+		UPDATE patient_study_access
+		SET availability_status = 'available_local',
+		    local_orthanc_study_id = $3,
+		    last_seen_at = now(),
+		    last_authorized_at = now(),
+		    source_json = jsonb_set(
+		      jsonb_set(COALESCE(source_json, '{}'::jsonb), '{source_node_id}', to_jsonb($4::text), true),
+		      '{orthanc_study_id}', to_jsonb($3::text), true
+		    )
+		WHERE patient_id = $1::uuid
+		  AND study_instance_uid = $2
+	`, patientID, studyUID, orthancStudyID, sourceNodeID)
+	return err
+}
+
+func (a *App) upsertCachedStudy(ctx context.Context, studyUID, orthancStudyID string, locations []string, cacheStatus string) error {
+	locationsJSON, err := json.Marshal(locations)
+	if err != nil {
+		return err
+	}
+	_, err = a.db.ExecContext(ctx, `
+		INSERT INTO cached_studies (
+			study_instance_uid, orthanc_study_id, first_seen_at, last_verified_at, cache_status, locations_json
+		) VALUES (
+			$1, $2, now(), now(), $3, $4::jsonb
+		)
+		ON CONFLICT (study_instance_uid) DO UPDATE SET
+			orthanc_study_id = EXCLUDED.orthanc_study_id,
+			last_verified_at = now(),
+			cache_status = EXCLUDED.cache_status,
+			locations_json = EXCLUDED.locations_json
+	`, studyUID, orthancStudyID, cacheStatus, string(locationsJSON))
+	return err
 }
 
 func dicomFirstString(item qidoResponseItem, tag string) string {

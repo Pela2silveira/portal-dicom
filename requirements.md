@@ -80,6 +80,7 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 * **Principio de implementación:** el intercambio real de estudios debe ocurrir entre PACS, con Orthanc actuando como PACS local y par DICOM/DICOMweb de los nodos remotos.
 * **Backend:** coordina, dispara y monitorea el retrieve, pero no debe transformarse en proxy del payload DICOM como camino normal de transferencia.
 * **Legacy o REST:** mientras no aparezca una limitación concreta, los intercambios de estudios deben resolverse como comunicación PACS↔PACS entre Orthanc y los remotos, ya sea por DIMSE legacy o por mecanismos DICOM REST del producto remoto.
+* **Primer retrieve funcional de paciente:** el portal expone `POST /api/patient/retrieve` y, por ahora, dispara `C-GET` sobre Orthanc REST contra el único nodo remoto configurado para estudios marcados como `pending_retrieve`.
 
 ### 5.2 PACS Local (Caché)
 * **Tecnología:** Orthanc (Ligero, API REST potente).
@@ -114,6 +115,7 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 * En el mock actual del portal, el ingreso de paciente debe aterrizar primero en esta superficie y no redirigir directamente a la home general de OHIF.
 * La primera implementación funcional de esta superficie consume `GET /api/patient/studies?document=<dni>` y renderiza la lista desde datos del backend.
 * En la carga inicial sin filtros, ese endpoint debe ejecutar `QIDO-RS /studies?PatientID=<dni>` contra el único nodo PACS configurado, persistir los estudios sincronizados y reutilizar esa cache local para los filtros posteriores del paciente.
+* Los estudios remotos de esta lista deben quedar inicialmente como `pending_retrieve`, con botón explícito `Retrieve` para traerlos a Orthanc antes de habilitar `Visualizar estudio`.
 
 ### 6.1.2 Superficie Médico
 * Panel propio del portal para búsqueda federada y operación.

@@ -164,6 +164,12 @@ Proveer un portal operativo mínimo capaz de:
 - Orthanc es el PACS local que inicia o recibe el retrieve según el mecanismo.
 - El backend coordina por API y persistencia, pero no debe convertirse en proxy del payload DICOM.
 
+**Primer slice implementado (paciente)**
+- La superficie paciente expone `POST /api/patient/retrieve`.
+- El backend registra el `retrieve_job`, asegura la modalidad remota en Orthanc y dispara `POST /modalities/{id}/get`.
+- Orthanc ejecuta `C-GET` contra el PACS remoto configurado.
+- El backend hace polling sobre Orthanc hasta encontrar el `StudyInstanceUID`, marca `patient_study_access.availability_status=available_local` y recién entonces habilita OHIF.
+
 ### 5.3 Visualizar (OHIF)
 1. UI abre URL de OHIF con `StudyInstanceUID` o con route de OHIF configurada.
 2. OHIF consulta QIDO/WADO contra `nginx -> orthanc`.
@@ -176,7 +182,7 @@ Proveer un portal operativo mínimo capaz de:
 4. El portal abre OHIF directamente sobre ese estudio.
 5. El paciente no navega la study list nativa de OHIF.
 6. La primera implementación funcional expone `GET /api/patient/studies?document=<dni>` como contrato inicial del portal-owned list.
-7. En la carga inicial sin filtros, el backend ejecuta `QIDO-RS /studies?PatientID=<dni>` contra el único nodo PACS configurado, sincroniza `patient_study_access` y marca como `available_local` los estudios ya presentes en Orthanc.
+7. En la carga inicial sin filtros, el backend ejecuta `QIDO-RS /studies?PatientID=<dni>` contra el único nodo PACS configurado, sincroniza `patient_study_access`, marca como `available_local` los estudios ya presentes en Orthanc y deja el resto como `pending_retrieve`.
 8. El flujo debe dejar trazas estructuradas de observabilidad para:
    - solicitud de token al PACS remoto;
    - request QIDO;
@@ -184,6 +190,7 @@ Proveer un portal operativo mínimo capaz de:
    - cantidad de estudios ya disponibles localmente;
    - duración total del sync.
 9. Estas métricas no se persisten en PostgreSQL en esta etapa; se resuelven mediante logs estructurados y futuros endpoints de stats en memoria.
+10. Cuando el estudio queda `pending_retrieve`, la UI del paciente ofrece un botón `Retrieve` que llama `POST /api/patient/retrieve` y recarga la lista al completar.
 
 ### 5.3.2 Flujo futuro de profesional
 1. El profesional ingresa al portal mediante autenticación institucional.

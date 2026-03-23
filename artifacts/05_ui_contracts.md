@@ -34,7 +34,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - Patient summary header
 - Authorized study list
 - Simple filters
-- Per-study action: `Ver estudio`
+- Per-study actions: `Retrieve` or `Ver estudio`
 
 ### Allowed Fields In The List
 
@@ -64,6 +64,7 @@ Allow a patient to see only their authorized studies and open one selected study
 
 ### Allowed Actions
 
+- `Retrieve` when `availabilityStatus = pending_retrieve`
 - `Ver estudio` when `availabilityStatus = available_local`
 - passive refresh of the list
 
@@ -71,7 +72,6 @@ Allow a patient to see only their authorized studies and open one selected study
 
 - free search over all studies in cache
 - visibility of remote PACS nodes
-- manual retrieve trigger
 - direct navigation through the native OHIF study list
 
 ### OHIF Handoff
@@ -83,6 +83,10 @@ Allow a patient to see only their authorized studies and open one selected study
 
 - `GET /api/patient/studies`
   - returns only studies authorized for the active patient session
+- `POST /api/patient/retrieve`
+  - receives `document_number` + `study_instance_uid`
+  - triggers PACS-to-PACS retrieve through Orthanc REST
+  - updates local availability before the patient can open OHIF
 - `GET /api/patient/studies/:studyInstanceUID/access`
   - returns whether the session can open the study and the viewer route or token material needed by the final design
 
