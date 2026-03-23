@@ -11,6 +11,46 @@ This folder is set up for a human-in-the-loop spec-driven development flow, so y
 - `artifacts/`: generated outputs from each step.
 - `app/`: the runnable implementation workspace for Docker, backend, Nginx, Orthanc, OHIF, and config files.
 
+## Runtime topology
+
+```mermaid
+flowchart LR
+    User[Browser]
+
+    subgraph Local["Docker Compose stack"]
+        Nginx["nginx\n:8080"]
+        Landing["Portal landing\nstatic UI"]
+        Backend["backend\nGo API"]
+        OHIF["ohif\nviewer"]
+        Orthanc["orthanc\nlocal cache"]
+        Postgres["postgres\nconfig + jobs"]
+    end
+
+    subgraph Remote["Remote systems"]
+        RemotePACS1["Remote PACS A\nDICOMweb + DIMSE"]
+        RemotePACS2["Remote PACS B\nDICOMweb + DIMSE"]
+        HIS["HIS / MPI"]
+        Keycloak["Keycloak"]
+    end
+
+    User --> Nginx
+    Nginx --> Landing
+    Nginx --> Backend
+    Nginx --> OHIF
+    Nginx --> Orthanc
+
+    Backend --> Postgres
+    Backend --> Orthanc
+    Backend --> HIS
+    Backend --> Keycloak
+    Backend --> RemotePACS1
+    Backend --> RemotePACS2
+
+    OHIF --> Orthanc
+    Orthanc -. C-MOVE / C-GET / C-STORE .- RemotePACS1
+    Orthanc -. C-MOVE / C-GET / C-STORE .- RemotePACS2
+```
+
 ## Step 1: create and activate the virtual environment
 
 From the repository root:
