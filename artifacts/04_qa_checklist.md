@@ -20,6 +20,7 @@
 - [Ready] Mobile responsiveness is an explicit requirement for the landing and portal-owned surfaces.
 - [Ready] OHIF is treated as a viewer surface, not the primary patient or physician search surface.
 - [Ready] Patient portal study list contract is documented in `artifacts/05_ui_contracts.md`, including fields, sort, filters, actions, and availability states.
+- [Ready] Patient surface is no longer static-only: it already consumes `GET /api/patient/studies` from the backend.
 - [Ready] Physician panel contract is documented in `artifacts/05_ui_contracts.md`, including filters, columns, states, and actions.
 - [Ready] Relational model for patient cache, HIS alternate identifiers, known study UIDs, physician recent searches, and auth/session state is documented in `artifacts/06_data_model.md`.
 - [Ready] API surface defined for health, config, search (SSE), retrieve jobs, cache status.

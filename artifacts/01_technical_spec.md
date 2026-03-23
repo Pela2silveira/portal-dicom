@@ -170,6 +170,7 @@ Proveer un portal operativo mínimo capaz de:
 3. El paciente selecciona un estudio en el portal.
 4. El portal abre OHIF directamente sobre ese estudio.
 5. El paciente no navega la study list nativa de OHIF.
+6. La primera implementación funcional expone `GET /api/patient/studies?document=<dni>` como contrato inicial del portal-owned list.
 
 ### 5.3.2 Flujo futuro de profesional
 1. El profesional ingresa al portal mediante autenticación institucional.

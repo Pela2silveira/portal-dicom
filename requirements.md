@@ -109,6 +109,7 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 * La experiencia debe ser responsive y usable en móvil.
 * El contrato explícito de esta superficie queda definido en `artifacts/05_ui_contracts.md`.
 * En el mock actual del portal, el ingreso de paciente debe aterrizar primero en esta superficie y no redirigir directamente a la home general de OHIF.
+* La primera implementación funcional de esta superficie consume `GET /api/patient/studies?document=<dni>` y renderiza la lista desde datos del backend.
 
 ### 6.1.2 Superficie Médico
 * Panel propio del portal para búsqueda federada y operación.

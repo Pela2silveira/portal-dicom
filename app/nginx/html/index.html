@@ -475,6 +475,14 @@
         font-size: 1rem;
       }
 
+      .workspace-card h4 span {
+        display: block;
+        color: var(--muted);
+        font-size: 0.84rem;
+        font-weight: 400;
+        margin-top: 4px;
+      }
+
       .study-list,
       .result-list {
         display: grid;
@@ -570,6 +578,13 @@
       .filter-grid {
         display: grid;
         gap: 12px;
+      }
+
+      .empty-state {
+        padding: 18px;
+        border: 1px dashed var(--line);
+        background: var(--surface);
+        color: var(--muted);
       }
 
       @media (min-width: 760px) {
@@ -855,7 +870,7 @@
           </div>
           <div class="workspace-grid">
             <section class="workspace-card">
-              <h4>Filtros simples</h4>
+              <h4>Filtros simples<span id="patient-summary">Sin paciente cargado</span></h4>
               <div class="filter-grid">
                 <div class="field-group">
                   <label for="patient-filter-from">Desde</label>
@@ -870,43 +885,15 @@
                   <input id="patient-filter-modality" type="text" value="CT">
                 </div>
               </div>
+              <div class="inline-actions">
+                <button class="action action-secondary" id="patient-apply-filters" type="button">Aplicar filtros</button>
+              </div>
               <p class="help">Superficie mock del portal. En la versión final esta lista se construirá con estudios autorizados por sesión.</p>
             </section>
             <section class="workspace-card">
               <h4>Lista de estudios</h4>
-              <div class="study-list">
-                <article class="study-item">
-                  <div class="item-head">
-                    <div>
-                      <strong>Tomografía de tórax</strong>
-                      <span>18/03/2026</span>
-                    </div>
-                    <div class="chip success">Disponible en cache</div>
-                  </div>
-                  <div class="chip-row">
-                    <div class="chip info">CT</div>
-                    <div class="chip">StudyInstanceUID mock-ct-001</div>
-                  </div>
-                  <div class="inline-actions">
-                    <a class="action action-primary" href="/ohif/">Visualizar estudio</a>
-                  </div>
-                </article>
-                <article class="study-item">
-                  <div class="item-head">
-                    <div>
-                      <strong>Radiografía de tórax</strong>
-                      <span>10/03/2026</span>
-                    </div>
-                    <div class="chip warn">Pendiente retrieve</div>
-                  </div>
-                  <div class="chip-row">
-                    <div class="chip info">CR</div>
-                    <div class="chip">StudyInstanceUID mock-cr-002</div>
-                  </div>
-                  <div class="inline-actions">
-                    <button class="action ghost" type="button">No disponible todavía</button>
-                  </div>
-                </article>
+              <div class="study-list" id="patient-study-list">
+                <div class="empty-state">Ingrese por el flujo paciente para cargar estudios desde la API del portal.</div>
               </div>
             </section>
           </div>
@@ -1012,6 +999,12 @@
       const otpButton = document.getElementById("send-otp");
       const patientDocument = document.getElementById("patient-document");
       const patientOtp = document.getElementById("patient-otp");
+      const patientFilterFrom = document.getElementById("patient-filter-from");
+      const patientFilterTo = document.getElementById("patient-filter-to");
+      const patientFilterModality = document.getElementById("patient-filter-modality");
+      const patientApplyFiltersButton = document.getElementById("patient-apply-filters");
+      const patientStudyList = document.getElementById("patient-study-list");
+      const patientSummary = document.getElementById("patient-summary");
       const otpFeedback = document.getElementById("otp-feedback");
       const patientValidateButton = document.querySelector('[data-flow="patient"] .action-primary');
       const physicianDni = document.getElementById("physician-dni");
@@ -1019,6 +1012,7 @@
       const physicianLoginButton = document.querySelector('[data-flow="physician"] .action-primary');
       const physicianNote = document.querySelector('[data-flow="physician"] .note');
       const resetButtons = document.querySelectorAll("[data-reset]");
+      let activePatientDocument = "";
 
       function activateRole(role) {
         roleButtons.forEach(button => {
@@ -1042,12 +1036,114 @@
         physicianWorkspace.classList.add("hidden");
       }
 
+      function escapeHTML(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      function chipClassForStatus(status) {
+        if (status === "available_local") return "chip success";
+        if (status === "pending_retrieve") return "chip warn";
+        return "chip";
+      }
+
+      function labelForStatus(status) {
+        if (status === "available_local") return "Disponible en cache";
+        if (status === "pending_retrieve") return "Pendiente retrieve";
+        if (status === "unavailable") return "No disponible";
+        return status || "Estado desconocido";
+      }
+
+      function renderPatientStudies(payload) {
+        patientSummary.textContent =
+          payload.patient.full_name + " · DNI " + payload.patient.document_number;
+
+        if (!payload.studies.length) {
+          patientStudyList.innerHTML =
+            '<div class="empty-state">No hay estudios para los filtros seleccionados.</div>';
+          return;
+        }
+
+        patientStudyList.innerHTML = payload.studies
+          .map(study => {
+            const modalities = (study.modalities_in_study || [])
+              .map(modality => '<div class="chip info">' + escapeHTML(modality) + "</div>")
+              .join("");
+
+            const action = study.viewer_url
+              ? '<a class="action action-primary" href="' + escapeHTML(study.viewer_url) + '">Visualizar estudio</a>'
+              : '<button class="action ghost" type="button">No disponible todavía</button>';
+
+            return (
+              '<article class="study-item">' +
+                '<div class="item-head">' +
+                  '<div>' +
+                    '<strong>' + escapeHTML(study.study_description || "Estudio sin descripción") + '</strong>' +
+                    '<span>' + escapeHTML(study.study_date || "Sin fecha") + '</span>' +
+                  '</div>' +
+                  '<div class="' + chipClassForStatus(study.availability_status) + '">' +
+                    escapeHTML(labelForStatus(study.availability_status)) +
+                  '</div>' +
+                '</div>' +
+                '<div class="chip-row">' +
+                  modalities +
+                  '<div class="chip">' + escapeHTML(study.study_instance_uid) + '</div>' +
+                '</div>' +
+                '<div class="inline-actions">' + action + '</div>' +
+              '</article>'
+            );
+          })
+          .join("");
+      }
+
+      async function loadPatientStudies(documentNumber) {
+        activePatientDocument = documentNumber;
+
+        const params = new URLSearchParams({ document: documentNumber });
+        if (patientFilterFrom.value) params.set("date_from", patientFilterFrom.value);
+        if (patientFilterTo.value) params.set("date_to", patientFilterTo.value);
+        if (patientFilterModality.value.trim()) params.set("modality", patientFilterModality.value.trim());
+
+        patientStudyList.innerHTML =
+          '<div class="empty-state">Cargando estudios del paciente...</div>';
+
+        const response = await fetch("/api/patient/studies?" + params.toString(), {
+          headers: { Accept: "application/json" }
+        });
+
+        if (!response.ok) {
+          throw new Error("patient studies request failed");
+        }
+
+        const payload = await response.json();
+        renderPatientStudies(payload);
+      }
+
       roleButtons.forEach(button => {
         button.addEventListener("click", () => activateRole(button.dataset.role));
       });
 
       resetButtons.forEach(button => {
         button.addEventListener("click", resetLanding);
+      });
+
+      patientApplyFiltersButton.addEventListener("click", async () => {
+        if (!activePatientDocument) {
+          patientStudyList.innerHTML =
+            '<div class="empty-state">Ingrese primero por el flujo paciente para aplicar filtros.</div>';
+          return;
+        }
+
+        try {
+          await loadPatientStudies(activePatientDocument);
+        } catch (error) {
+          patientStudyList.innerHTML =
+            '<div class="empty-state">No se pudieron cargar los estudios del paciente.</div>';
+        }
       });
 
       otpButton.addEventListener("click", () => {
@@ -1090,8 +1186,15 @@
           documentValue +
           ". Abriendo la superficie de estudios del paciente...";
 
-        window.setTimeout(() => {
+        window.setTimeout(async () => {
           showWorkspace("patient");
+          try {
+            await loadPatientStudies(documentValue);
+          } catch (error) {
+            patientSummary.textContent = "Paciente " + documentValue;
+            patientStudyList.innerHTML =
+              '<div class="empty-state">No se pudieron cargar los estudios autorizados.</div>';
+          }
         }, 700);
       });
 

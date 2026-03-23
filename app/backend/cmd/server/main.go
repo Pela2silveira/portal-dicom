@@ -48,6 +48,36 @@ type HealthResponse struct {
 	ConfigPath string `json:"config_path"`
 }
 
+type PatientStudiesResponse struct {
+	DocumentNumber string               `json:"document_number"`
+	Patient        PatientSummary       `json:"patient"`
+	Filters        PatientStudiesFilter `json:"filters"`
+	Studies        []PatientStudy       `json:"studies"`
+}
+
+type PatientSummary struct {
+	ID             string `json:"id"`
+	DocumentType   string `json:"document_type"`
+	DocumentNumber string `json:"document_number"`
+	FullName       string `json:"full_name"`
+}
+
+type PatientStudiesFilter struct {
+	DateFrom string `json:"date_from,omitempty"`
+	DateTo   string `json:"date_to,omitempty"`
+	Modality string `json:"modality,omitempty"`
+}
+
+type PatientStudy struct {
+	StudyInstanceUID   string   `json:"study_instance_uid"`
+	StudyDate          string   `json:"study_date"`
+	StudyDescription   string   `json:"study_description"`
+	ModalitiesInStudy  []string `json:"modalities_in_study"`
+	AvailabilityStatus string   `json:"availability_status"`
+	AuthorizationBasis string   `json:"authorization_basis"`
+	ViewerURL          string   `json:"viewer_url,omitempty"`
+}
+
 type ConfigResponse struct {
 	AppEnv     string             `json:"app_env"`
 	ConfigPath string             `json:"config_path"`
@@ -196,6 +226,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", app.handleHealth)
 	mux.HandleFunc("/api/config", app.handleConfig(appliedMigrations))
+	mux.HandleFunc("/api/patient/studies", app.handlePatientStudies)
 
 	app.log("info", "server_starting", map[string]any{
 		"listen_addr":        cfg.ListenAddr,
@@ -314,6 +345,59 @@ func (a *App) handleConfig(appliedMigrations []string) http.HandlerFunc {
 	}
 }
 
+func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	documentNumber := strings.TrimSpace(r.URL.Query().Get("document"))
+	if documentNumber == "" {
+		http.Error(w, "missing required query param: document", http.StatusBadRequest)
+		return
+	}
+
+	filters := PatientStudiesFilter{
+		DateFrom: strings.TrimSpace(r.URL.Query().Get("date_from")),
+		DateTo:   strings.TrimSpace(r.URL.Query().Get("date_to")),
+		Modality: strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("modality"))),
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	patient, err := a.ensurePatientSeed(ctx, documentNumber)
+	if err != nil {
+		a.log("error", "patient_seed_failed", map[string]any{
+			"document_number": documentNumber,
+			"error":           err.Error(),
+		})
+		http.Error(w, "failed to prepare patient studies", http.StatusInternalServerError)
+		return
+	}
+
+	studies, err := a.listPatientStudies(ctx, patient.ID, filters)
+	if err != nil {
+		a.log("error", "patient_studies_query_failed", map[string]any{
+			"document_number": documentNumber,
+			"patient_id":      patient.ID,
+			"error":           err.Error(),
+		})
+		http.Error(w, "failed to query patient studies", http.StatusInternalServerError)
+		return
+	}
+
+	resp := PatientStudiesResponse{
+		DocumentNumber: documentNumber,
+		Patient:        patient,
+		Filters:        filters,
+		Studies:        studies,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 func (a *App) checkDB(ctx context.Context) bool {
 	if err := a.db.PingContext(ctx); err != nil {
 		a.log("error", "db_ping_failed", map[string]any{"error": err.Error()})
@@ -376,6 +460,198 @@ func loadExternalConfig(path string) (*ExternalConfig, error) {
 	}
 
 	return &cfg, nil
+}
+
+func (a *App) ensurePatientSeed(ctx context.Context, documentNumber string) (PatientSummary, error) {
+	var patient PatientSummary
+
+	err := a.db.QueryRowContext(ctx, `
+		INSERT INTO patients (document_type, document_number, full_name, last_login_at, updated_at)
+		VALUES ('dni', $1, $2, now(), now())
+		ON CONFLICT (document_type, document_number) DO UPDATE SET
+			last_login_at = now(),
+			updated_at = now()
+		RETURNING id::text, document_type, document_number, COALESCE(full_name, '')
+	`,
+		documentNumber,
+		"Paciente "+documentNumber,
+	).Scan(&patient.ID, &patient.DocumentType, &patient.DocumentNumber, &patient.FullName)
+	if err != nil {
+		return PatientSummary{}, fmt.Errorf("upsert patient: %w", err)
+	}
+
+	if _, err := a.db.ExecContext(ctx, `
+		INSERT INTO patient_identifiers (
+			patient_id, source_system, identifier_type, identifier_value, is_primary, last_verified_at, metadata_json, updated_at
+		) VALUES (
+			$1::uuid, 'landing_mock', 'document_number', $2, true, now(), '{}'::jsonb, now()
+		)
+		ON CONFLICT (source_system, identifier_type, identifier_value) DO UPDATE SET
+			patient_id = EXCLUDED.patient_id,
+			is_primary = true,
+			last_verified_at = now(),
+			updated_at = now()
+	`,
+		patient.ID,
+		documentNumber,
+	); err != nil {
+		return PatientSummary{}, fmt.Errorf("upsert patient identifier: %w", err)
+	}
+
+	seedRows := []struct {
+		StudyUID            string
+		AuthorizationBasis  string
+		AvailabilityStatus  string
+		LocalOrthancStudyID sql.NullString
+		Metadata            map[string]any
+	}{
+		{
+			StudyUID:           fmt.Sprintf("1.2.826.0.1.3680043.10.54321.%s.1", documentNumber),
+			AuthorizationBasis: "patient_document_match",
+			AvailabilityStatus: "available_local",
+			LocalOrthancStudyID: sql.NullString{
+				String: "mock-local-" + documentNumber + "-001",
+				Valid:  true,
+			},
+			Metadata: map[string]any{
+				"study_date":          "2026-03-18",
+				"study_description":   "Tomografia de torax",
+				"modalities_in_study": []string{"CT"},
+			},
+		},
+		{
+			StudyUID:           fmt.Sprintf("1.2.826.0.1.3680043.10.54321.%s.2", documentNumber),
+			AuthorizationBasis: "patient_document_match",
+			AvailabilityStatus: "pending_retrieve",
+			Metadata: map[string]any{
+				"study_date":          "2026-03-10",
+				"study_description":   "Radiografia de torax",
+				"modalities_in_study": []string{"CR"},
+			},
+		},
+	}
+
+	for _, row := range seedRows {
+		sourceJSON, err := json.Marshal(row.Metadata)
+		if err != nil {
+			return PatientSummary{}, fmt.Errorf("marshal patient study seed: %w", err)
+		}
+
+		if _, err := a.db.ExecContext(ctx, `
+			INSERT INTO patient_study_access (
+				patient_id, study_instance_uid, authorization_basis, availability_status,
+				local_orthanc_study_id, first_seen_at, last_seen_at, last_authorized_at, source_json
+			) VALUES (
+				$1::uuid, $2, $3, $4, $5, now(), now(), now(), $6::jsonb
+			)
+			ON CONFLICT (patient_id, study_instance_uid) DO UPDATE SET
+				authorization_basis = EXCLUDED.authorization_basis,
+				availability_status = EXCLUDED.availability_status,
+				local_orthanc_study_id = EXCLUDED.local_orthanc_study_id,
+				last_seen_at = now(),
+				last_authorized_at = now(),
+				source_json = EXCLUDED.source_json
+		`,
+			patient.ID,
+			row.StudyUID,
+			row.AuthorizationBasis,
+			row.AvailabilityStatus,
+			row.LocalOrthancStudyID,
+			string(sourceJSON),
+		); err != nil {
+			return PatientSummary{}, fmt.Errorf("upsert patient study access: %w", err)
+		}
+	}
+
+	return patient, nil
+}
+
+func (a *App) listPatientStudies(ctx context.Context, patientID string, filters PatientStudiesFilter) ([]PatientStudy, error) {
+	query := `
+		SELECT
+			study_instance_uid,
+			availability_status,
+			authorization_basis,
+			source_json
+		FROM patient_study_access
+		WHERE patient_id = $1::uuid
+	`
+
+	args := []any{patientID}
+	position := 2
+
+	if filters.DateFrom != "" {
+		query += fmt.Sprintf(` AND COALESCE(source_json->>'study_date', '') >= $%d`, position)
+		args = append(args, filters.DateFrom)
+		position++
+	}
+	if filters.DateTo != "" {
+		query += fmt.Sprintf(` AND COALESCE(source_json->>'study_date', '') <= $%d`, position)
+		args = append(args, filters.DateTo)
+		position++
+	}
+	if filters.Modality != "" {
+		query += fmt.Sprintf(` AND EXISTS (
+			SELECT 1
+			FROM jsonb_array_elements_text(COALESCE(source_json->'modalities_in_study', '[]'::jsonb)) AS modality
+			WHERE UPPER(modality) = $%d
+		)`, position)
+		args = append(args, filters.Modality)
+		position++
+	}
+
+	query += ` ORDER BY COALESCE(source_json->>'study_date', '') DESC, study_instance_uid ASC`
+
+	rows, err := a.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	studies := make([]PatientStudy, 0)
+	for rows.Next() {
+		var (
+			studyUID            string
+			availabilityStatus  string
+			authorizationBasis  string
+			sourceJSONRaw       []byte
+		)
+
+		if err := rows.Scan(&studyUID, &availabilityStatus, &authorizationBasis, &sourceJSONRaw); err != nil {
+			return nil, err
+		}
+
+		var source struct {
+			StudyDate         string   `json:"study_date"`
+			StudyDescription  string   `json:"study_description"`
+			ModalitiesInStudy []string `json:"modalities_in_study"`
+		}
+		if len(sourceJSONRaw) > 0 {
+			if err := json.Unmarshal(sourceJSONRaw, &source); err != nil {
+				return nil, fmt.Errorf("parse patient study source_json: %w", err)
+			}
+		}
+
+		study := PatientStudy{
+			StudyInstanceUID:   studyUID,
+			StudyDate:          source.StudyDate,
+			StudyDescription:   source.StudyDescription,
+			ModalitiesInStudy:  source.ModalitiesInStudy,
+			AvailabilityStatus: availabilityStatus,
+			AuthorizationBasis: authorizationBasis,
+		}
+		if availabilityStatus == "available_local" {
+			study.ViewerURL = "/ohif/"
+		}
+
+		studies = append(studies, study)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return studies, nil
 }
 
 func validateExternalConfig(cfg ExternalConfig) error {

@@ -34,6 +34,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - OHIF is a viewer surface, not the primary search or access surface.
 - Patient access must use a portal-owned study list filtered to authorized patient studies.
 - Patient access must not rely on the native OHIF study list.
+- The patient mock surface is now backed by `GET /api/patient/studies`, with DB-seeded sample rows per DNI until real HIS-driven authorization is implemented.
 - Physician access must use a portal-owned search and workflow panel.
 - Physician workflow should be asynchronous and must expose remote PACS context, local cache presence, and retrieve state before opening OHIF.
 - The database must cache patient identity anchors, alternate identifiers from HIS, known authorized study UIDs, physician recent searches, and future session state.

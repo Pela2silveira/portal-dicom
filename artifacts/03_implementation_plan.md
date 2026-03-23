@@ -171,6 +171,7 @@
   - endpoint backend para `patient studies`
   - lista propia del portal con estudios autorizados
   - apertura puntual en OHIF
+  - primer slice funcional con datos sembrados por DNI hasta integrar autorización real
 - Physician surface:
   - endpoint/backend para búsqueda federada
   - lista con nodos remotos, disponibilidad local, estado de retrieve y acciones
