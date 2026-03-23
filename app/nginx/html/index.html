@@ -915,7 +915,7 @@
               <div class="filter-grid">
                 <div class="field-group">
                   <label for="physician-search-patient">Paciente</label>
-                  <input id="physician-search-patient" type="text" value="Perez Juan">
+                  <input id="physician-search-patient" type="text" value="">
                 </div>
                 <div class="field-group">
                   <label for="physician-search-from">Desde</label>
@@ -927,14 +927,14 @@
                 </div>
                 <div class="field-group">
                   <label for="physician-search-modality">Modalidad</label>
-                  <input id="physician-search-modality" type="text" value="MR">
+                  <input id="physician-search-modality" type="text" value="">
                 </div>
               </div>
               <div class="inline-actions">
                 <button class="action action-secondary" id="physician-apply-filters" type="button">Aplicar búsqueda</button>
               </div>
               <div class="note note-neutral">
-                Panel mock del portal. La búsqueda real será asíncrona y mostrará nodos remotos, cache local y estado de retrieve.
+                Panel inicial del portal. La siguiente etapa reemplaza estos resultados persistidos por búsqueda federada remota en tiempo real.
               </div>
             </section>
             <section class="workspace-card">
@@ -1077,12 +1077,14 @@
         if (status === "done") return "Retrieve done";
         if (status === "running") return "Retrieve running";
         if (status === "queued") return "Retrieve queued";
+        if (status === "failed") return "Retrieve failed";
         return status || "Estado desconocido";
       }
 
       function chipClassForRetrieve(status) {
         if (status === "done") return "chip success";
         if (status === "running" || status === "queued") return "chip warn";
+        if (status === "failed") return "chip";
         return "chip";
       }
 
@@ -1112,9 +1114,14 @@
             const action = result.viewer_url
               ? '<a class="action action-primary" href="' + escapeHTML(result.viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar</a>'
               : '<button class="action ghost" type="button">Visualizar cuando esté listo</button>';
-            const retrieveAction = result.retrieve_status === "done" && result.viewer_url
-              ? '<button class="action action-secondary" type="button" disabled>Retrieve listo</button>'
-              : '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '">Retrieve</button>';
+            let retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '">Retrieve</button>';
+            if (result.retrieve_status === "done" && result.viewer_url) {
+              retrieveAction = '<button class="action action-secondary" type="button" disabled>Retrieve listo</button>';
+            } else if (result.retrieve_status === "running" || result.retrieve_status === "queued") {
+              retrieveAction = '<button class="action action-secondary" type="button" disabled>Retrieve en curso</button>';
+            } else if (result.retrieve_status === "failed") {
+              retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '">Reintentar retrieve</button>';
+            }
 
             return (
               '<article class="result-item">' +

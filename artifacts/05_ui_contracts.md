@@ -124,6 +124,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - `date_from`
 - `date_to`
 - `modalities`
+- filters should start empty by default in the current portal UX
 
 ### Result Columns
 
@@ -163,6 +164,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 
 - `Buscar`
 - `Retrieve`
+- `Reintentar retrieve` when the latest retrieve status is `failed`
 - `Visualizar` only when the study is available in local Orthanc
 
 ### Visualizar Enablement Rule
