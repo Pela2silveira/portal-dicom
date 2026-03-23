@@ -153,11 +153,16 @@ Proveer un portal operativo mínimo capaz de:
 2. Backend crea un `retrieve_job` en Postgres (`queued`).
 3. Worker ejecuta:
    - Si nodo soporta DICOMweb retrieve directo (no estándar), ignorar en MVP.
-   - Ejecutar **C-MOVE** (o C-GET) desde PACS remoto hacia Orthanc.
+   - Ejecutar **C-MOVE** o **C-GET** entre PACS remoto y Orthanc.
 4. Backend monitorea estado:
-   - Por eventos/logs del comando (dcmtk) **y/o**
+   - Por respuesta del mecanismo de orquestación en Orthanc **y/o**
    - Polling de Orthanc: verificar que el estudio aparezca completo (ver §8).
 5. Al completar: `retrieve_job=done`, el UI habilita “Visualizar”.
+
+**Principio de implementación**
+- El movimiento real del estudio ocurre PACS↔PACS.
+- Orthanc es el PACS local que inicia o recibe el retrieve según el mecanismo.
+- El backend coordina por API y persistencia, pero no debe convertirse en proxy del payload DICOM.
 
 ### 5.3 Visualizar (OHIF)
 1. UI abre URL de OHIF con `StudyInstanceUID` o con route de OHIF configurada.

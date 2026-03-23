@@ -77,6 +77,9 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 * **Botón "Retrieve":** Dispara un comando `C-MOVE` o `C-GET` desde el PACS remoto seleccionado hacia el **PACS Local (Orthanc)**.
 * **MVP:** El retrieve se dispara manualmente o mediante endpoint interno controlado por backend.
 * **Fase posterior:** Para pacientes, el sistema dispara automáticamente el retrieve de los estudios de los últimos 30 días tras un login exitoso.
+* **Principio de implementación:** el intercambio real de estudios debe ocurrir entre PACS, con Orthanc actuando como PACS local y par DICOM/DICOMweb de los nodos remotos.
+* **Backend:** coordina, dispara y monitorea el retrieve, pero no debe transformarse en proxy del payload DICOM como camino normal de transferencia.
+* **Legacy o REST:** mientras no aparezca una limitación concreta, los intercambios de estudios deben resolverse como comunicación PACS↔PACS entre Orthanc y los remotos, ya sea por DIMSE legacy o por mecanismos DICOM REST del producto remoto.
 
 ### 5.2 PACS Local (Caché)
 * **Tecnología:** Orthanc (Ligero, API REST potente).

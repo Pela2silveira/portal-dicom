@@ -73,11 +73,11 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Backend and database logs must minimize PHI; avoid storing patient names and DNI in integration logs unless strictly required for operation.
 - Operational tables such as audit and search execution records should be cleaned up automatically with a default retention of 30 days.
 - Orthanc cache retention remains 7 days.
-- DIMSE tooling for MVP should live in the backend container to keep the first Compose stack simpler.
 - HTTP only on localhost is acceptable for the MVP; TLS is deferred to staging or on-prem deployment.
 - Orthanc DICOM port `4242` is published in local development environments where remote PACS reachability is required for `C-MOVE`.
 - Orthanc direct HTTP and DICOM host ports should default to localhost binding in local development when possible.
-- `dcmtk` is the accepted DIMSE tooling choice for the MVP backend container.
+- Study transfer architecture is PACS-to-PACS: Orthanc and remote PACS exchange studies directly, and the backend only orchestrates and observes the workflow.
+- The same PACS-to-PACS rule applies to legacy DICOM and DICOM REST study exchange unless a concrete product limitation forces a different path.
 - The SSE contract uses event types `node_started`, `study`, `node_finished`, `error`, and `done`.
 - SSE allows interleaved cross-node events, but event ordering must be preserved per node.
 - Each search stream must emit exactly one terminal `done` event.
@@ -95,7 +95,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Confirmation of the exact auth flow for Andes in the target environment.
 
 ## Questions To Revisit During Spec
-- Which exact Orthanc REST endpoints and payloads will be used for `C-GET` orchestration in the implementation.
+- Which exact Orthanc REST endpoints and payloads will be used for retrieve orchestration (`C-MOVE` / `C-GET`) in the implementation.
 
 ## Notes For Agents
 - Prefer pragmatic, secure defaults.

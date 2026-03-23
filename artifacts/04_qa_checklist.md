@@ -39,8 +39,8 @@
 - [Needs Decision] Provide real integration inputs for at least one remote node: dcm4chee hostname(s), DICOMweb base URL, Keycloak token URL/realm, `client_id`, and how secrets are mounted in the compose environment.
 - [Ready] Remote DIMSE basics captured (initial node AE Title `PACSHPN`, port `11112`, supports C-MOVE).
 - [Needs Decision] DIMSE network topology confirmation: remote PACS can reach **local Orthanc** as Move SCP on `4242` (routing/NAT/firewall/VPN specifics).
-- [Missing] Decide and document DIMSE toolchain inside backend container (dcmtk binaries + exact commands, exit-code mapping, and log parsing strategy).
-- [Needs Decision] Orthanc REST orchestration for C-GET: exact endpoints/payloads to trigger C-GET and expected responses (blocking for Milestone 5).
+- [Ready] Retrieve architecture principle is explicit: study transfer is PACS-to-PACS (Orthanc ↔ remoto), while the backend only orchestrates and observes.
+- [Needs Decision] Orthanc REST orchestration for retrieve (`C-MOVE` / `C-GET`): exact endpoints/payloads and expected responses.
 - [Ready] OHIF consumes only local Orthanc via `/dicom-web` proxied by Nginx, with `/dicomweb` retained only as compatibility alias if needed.
 - [Ready] OHIF image is pinned (`ohif/app:v3.11.1`) instead of using `latest`.
 - [Missing] Final OHIF mode configuration for actor-specific flows (study list disabled for patient and physician surfaces once portal-owned lists exist).
@@ -62,9 +62,9 @@
 ## Minimum Decisions Needed Before Coding
 1. **Nginx DICOMweb allowlist**: confirm the exact Orthanc DICOMweb paths OHIF needs (to implement allow/deny + negative tests).
 2. **DIMSE reachability**: confirm whether remote PACS can reach local Orthanc `AE/host/port` for C-MOVE in the target MVP environment (firewall/NAT/VPN specifics).
-3. **C-GET orchestration contract**: confirm the exact Orthanc REST endpoints/payloads to initiate C-GET (and required Orthanc config for remote modalities).
+3. **Retrieve orchestration contract**: confirm the exact Orthanc REST endpoints/payloads to initiate `C-MOVE` / `C-GET` (and required Orthanc config for remote modalities).
 4. **Integration credentials delivery**: provide Keycloak token endpoint/realm + dcm4chee DICOMweb base URL(s) + how `client_id/client_secret` are supplied (env vs mounted file) for dev/testing.
-5. **Tooling choice for DIMSE**: confirm dcmtk is acceptable inside the backend container (package source/version) and whether any licensing/compliance constraints apply.
+5. **Orthanc retrieve contract**: confirm how remote PACS nodes must be registered in Orthanc and which REST payloads are needed to trigger retrieve.
 6. **SSE contract finalization**: confirm event types/payload fields and client retry behavior (so UI + backend + tests align).
 7. **Future auth contract for physicians**: confirm the provincial LDAP integration boundary and MFA factor type to avoid later UX rework in the public landing.
 8. **Patient study-list contract**: confirm what exact metadata and filtering the patient list should expose.

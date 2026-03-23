@@ -112,7 +112,7 @@
 - Scheduler/worker:
   - cola persistida en `retrieve_jobs` (`queued→running→done/failed`)
   - ejecución de retrieve por nodo:
-    - **C-MOVE**: usar tooling DIMSE (dcmtk) dentro del contenedor backend
+    - **C-MOVE**: orquestado para que el intercambio ocurra entre PACS remoto y Orthanc local
     - destino: Orthanc local (AE/host/port configurables)
   - completitud:
     - polling Orthanc por `StudyInstanceUID`
@@ -144,11 +144,12 @@
 - Implementación C-GET:
   - backend llama Orthanc REST para iniciar retrieve hacia remoto (Orthanc como SCU).
   - reutiliza mismo polling de completitud.
+  - mantiene el principio PACS↔PACS: Orthanc habla con el remoto y el backend solo coordina.
 - `GET /api/cache/studies/{study_instance_uid}`:
   - `present`, `orthanc_study_id` y timestamps (si hay index)
 - Robustez:
   - manejo de reintentos (mínimo: 1 retry configurable)
-  - parsing de errores dcmtk/Orthanc y persistencia en `retrieve_jobs.error`
+  - parsing de errores de Orthanc y persistencia en `retrieve_jobs.error`
 
 **Dependencies**
 - Milestone 4 (jobs + polling ya implementados).
