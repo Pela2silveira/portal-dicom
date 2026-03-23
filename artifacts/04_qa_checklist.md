@@ -47,6 +47,7 @@
 - [Needs Decision] DIMSE network topology confirmation: remote PACS can reach **local Orthanc** as Move SCP on `4242` (routing/NAT/firewall/VPN specifics).
 - [Ready] Retrieve architecture principle is explicit: study transfer is PACS-to-PACS (Orthanc ↔ remoto), while the backend only orchestrates and observes.
 - [Ready] First Orthanc REST retrieve contract is implemented for patient `C-GET`: `PUT /modalities/{id}` + `POST /modalities/{id}/get`, followed by Orthanc polling on `StudyInstanceUID`.
+- [Ready] The Orthanc `C-GET` trigger no longer uses the backend's short default HTTP timeout; it relies on the retrieve request deadline instead.
 - [Ready] OHIF consumes only local Orthanc via `/dicom-web` proxied by Nginx, with `/dicomweb` retained only as compatibility alias if needed.
 - [Ready] OHIF image is pinned (`ohif/app:v3.11.1`) instead of using `latest`.
 - [Ready] Current portal handoff to OHIF uses a per-study viewer route with `StudyInstanceUID`, avoiding the general study list in the patient flow.

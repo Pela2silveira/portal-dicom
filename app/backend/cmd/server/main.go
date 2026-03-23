@@ -1393,7 +1393,8 @@ func (a *App) startOrthancCGet(ctx context.Context, node PACSNodeConfig, studyIn
 		req.SetBasicAuth(a.cfg.OrthancUser, a.cfg.OrthancPass)
 	}
 
-	res, err := a.httpClient.Do(req)
+	orthancRetrieveClient := &http.Client{}
+	res, err := orthancRetrieveClient.Do(req)
 	if err != nil {
 		return err
 	}
