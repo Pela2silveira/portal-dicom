@@ -829,7 +829,7 @@ func (a *App) performPatientRetrieve(ctx context.Context, patient PatientSummary
 		JobID:            jobID,
 		StudyInstanceUID: studyInstanceUID,
 		Status:           "done",
-		ViewerURL:        "/ohif/",
+		ViewerURL:        buildOHIFViewerURL(studyInstanceUID),
 	}, nil
 }
 
@@ -909,7 +909,7 @@ func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConf
 		}
 		if cached {
 			study.AvailabilityStatus = "available_local"
-			study.ViewerURL = "/ohif/"
+			study.ViewerURL = buildOHIFViewerURL(studyUID)
 		}
 
 		if patientName == "" {
@@ -1493,7 +1493,7 @@ func (a *App) listPatientStudies(ctx context.Context, patientID string, filters 
 			AuthorizationBasis: authorizationBasis,
 		}
 		if availabilityStatus == "available_local" {
-			study.ViewerURL = "/ohif/"
+			study.ViewerURL = buildOHIFViewerURL(studyUID)
 		}
 
 		studies = append(studies, study)
@@ -1590,7 +1590,7 @@ func (a *App) listPhysicianResults(ctx context.Context, physicianID string, filt
 				PartialFilter:    item.PartialFilter,
 			}
 			if item.RetrieveStatus == "done" || item.CacheStatus == "local_complete" {
-				result.ViewerURL = "/ohif/"
+				result.ViewerURL = buildOHIFViewerURL(item.StudyInstanceUID)
 			}
 
 			results = append(results, result)
@@ -1620,6 +1620,10 @@ func digitsOnly(value string) string {
 		}
 	}
 	return out.String()
+}
+
+func buildOHIFViewerURL(studyInstanceUID string) string {
+	return "/ohif/viewer?StudyInstanceUIDs=" + url.QueryEscape(strings.TrimSpace(studyInstanceUID))
 }
 
 func validateExternalConfig(cfg ExternalConfig) error {

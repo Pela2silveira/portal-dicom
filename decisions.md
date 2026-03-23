@@ -37,6 +37,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The patient surface is now backed by `GET /api/patient/studies`, and its initial load performs `QIDO-RS /studies?PatientID=<dni>` against the single configured PACS node, persisting the synchronized rows in Postgres.
 - The patient surface now exposes a manual `Retrieve` action backed by `POST /api/patient/retrieve`.
 - The current patient retrieve implementation uses Orthanc REST to `PUT /modalities/{id}` and `POST /modalities/{id}/get`, polling Orthanc until the study becomes local.
+- The current viewer handoff must open OHIF with a specific `StudyInstanceUID` instead of `/ohif/` root, so patient access does not land on the general study list after retrieve.
 - Physician access must use a portal-owned search and workflow panel.
 - Physician workflow should be asynchronous and must expose remote PACS context, local cache presence, and retrieve state before opening OHIF.
 - The first functional physician panel is now backed by `GET /api/physician/results`, with DB-seeded recent-query rows per username until real federated search is implemented.

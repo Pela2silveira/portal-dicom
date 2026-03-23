@@ -96,6 +96,7 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 * **Aislamiento:** El visor no conoce la existencia de los PACS remotos, solo interactúa con el caché.
 * **Ruta de publicación:** OHIF se publica bajo `/ohif/` y consume el DICOMweb local bajo `/dicom-web/`.
 * **Rol del visor:** OHIF debe comportarse como visor puntual de estudios/series autorizados, no como superficie principal de búsqueda o navegación.
+* **Handoff actual al visor:** el portal debe abrir OHIF con `StudyInstanceUID` explícito para evitar que el paciente caiga en la study list general.
 * **Listado de estudios:** la study list nativa de OHIF es una decisión de UX y no debe considerarse un mecanismo de restricción de acceso.
 * **Pacientes:** no deben usar la study list nativa de OHIF. Deben ver una lista propia del portal con sus estudios autorizados.
 * **Médicos:** no deben depender de la study list nativa de OHIF como workflow principal. Deben usar un panel propio del portal con búsqueda, estado federado y retrieve.

@@ -44,6 +44,7 @@
 - [Ready] First Orthanc REST retrieve contract is implemented for patient `C-GET`: `PUT /modalities/{id}` + `POST /modalities/{id}/get`, followed by Orthanc polling on `StudyInstanceUID`.
 - [Ready] OHIF consumes only local Orthanc via `/dicom-web` proxied by Nginx, with `/dicomweb` retained only as compatibility alias if needed.
 - [Ready] OHIF image is pinned (`ohif/app:v3.11.1`) instead of using `latest`.
+- [Ready] Current portal handoff to OHIF uses a per-study viewer route with `StudyInstanceUID`, avoiding the general study list in the patient flow.
 - [Missing] Final OHIF mode configuration for actor-specific flows (study list disabled for patient and physician surfaces once portal-owned lists exist).
 - [Missing] OHIF configuration artifact committed/templated for environment-specific base URLs and routes (and validated that no remote DICOMweb endpoints can be configured).
 - [Ready] Future access-control requirement is explicit: backend/proxy must validate active session + allowed `StudyInstanceUID` for viewer/image access; hidden OHIF UI is not sufficient.

@@ -174,6 +174,7 @@ Proveer un portal operativo mínimo capaz de:
 1. UI abre URL de OHIF con `StudyInstanceUID` o con route de OHIF configurada.
 2. OHIF consulta QIDO/WADO contra `nginx -> orthanc`.
 3. Orthanc sirve instancias desde caché local.
+4. El handoff actual del portal usa `GET /ohif/viewer?StudyInstanceUIDs=<uid>` para evitar caer en la study list general.
 
 ### 5.3.1 Flujo futuro de paciente
 1. El portal valida identidad del paciente.
