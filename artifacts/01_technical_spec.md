@@ -375,6 +375,31 @@ Problema: Orthanc puede recibir instancias progresivamente.
   - `data_json`
   - `created_at`
 
+### 10.1.1 Extensión del modelo para portal y futuras sesiones
+- `patients`
+  - ancla local por `document_type + document_number`
+  - cache de identidad básica y timestamps de sincronización/login
+- `patient_identifiers`
+  - identificadores alternativos resueltos desde HIS u otros dominios
+- `patient_sessions`
+  - estado de sesión y verificación OTP futura
+- `patient_study_access`
+  - lista autorizada de `StudyInstanceUID` por paciente para la superficie propia del portal
+- `physicians`
+  - identidad local del profesional
+- `physician_sessions`
+  - estado de sesión y MFA futura
+- `physician_recent_queries`
+  - cache de búsquedas recientes del profesional
+- `auth_events`
+  - metadatos de autenticación, sin contraseñas en claro
+- `auth_material_cache`
+  - material cifrado emitido por proveedor cuando aplique; no se usa para copiar passwords
+
+### 10.1.2 Referencia de diseño
+- El contrato detallado del modelo queda en `artifacts/06_data_model.md`.
+- La baseline SQL inicial queda en `app/backend/migrations/001_initial_schema.sql`.
+
 ### 10.2 Migraciones
 - Usar migraciones versionadas (golang-migrate o similar).
 - Acceptance: `docker compose up` crea esquema automáticamente (init + migrate).

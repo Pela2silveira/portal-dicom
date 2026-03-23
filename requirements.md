@@ -196,6 +196,8 @@ El sistema debe estar preparado para recibir por configuración:
 * Registro técnico de consultas, retrieves, errores de integración y sincronización.
 * Secretos y credenciales manejados por variables de entorno o archivos de configuración fuera del código.
 * Los archivos de configuración versionados deben contener placeholders o referencias a variables de entorno; los valores locales de runtime no deben commitearse.
+* La base debe poder persistir cache de pacientes, identificadores alternativos provenientes del HIS, estudios conocidos por `StudyInstanceUID`, búsquedas recientes de profesionales y estado de sesión.
+* Las credenciales de médicos no deben almacenarse en claro. Solo pueden persistirse eventos de autenticación, estado de sesión y material de proveedor cifrado cuando exista una necesidad real de integración.
 * La exposición pública del stack debe pasar por Nginx.
 * Los puertos directos de Orthanc deben poder limitarse a `127.0.0.1` para operación local.
 * Para PACS remotos dcm4chee, el backend debe poder obtener un token OAuth2 por `client_credentials` contra Keycloak y reutilizarlo para invocar la API REST del archivo.

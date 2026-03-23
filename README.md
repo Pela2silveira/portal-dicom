@@ -28,6 +28,7 @@ This folder is set up for a human-in-the-loop spec-driven development flow, so y
 - [artifacts/03_implementation_plan.md](artifacts/03_implementation_plan.md)
 - [artifacts/04_qa_checklist.md](artifacts/04_qa_checklist.md)
 - [artifacts/05_ui_contracts.md](artifacts/05_ui_contracts.md)
+- [artifacts/06_data_model.md](artifacts/06_data_model.md)
 
 ## Runtime topology
 

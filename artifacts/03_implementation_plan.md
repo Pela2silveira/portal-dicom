@@ -36,10 +36,14 @@
 
 **Deliverables**
 - Migraciones versionadas (p.ej. golang-migrate):
-  - `pacs_nodes`, `his_config`, `search_requests`, `search_node_runs`, `retrieve_jobs`, `cached_studies`, `integration_audit`
+  - `pacs_nodes`, `his_config`, `patients`, `patient_identifiers`, `patient_sessions`, `patient_study_access`
+  - `physicians`, `physician_sessions`, `physician_recent_queries`, `auth_events`, `auth_material_cache`
+  - `search_requests`, `search_node_runs`, `retrieve_jobs`, `cached_studies`, `integration_audit`
 - Repositorios Go (storage layer) para CRUD mínimo:
   - read config (`pacs_nodes`, `his_config`)
   - create/update `search_requests`, `search_node_runs`, `retrieve_jobs`, audit
+  - upsert de identidad paciente, identificadores alternativos y estudios autorizados
+  - persistencia de búsquedas recientes y sesiones de profesional
 - Loader de `CONFIG_PATH` (JSON) al arranque:
   - upsert de `pacs_nodes` y `his_config`
   - validación de schema + “secret_ref resolution” desde env o archivo montado
@@ -52,6 +56,7 @@
 - Arranque del backend ejecuta migraciones automáticamente.
 - Cambiar `config.json` (p.ej. nombre/priority de nodo) se refleja en `GET /api/config`.
 - Logs y `integration_audit` no incluyen `client_secret` ni tokens (verificación manual en logs + DB).
+- Contraseñas de médicos y OTPs no se persisten en claro en ninguna tabla.
 
 ---
 

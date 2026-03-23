@@ -7,6 +7,7 @@
 - [Missing] Nginx **explicit allowlist** of DICOMweb paths required by OHIF, with explicit deny for Orthanc admin REST (confirm exact path list and add negative tests).
 - [Missing] Nginx proxy hardening defaults: timeouts, max body size, upstream keepalive, request buffering behavior for SSE, and basic security headers (even on LAN/VPN).
 - [Ready] Secrets not stored in images/repo; configuration uses `*_secret_ref` resolved from env/file.
+- [Ready] The database model forbids storing physician passwords in clear text; only session state, auth events, and encrypted provider-issued auth material are allowed.
 - [Missing] Backend log redaction policy implemented and tested (no `client_secret`, no bearer tokens; minimize PHI in logs/audit).
 - [Missing] CORS policy at Nginx/backend for UI/OHIF origins (even if same-origin, document and enforce).
 - [Needs Decision] Whether Orthanc DICOM port `4242` must be published in *all* environments or only where remote PACS reachability exists (impacts exposure and firewall rules).
@@ -20,6 +21,7 @@
 - [Ready] OHIF is treated as a viewer surface, not the primary patient or physician search surface.
 - [Ready] Patient portal study list contract is documented in `artifacts/05_ui_contracts.md`, including fields, sort, filters, actions, and availability states.
 - [Ready] Physician panel contract is documented in `artifacts/05_ui_contracts.md`, including filters, columns, states, and actions.
+- [Ready] Relational model for patient cache, HIS alternate identifiers, known study UIDs, physician recent searches, and auth/session state is documented in `artifacts/06_data_model.md`.
 - [Ready] API surface defined for health, config, search (SSE), retrieve jobs, cache status.
 - [Ready] Search streaming uses SSE (not WS); UI renders incremental results.
 - [Missing] Concrete SSE event schema contract (field names, ordering guarantees, retry behavior, terminal `done`, and error payload structure).
