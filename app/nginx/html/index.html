@@ -108,12 +108,12 @@
       .hero {
         display: grid;
         gap: 20px;
+        justify-content: center;
       }
 
       @media (min-width: 960px) {
         .hero {
-          grid-template-columns: 0.78fr 1.22fr;
-          align-items: start;
+          grid-template-columns: minmax(0, 720px);
         }
       }
 
@@ -125,61 +125,13 @@
         min-width: 0;
       }
 
-      .intro {
-        padding: 28px 30px 26px;
-        overflow: hidden;
-        position: relative;
-        background:
-          linear-gradient(135deg, rgba(0, 39, 56, 0.98), rgba(0, 39, 56, 0.92)),
-          linear-gradient(135deg, var(--accent-dark), var(--accent));
-        color: #ffffff;
-      }
-
-      .intro::after {
-        content: "";
-        position: absolute;
-        right: -60px;
-        bottom: -70px;
-        width: 240px;
-        height: 240px;
-        border-radius: 50%;
-        background: radial-gradient(circle, rgba(0, 168, 224, 0.22), transparent 68%);
-        pointer-events: none;
-      }
-
-      .intro h2 {
-        margin: 0 0 14px;
-        font-size: clamp(1.9rem, 4.5vw, 3.35rem);
-        line-height: 0.94;
-        letter-spacing: -0.05em;
-      }
-
-      .intro p {
-        margin: 0 0 18px;
-        max-width: 44rem;
-        color: rgba(255, 255, 255, 0.82);
-        font-size: 1rem;
-      }
-
-      .intro-focus {
-        margin-top: 18px;
-        padding: 18px 18px 16px;
-        border-radius: 0;
-        border: 1px solid rgba(255, 255, 255, 0.14);
-        background: rgba(255, 255, 255, 0.08);
-      }
-
-      .intro-focus p {
-        margin: 0;
-        color: rgba(255, 255, 255, 0.88);
-        font-size: 0.98rem;
-      }
-
       .auth {
         padding: 0;
         overflow: hidden;
         display: grid;
         grid-template-rows: auto 1fr auto;
+        max-width: 720px;
+        width: 100%;
       }
 
       .auth-top {
@@ -221,6 +173,18 @@
       .auth-header p {
         margin: 0;
         color: rgba(255, 255, 255, 0.78);
+      }
+
+      .auth-lead {
+        margin-bottom: 18px;
+        padding: 16px 18px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .auth-lead p {
+        margin: 0;
+        color: rgba(255, 255, 255, 0.88);
       }
 
       .site-footer {
@@ -659,14 +623,9 @@
           justify-content: center;
         }
 
-        .intro,
         .auth-body {
           padding-left: 20px;
           padding-right: 20px;
-        }
-
-        .intro h2 {
-          font-size: clamp(1.8rem, 10vw, 2.7rem);
         }
 
         .workspace-header,
@@ -720,7 +679,6 @@
           padding-top: 12px;
         }
 
-        .intro,
         .auth-body,
         .workspace-grid {
           padding-left: 16px;
@@ -745,7 +703,7 @@
           font-size: 1.35rem;
         }
 
-        .intro-focus,
+        .auth-lead,
         .note {
           padding: 13px 14px;
         }
@@ -766,15 +724,6 @@
       </header>
 
       <main class="hero">
-        <section class="panel intro">
-          <p class="eyebrow">Ingreso</p>
-          <h2>El acceso comienza aca.</h2>
-          <div class="intro-focus">
-            <p>Seleccione su perfil para continuar.</p>
-          </div>
-
-        </section>
-
         <section class="panel auth">
           <div class="auth-top">
             <strong>Acceso RedImagenesNQN</strong>
@@ -782,6 +731,12 @@
           </div>
 
           <div class="auth-body">
+            <div class="auth-lead">
+              <p class="eyebrow">Ingreso</p>
+              <h3>El acceso comienza aca.</h3>
+              <p>Seleccione su perfil para continuar.</p>
+            </div>
+
             <div class="auth-header">
               <p class="eyebrow">Identificacion</p>
               <h3>Seleccione su perfil de acceso</h3>
