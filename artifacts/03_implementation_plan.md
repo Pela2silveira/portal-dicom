@@ -180,6 +180,7 @@
   - lista con nodos remotos, disponibilidad local, estado de retrieve y acciones
   - retrieve asincrónico visible en UI
   - primer slice funcional con `GET /api/physician/results?username=<dni>` sobre `physician_recent_queries` sembradas en DB hasta integrar búsqueda federada real
+  - primer retrieve real desde la grilla con `POST /api/physician/retrieve` y actualización de estado local contra DB/Orthanc
 - Configuración de OHIF:
   - study list nativa deshabilitada para los flujos finales de paciente y médico
 

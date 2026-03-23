@@ -186,8 +186,12 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 
 - `GET /api/search/stream`
   - SSE stream for federated search results
+- `POST /api/physician/retrieve`
+  - current first retrieve contract from the physician panel
+  - receives `username` + `study_instance_uid`
+  - triggers PACS-to-PACS retrieve through Orthanc REST
 - `POST /api/retrieve/jobs`
-  - create retrieve job for selected `studyInstanceUID`
+  - future generic retrieve job contract for selected `studyInstanceUID`
 - `GET /api/retrieve/jobs/:id`
   - retrieve job status
 - `GET /api/cache/studies/:studyInstanceUID`

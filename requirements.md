@@ -132,6 +132,7 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 * El contrato explícito de esta superficie queda definido en `artifacts/05_ui_contracts.md`.
 * En el mock actual del portal, el ingreso profesional debe aterrizar primero en esta superficie y no redirigir directamente a la home general de OHIF.
 * La primera implementación funcional de esta superficie consume `GET /api/physician/results?username=<dni>` y renderiza resultados desde búsquedas recientes sembradas en la base hasta integrar la búsqueda federada real.
+* El primer avance operativo de esta superficie expone `POST /api/physician/retrieve`, reutiliza Orthanc REST para `C-GET` y recalcula `cache_status` / `retrieve_status` desde Postgres y Orthanc local antes de habilitar `Visualizar`.
 
 ---
 

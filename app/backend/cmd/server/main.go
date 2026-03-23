@@ -104,6 +104,18 @@ type PhysicianResultsResponse struct {
 	Results   []PhysicianResult      `json:"results"`
 }
 
+type PhysicianRetrieveRequest struct {
+	Username         string `json:"username"`
+	StudyInstanceUID string `json:"study_instance_uid"`
+}
+
+type PhysicianRetrieveResponse struct {
+	JobID            string `json:"job_id"`
+	StudyInstanceUID string `json:"study_instance_uid"`
+	Status           string `json:"status"`
+	ViewerURL        string `json:"viewer_url,omitempty"`
+}
+
 type PhysicianSummary struct {
 	ID       string `json:"id"`
 	Username string `json:"username"`
@@ -283,6 +295,7 @@ func main() {
 	mux.HandleFunc("/api/patient/studies", app.handlePatientStudies)
 	mux.HandleFunc("/api/patient/retrieve", app.handlePatientRetrieve)
 	mux.HandleFunc("/api/physician/results", app.handlePhysicianResults)
+	mux.HandleFunc("/api/physician/retrieve", app.handlePhysicianRetrieve)
 
 	app.log("info", "server_starting", map[string]any{
 		"listen_addr":        cfg.ListenAddr,
@@ -568,6 +581,54 @@ func (a *App) handlePhysicianResults(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+func (a *App) handlePhysicianRetrieve(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var reqBody PhysicianRetrieveRequest
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		http.Error(w, "invalid json body", http.StatusBadRequest)
+		return
+	}
+
+	reqBody.Username = strings.TrimSpace(reqBody.Username)
+	reqBody.StudyInstanceUID = strings.TrimSpace(reqBody.StudyInstanceUID)
+	if reqBody.Username == "" || reqBody.StudyInstanceUID == "" {
+		http.Error(w, "username and study_instance_uid are required", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
+
+	physician, err := a.ensurePhysicianSeed(ctx, reqBody.Username)
+	if err != nil {
+		a.log("error", "physician_retrieve_prepare_failed", map[string]any{
+			"username": reqBody.Username,
+			"error":    err.Error(),
+		})
+		http.Error(w, "failed to prepare physician retrieve", http.StatusInternalServerError)
+		return
+	}
+
+	resp, err := a.performPhysicianRetrieve(ctx, physician, reqBody.StudyInstanceUID)
+	if err != nil {
+		a.log("error", "physician_retrieve_failed", map[string]any{
+			"username":          reqBody.Username,
+			"physician_id":      physician.ID,
+			"study_instance_uid": reqBody.StudyInstanceUID,
+			"error":             err.Error(),
+		})
+		http.Error(w, "failed to retrieve physician study", http.StatusBadGateway)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
 func (a *App) checkDB(ctx context.Context) bool {
 	if err := a.db.PingContext(ctx); err != nil {
 		a.log("error", "db_ping_failed", map[string]any{"error": err.Error()})
@@ -826,6 +887,76 @@ func (a *App) performPatientRetrieve(ctx context.Context, patient PatientSummary
 	})
 
 	return PatientRetrieveResponse{
+		JobID:            jobID,
+		StudyInstanceUID: studyInstanceUID,
+		Status:           "done",
+		ViewerURL:        buildOHIFViewerURL(studyInstanceUID),
+	}, nil
+}
+
+func (a *App) performPhysicianRetrieve(ctx context.Context, physician PhysicianSummary, studyInstanceUID string) (PhysicianRetrieveResponse, error) {
+	node, sourceNodeID, err := a.getPhysicianSourceNode(ctx, studyInstanceUID)
+	if err != nil {
+		return PhysicianRetrieveResponse{}, err
+	}
+
+	jobID, err := a.insertRetrieveJob(ctx, studyInstanceUID, sourceNodeID, "physician", physician.ID)
+	if err != nil {
+		return PhysicianRetrieveResponse{}, fmt.Errorf("insert retrieve job: %w", err)
+	}
+
+	startedAt := time.Now()
+	if err := a.updateRetrieveJobStatus(ctx, jobID, "running", "", "", 0, true); err != nil {
+		return PhysicianRetrieveResponse{}, fmt.Errorf("mark retrieve running: %w", err)
+	}
+
+	a.log("info", "physician_retrieve_started", map[string]any{
+		"physician_id":       physician.ID,
+		"study_instance_uid": studyInstanceUID,
+		"source_node_id":     sourceNodeID,
+		"job_id":             jobID,
+	})
+
+	if err := a.ensureOrthancModality(ctx, node); err != nil {
+		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), "", 0, false)
+		return PhysicianRetrieveResponse{}, fmt.Errorf("ensure orthanc modality: %w", err)
+	}
+
+	if err := a.startOrthancCGet(ctx, node, studyInstanceUID); err != nil {
+		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), "", 0, false)
+		return PhysicianRetrieveResponse{}, fmt.Errorf("orthanc c-get failed: %w", err)
+	}
+
+	localReady, orthancStudyID, err := a.waitForStudyInOrthanc(ctx, studyInstanceUID, 2*time.Second, 20*time.Second)
+	if err != nil {
+		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), orthancStudyID, 0, false)
+		return PhysicianRetrieveResponse{}, fmt.Errorf("wait for retrieved study: %w", err)
+	}
+	if !localReady {
+		err := errors.New("study not available in orthanc after c-get")
+		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), orthancStudyID, 0, false)
+		return PhysicianRetrieveResponse{}, err
+	}
+
+	if err := a.upsertCachedStudy(ctx, studyInstanceUID, orthancStudyID, []string{sourceNodeID}, "local_complete"); err != nil {
+		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), orthancStudyID, 0, false)
+		return PhysicianRetrieveResponse{}, fmt.Errorf("upsert cached study: %w", err)
+	}
+
+	if err := a.updateRetrieveJobStatus(ctx, jobID, "done", "", orthancStudyID, 0, false); err != nil {
+		return PhysicianRetrieveResponse{}, fmt.Errorf("mark retrieve done: %w", err)
+	}
+
+	a.log("info", "physician_retrieve_completed", map[string]any{
+		"physician_id":      physician.ID,
+		"study_instance_uid": studyInstanceUID,
+		"source_node_id":    sourceNodeID,
+		"job_id":            jobID,
+		"orthanc_study_id":  orthancStudyID,
+		"duration_ms":       time.Since(startedAt).Milliseconds(),
+	})
+
+	return PhysicianRetrieveResponse{
 		JobID:            jobID,
 		StudyInstanceUID: studyInstanceUID,
 		Status:           "done",
@@ -1094,6 +1225,77 @@ func (a *App) getPatientSourceNode(ctx context.Context, patientID, studyInstance
 	}
 
 	return PACSNodeConfig{}, "", fmt.Errorf("unknown source node id %q", source.SourceNodeID)
+}
+
+func (a *App) getPhysicianSourceNode(ctx context.Context, studyInstanceUID string) (PACSNodeConfig, string, error) {
+	var locationsJSONRaw []byte
+	err := a.db.QueryRowContext(ctx, `
+		SELECT locations_json
+		FROM cached_studies
+		WHERE study_instance_uid = $1
+	`, studyInstanceUID).Scan(&locationsJSONRaw)
+	if err == nil {
+		var locations []string
+		if len(locationsJSONRaw) > 0 && json.Unmarshal(locationsJSONRaw, &locations) == nil {
+			for _, location := range locations {
+				for _, node := range a.externalConfig.PACSNodes {
+					if node.ID == location || strings.EqualFold(node.Name, location) || strings.EqualFold(node.ID, location) {
+						return node, node.ID, nil
+					}
+				}
+			}
+		}
+	}
+	if len(a.externalConfig.PACSNodes) == 1 {
+		return a.externalConfig.PACSNodes[0], a.externalConfig.PACSNodes[0].ID, nil
+	}
+	return PACSNodeConfig{}, "", fmt.Errorf("source node not resolved for physician study %q", studyInstanceUID)
+}
+
+func (a *App) getStudyOperationalState(ctx context.Context, studyUID string, fallbackCacheStatus, fallbackRetrieveStatus string) (string, string, string, error) {
+	cacheStatus := fallbackCacheStatus
+	retrieveStatus := fallbackRetrieveStatus
+	viewerURL := ""
+
+	var cachedOrthancStudyID string
+	err := a.db.QueryRowContext(ctx, `
+		SELECT COALESCE(cache_status, ''), COALESCE(orthanc_study_id, '')
+		FROM cached_studies
+		WHERE study_instance_uid = $1
+	`, studyUID).Scan(&cacheStatus, &cachedOrthancStudyID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", "", "", err
+	}
+	if cacheStatus == "" {
+		cacheStatus = fallbackCacheStatus
+	}
+
+	var latestRetrieveStatus string
+	err = a.db.QueryRowContext(ctx, `
+		SELECT status
+		FROM retrieve_jobs
+		WHERE study_instance_uid = $1
+		ORDER BY created_at DESC, id DESC
+		LIMIT 1
+	`, studyUID).Scan(&latestRetrieveStatus)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", "", "", err
+	}
+	if latestRetrieveStatus != "" {
+		retrieveStatus = latestRetrieveStatus
+	}
+
+	isLocal, _, err := a.findOrthancStudy(ctx, studyUID)
+	if err != nil {
+		return "", "", "", err
+	}
+	if isLocal {
+		cacheStatus = "local_complete"
+		retrieveStatus = "done"
+		viewerURL = buildOHIFViewerURL(studyUID)
+	}
+
+	return cacheStatus, retrieveStatus, viewerURL, nil
 }
 
 func (a *App) insertRetrieveJob(ctx context.Context, studyUID, sourceNodeID, actorType, actorID string) (string, error) {
@@ -1589,9 +1791,13 @@ func (a *App) listPhysicianResults(ctx context.Context, physicianID string, filt
 				RetrieveStatus:   item.RetrieveStatus,
 				PartialFilter:    item.PartialFilter,
 			}
-			if item.RetrieveStatus == "done" || item.CacheStatus == "local_complete" {
-				result.ViewerURL = buildOHIFViewerURL(item.StudyInstanceUID)
+			cacheStatus, retrieveStatus, viewerURL, err := a.getStudyOperationalState(ctx, item.StudyInstanceUID, item.CacheStatus, item.RetrieveStatus)
+			if err != nil {
+				return nil, fmt.Errorf("resolve physician result state for %s: %w", item.StudyInstanceUID, err)
 			}
+			result.CacheStatus = cacheStatus
+			result.RetrieveStatus = retrieveStatus
+			result.ViewerURL = viewerURL
 
 			results = append(results, result)
 			seen[item.StudyInstanceUID] = struct{}{}

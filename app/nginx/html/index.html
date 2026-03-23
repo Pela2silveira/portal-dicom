@@ -1106,6 +1106,9 @@
             const action = result.viewer_url
               ? '<a class="action action-primary" href="' + escapeHTML(result.viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar</a>'
               : '<button class="action ghost" type="button">Visualizar cuando esté listo</button>';
+            const retrieveAction = result.retrieve_status === "done" && result.viewer_url
+              ? '<button class="action action-secondary" type="button" disabled>Retrieve listo</button>'
+              : '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '">Retrieve</button>';
 
             return (
               '<article class="result-item">' +
@@ -1130,7 +1133,7 @@
                   '<div class="chip info">Filtro parcial: ' + escapeHTML(result.partial_filter ? "si" : "no") + '</div>' +
                 '</div>' +
                 '<div class="inline-actions">' +
-                  '<button class="action action-secondary" type="button">Retrieve</button>' +
+                  retrieveAction +
                   action +
                 '</div>' +
               '</article>'
@@ -1206,6 +1209,26 @@
         return response.json();
       }
 
+      async function triggerPhysicianRetrieve(studyInstanceUID) {
+        const response = await fetch("/api/physician/retrieve", {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            username: activePhysicianUsername,
+            study_instance_uid: studyInstanceUID
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error("physician retrieve request failed");
+        }
+
+        return response.json();
+      }
+
       roleButtons.forEach(button => {
         button.addEventListener("click", () => activateRole(button.dataset.role));
       });
@@ -1246,6 +1269,29 @@
         try {
           await triggerPatientRetrieve(studyInstanceUID);
           await loadPatientStudies(activePatientDocument);
+        } catch (error) {
+          button.disabled = false;
+          button.textContent = "Retrieve";
+        }
+      });
+
+      physicianResultList.addEventListener("click", async event => {
+        const button = event.target.closest("[data-physician-retrieve]");
+        if (!button) {
+          return;
+        }
+
+        const studyInstanceUID = button.getAttribute("data-physician-retrieve");
+        if (!studyInstanceUID || !activePhysicianUsername) {
+          return;
+        }
+
+        button.disabled = true;
+        button.textContent = "Recuperando...";
+
+        try {
+          await triggerPhysicianRetrieve(studyInstanceUID);
+          await loadPhysicianResults(activePhysicianUsername);
         } catch (error) {
           button.disabled = false;
           button.textContent = "Retrieve";

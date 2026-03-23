@@ -204,6 +204,8 @@ Proveer un portal operativo mínimo capaz de:
 4. El profesional dispara retrieve bajo demanda cuando corresponda.
 5. El portal abre OHIF sobre el estudio puntual seleccionado.
 6. La primera implementación funcional expone `GET /api/physician/results?username=<dni>` como contrato inicial del panel del profesional, cargando resultados desde `physician_recent_queries` sembradas en Postgres.
+7. El primer avance operativo expone `POST /api/physician/retrieve` para disparar `C-GET` vía Orthanc REST desde la misma grilla.
+8. La grilla del profesional debe recalcular `cacheStatus`, `retrieveStatus` y `viewer_url` a partir de `cached_studies`, `retrieve_jobs` y verificación real en Orthanc.
 
 ### 5.4 Landing pública y acceso futuro
 1. El usuario accede a `/` y visualiza la landing institucional.
