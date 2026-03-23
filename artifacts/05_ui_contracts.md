@@ -35,6 +35,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - Authorized study list
 - Simple filters
 - Per-study actions: `Retrieve` or `Ver estudio`
+- Empty state message when the document has no matching studies
 
 ### Allowed Fields In The List
 

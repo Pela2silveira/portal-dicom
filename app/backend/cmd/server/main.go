@@ -1014,7 +1014,11 @@ func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConf
 
 	var payload []qidoResponseItem
 	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		if errors.Is(err, io.EOF) {
+			payload = []qidoResponseItem{}
+		} else {
 		return nil, "", fmt.Errorf("decode qido response: %w", err)
+		}
 	}
 
 	studies := make([]PatientStudy, 0, len(payload))

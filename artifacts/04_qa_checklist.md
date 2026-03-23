@@ -23,6 +23,7 @@
 - [Ready] Patient surface is no longer static-only: it already consumes `GET /api/patient/studies` from the backend and its first load triggers QIDO by `PatientID=<dni>` against the single configured PACS node.
 - [Ready] Patient surface already exposes a manual `Retrieve` action for `pending_retrieve` studies via `POST /api/patient/retrieve`, with list refresh after completion.
 - [Ready] Patient surface uses `Actualizar lista` as the explicit reload action so the patient flow does not read like an operator-only filter panel.
+- [Ready] A QIDO response without studies is treated as an empty patient list, not as a backend error, and the UI shows a document-level empty state.
 - [Ready] Physician panel contract is documented in `artifacts/05_ui_contracts.md`, including filters, columns, states, and actions.
 - [Ready] Physician surface is no longer static-only: it already consumes `GET /api/physician/results` from the backend and filters seeded recent-query rows by user input.
 - [Ready] Physician surface now exposes a first real `Retrieve` action via `POST /api/physician/retrieve`, with result rows refreshed from DB/Orthanc state after completion.

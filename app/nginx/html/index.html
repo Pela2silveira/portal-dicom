@@ -1030,8 +1030,14 @@
           payload.patient.full_name + " · DNI " + payload.patient.document_number;
 
         if (!payload.studies.length) {
+          const hasFilters =
+            Boolean(payload.filters?.date_from) ||
+            Boolean(payload.filters?.date_to) ||
+            Boolean(payload.filters?.modality);
           patientStudyList.innerHTML =
-            '<div class="empty-state">No hay estudios para los filtros seleccionados.</div>';
+            hasFilters
+              ? '<div class="empty-state">No hay estudios para los filtros seleccionados.</div>'
+              : '<div class="empty-state">No se encontraron estudios para este documento.</div>';
           return;
         }
 
