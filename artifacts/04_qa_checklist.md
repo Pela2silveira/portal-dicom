@@ -1,81 +1,52 @@
-## QA Readiness Checklist (Pre-coding)
+# MVP QA Gap Checklist — Portal DICOM Agregador + Caché (Orthanc) + OHIF
 
-### Security
-- [Ready] Nginx is the **only** public HTTP entrypoint; backend/Orthanc HTTP remain internal-only, and Postgres may be bound only to `127.0.0.1` for local development access.
-- [Ready] Nginx exposes HTTP only on `http://localhost:8080` for MVP; TLS deferred.
-- [Ready] Portal-owned static assets can be served from a dedicated route namespace independent from OHIF assets.
-- [Missing] Nginx **explicit allowlist** of DICOMweb paths required by OHIF, with explicit deny for Orthanc admin REST (confirm exact path list and add negative tests).
-- [Missing] Nginx proxy hardening defaults: timeouts, max body size, upstream keepalive, request buffering behavior for SSE, and basic security headers (even on LAN/VPN).
-- [Ready] Secrets not stored in images/repo; configuration uses `*_secret_ref` resolved from env/file.
-- [Ready] The database model forbids storing physician passwords in clear text; only session state, auth events, and encrypted provider-issued auth material are allowed.
-- [Missing] Backend log redaction policy implemented and tested (no `client_secret`, no bearer tokens; minimize PHI in logs/audit).
-- [Missing] CORS policy at Nginx/backend for UI/OHIF origins (even if same-origin, document and enforce).
-- [Needs Decision] Whether Orthanc DICOM port `4242` must be published in *all* environments or only where remote PACS reachability exists (impacts exposure and firewall rules).
+## Security
+- [Ready] **Single public HTTP entrypoint**: only Nginx exposed on `http://localhost:8080`; backend/Orthanc HTTP not directly exposed.
+- [Ready] **Orthanc admin REST not exposed**: Nginx denies non‑DICOMweb Orthanc routes (explicit 403/404).
+- [Ready] **DICOMweb-only viewer data path**: OHIF configured to consume only `/dicom-web/` (Orthanc local) and never remote PACS.
+- [Ready] **Secrets not committed**: config uses `*_secret_ref` / env/file refs; runtime `config.json` is local-only and ignored.
+- [Ready] **No auth in MVP**: no sessions/JWT/OTP validation implemented; UI flows are visual only.
+- [Missing] **Hardening for non-localhost environments**: minimal protections when deployed beyond localhost (TLS termination, IP allowlist, shared operator key, etc.).
+- [Missing] **Token handling hardening**: Keycloak token cache/refresh policy (TTL, refresh-on-401) + explicit guarantee tokens/secrets never appear in logs.
+- [Missing] **PHI minimization policy enforcement**: explicit list of fields allowed in `integration_audit`, `search_*` tables, and logs (and automated checks).
+- [Needs Decision] **Network exposure of DIMSE ports**: confirm when/where Orthanc DICOM `4242` is published and reachable from remote PACS (VPN/NAT/firewall model).
 
-### Functional
-- [Ready] Public landing page is part of the MVP surface and is served by Nginx.
-- [Ready] Public landing reflects current UX decisions: patient `Documento + OTP` and physician `DNI / usuario + contraseña`.
-- [Ready] Current mock login flows land on portal-owned mock surfaces before opening OHIF for a specific study.
-- [Ready] Physician future target auth is documented as `LDAP provincial + MFA`, but remains out of MVP implementation scope.
-- [Ready] Mobile responsiveness is an explicit requirement for the landing and portal-owned surfaces.
-- [Ready] OHIF is treated as a viewer surface, not the primary patient or physician search surface.
-- [Ready] Patient portal study list contract is documented in `artifacts/05_ui_contracts.md`, including fields, sort, filters, actions, and availability states.
-- [Ready] Patient surface is no longer static-only: it already consumes `GET /api/patient/studies` from the backend and its first load triggers QIDO by `PatientID=<dni>` against the single configured PACS node.
-- [Ready] Patient surface already exposes a manual `Retrieve` action for `pending_retrieve` studies via `POST /api/patient/retrieve`, with list refresh after completion.
-- [Ready] Patient surface uses `Actualizar lista` as the explicit reload action so the patient flow does not read like an operator-only filter panel.
-- [Ready] A QIDO response without studies is treated as an empty patient list, not as a backend error, and the UI shows a document-level empty state.
-- [Ready] Physician panel contract is documented in `artifacts/05_ui_contracts.md`, including filters, columns, states, and actions.
-- [Ready] Physician surface is no longer static-only: it already consumes `GET /api/physician/results` from the backend and filters seeded recent-query rows by user input.
-- [Ready] Physician surface now exposes a first real `Retrieve` action via `POST /api/physician/retrieve`, with result rows refreshed from DB/Orthanc state after completion.
-- [Ready] Physician filters no longer start prefilled in the current UX, and retrieve actions differentiate `en curso`, `listo`, and `reintentar`.
-- [Ready] Physician search with active filters now executes remote QIDO against the configured PACS node; only the no-filter state falls back to persisted recent queries.
-- [Ready] Relational model for patient cache, HIS alternate identifiers, known study UIDs, physician recent searches, and auth/session state is documented in `artifacts/06_data_model.md`.
-- [Ready] API surface defined for health, config, search (SSE), retrieve jobs, cache status.
-- [Ready] Search streaming uses SSE (not WS); UI renders incremental results.
-- [Missing] Concrete SSE event schema contract (field names, ordering guarantees, retry behavior, terminal `done`, and error payload structure).
-- [Ready] Deduplication key and merge policy defined (`StudyInstanceUID`, prefer highest-priority node, accumulate `locations[]`, separate cache state).
-- [Missing] Definition of “partial filter” flags: exact fields `partial_filter`, `unsupported_filters[]`, and how UI displays them.
-- [Ready] Retrieve job state machine defined (`queued→running→done/failed`) and persisted.
-- [Ready] Retrieve completion via Orthanc polling with stable window + global timeout.
-- [Missing] Precise “stable window” parameters: poll interval, stable duration, max timeout defaults, and how to handle zero-instance/stuck edge cases.
-- [Ready] Cache retention 7 days; DB operational retention 30 days via backend cron.
+## Functional
+- [Ready] **Landing + portal surfaces**: patient/professional mock flows route to portal-owned pages first; responsive requirement captured.
+- [Ready] **Patient list contract**: `GET /api/patient/studies?document=<dni>` returns `200` with `studies: []` if none; “Actualizar lista” semantics defined.
+- [Ready] **Manual retrieve contract**: `POST /api/patient/retrieve`, `POST /api/physician/retrieve`, job persistence and state transitions exist (queued→running→done/failed).
+- [Ready] **Viewer handoff**: portal opens `GET /ohif/viewer?StudyInstanceUIDs=<uid>` in a new tab; Visualizar enabled only when local cache is ready.
+- [Ready] **Retrieve completion heuristic**: Orthanc polling with stable window + global timeout defined.
+- [Missing] **Federated search**: `POST /api/search` + SSE events + dedup by `StudyInstanceUID` across ≥2 nodes not implemented (Milestone 4 pending).
+- [Missing] **Professional async panel backed by real multi-node search**: current “recent queries fallback” is acceptable but not the target behavior.
+- [Needs Decision] **Patient identifier strategy**: reliance on `PatientID == DNI` vs configurable mapping / HIS resolution (to avoid hard coupling).
 
-### Integration
-- [Ready] Remote dcm4chee REST auth uses Keycloak `client_credentials` (token cached with TTL; refresh on 401).
-- [Needs Decision] Provide real integration inputs for at least one remote node: dcm4chee hostname(s), DICOMweb base URL, Keycloak token URL/realm, `client_id`, and how secrets are mounted in the compose environment.
-- [Ready] Remote DIMSE basics captured (initial node AE Title `PACSHPN`, port `11112`, supports C-MOVE).
-- [Needs Decision] DIMSE network topology confirmation: remote PACS can reach **local Orthanc** as Move SCP on `4242` (routing/NAT/firewall/VPN specifics).
-- [Ready] Retrieve architecture principle is explicit: study transfer is PACS-to-PACS (Orthanc ↔ remoto), while the backend only orchestrates and observes.
-- [Ready] First Orthanc REST retrieve contract is implemented for patient `C-GET`: `PUT /modalities/{id}` + `POST /modalities/{id}/get`, followed by Orthanc polling on `StudyInstanceUID`.
-- [Ready] The Orthanc `C-GET` trigger no longer uses the backend's short default HTTP timeout; it relies on the retrieve request deadline instead.
-- [Ready] OHIF consumes only local Orthanc via `/dicom-web` proxied by Nginx, with `/dicomweb` retained only as compatibility alias if needed.
-- [Ready] OHIF image is pinned (`ohif/app:v3.11.1`) instead of using `latest`.
-- [Ready] Current portal handoff to OHIF uses a per-study viewer route with `StudyInstanceUID`, avoiding the general study list in the patient flow.
-- [Ready] Current portal handoff opens OHIF in a new browser tab for patient and physician viewer actions.
-- [Missing] Final OHIF mode configuration for actor-specific flows (study list disabled for patient and physician surfaces once portal-owned lists exist).
-- [Missing] OHIF configuration artifact committed/templated for environment-specific base URLs and routes (and validated that no remote DICOMweb endpoints can be configured).
-- [Ready] Future access-control requirement is explicit: backend/proxy must validate active session + allowed `StudyInstanceUID` for viewer/image access; hidden OHIF UI is not sufficient.
+## Integration
+- [Ready] **Orthanc ↔ backend orchestration**: backend coordinates retrieve via Orthanc REST (`PUT /modalities/{id}`, `POST /modalities/{id}/get`) and polls Orthanc for presence.
+- [Ready] **PACS REST auth approach**: Keycloak `client_credentials` specified; backend uses `Authorization: Bearer <token>`.
+- [Ready] **Externalized PACS node config**: per-node protocol (QIDO-RS / C-FIND), timeouts, and retrieve preference (C-MOVE/C-GET) are modeled.
+- [Missing] **Second PACS node for repeatable validation**: required to test federated search/dedup deterministically (recommend simulated remote Orthanc in compose/CI).
+- [Missing] **Legacy DIMSE (C-FIND) implementation choice**: confirm dcmtk-in-container vs Go library + licensing/packaging approach.
+- [Needs Decision] **C-MOVE vs C-GET per node**: confirmed capability matrix for each remote node (C-MOVE allowed? destination AE routing works?).
+- [Needs Decision] **HIS/ANDES config completeness**: base URL, auth method, API key format, required params, and whether MPI lookup is invoked in MVP or config-only (spec says config-first; patient-ID mapping still impacts behavior).
 
-### Operability
-- [Ready] One-command `docker compose up` is a hard acceptance criterion.
-- [Ready] Branding/static assets are part of the runtime contract and should be included in smoke verification for `/` and favicon delivery.
-- [Missing] Deterministic startup ordering/healthchecks (postgres ready → migrations → backend ready; orthanc ready → backend health returns `orthanc_ok`).
-- [Ready] Database migrations automation is defined and implemented in the backend startup using versioned SQL files plus `schema_migrations`.
-- [Partial] Observability baseline started: the patient sync path now emits structured JSON logs for token request, QIDO request, sync durations, and study counts. Metrics persistence in PostgreSQL is explicitly out for now; broader metrics and non-patient flows remain pending.
-- [Partial] Patient retrieve now emits job and completion logs through the same backend logger, but still needs explicit smoke coverage against a reachable remote PACS.
-- [Missing] Runbook content list and ownership (how to add PACS nodes, test search/retrieve/view, troubleshoot common failures).
-- [Missing] Automated smoke tests for compose: health endpoint, SSE contract, proxy negative tests (Orthanc admin blocked), basic retrieve state machine (even against lab/mock).
-- [Needs Decision] Test strategy for “remote PACS not available” in CI: include a lab Orthanc/dcm4chee container as a simulated remote vs. mock handler only.
+## Operability
+- [Ready] **One-command startup**: `docker compose up` brings up `nginx`, `backend`, `postgres`, `orthanc`, `ohif`.
+- [Ready] **DB migrations at startup**: schema bootstraps automatically; config loader upserts nodes + HIS config.
+- [Ready] **Health endpoint**: `/api/health` reports `db_ok` and `orthanc_ok`.
+- [Ready] **Logs accessible via compose**: `docker compose logs` is the primary inspection path; backend logs are JSON.
+- [Missing] **Retention automation**: backend cron for Orthanc purge (7 days) + DB cleanup (30 days) not implemented (Milestone 7 pending).
+- [Missing] **SSE proxy correctness**: Nginx config must explicitly disable buffering for SSE routes and set correct headers/timeouts (otherwise intermittent UI failures).
+- [Missing] **Operational limits**: explicit concurrency limits and per-job deadlines for retrieve (`max_concurrent_retrieves_global`, per-node limits, retryability states).
+- [Missing] **Runbook + troubleshooting**: documented procedures for adding nodes, validating QIDO/auth, retrieve debugging, common Orthanc issues, and expected log/audit entries.
+- [Needs Decision] **CI test strategy**: whether integration tests run with a simulated remote Orthanc in compose vs mock handlers only (affects repeatability and scope).
 
 ---
 
 ## Minimum Decisions Needed Before Coding
-1. **Nginx DICOMweb allowlist**: confirm the exact Orthanc DICOMweb paths OHIF needs (to implement allow/deny + negative tests).
-2. **DIMSE reachability**: confirm whether remote PACS can reach local Orthanc `AE/host/port` for C-MOVE in the target MVP environment (firewall/NAT/VPN specifics).
-3. **Retrieve smoke validation**: verify the implemented Orthanc REST `C-GET` contract against a reachable remote PACS and capture expected success/error payloads.
-4. **Integration credentials delivery**: provide Keycloak token endpoint/realm + dcm4chee DICOMweb base URL(s) + how `client_id/client_secret` are supplied (env vs mounted file) for dev/testing.
-5. **Orthanc retrieve contract**: confirm how remote PACS nodes must be registered in Orthanc and which REST payloads are needed to trigger retrieve.
-6. **SSE contract finalization**: confirm event types/payload fields and client retry behavior (so UI + backend + tests align).
-7. **Future auth contract for physicians**: confirm the provincial LDAP integration boundary and MFA factor type to avoid later UX rework in the public landing.
-8. **Patient study-list contract**: confirm what exact metadata and filtering the patient list should expose.
-9. **Physician panel contract**: confirm the exact operational metadata to expose for remote PACS, availability, and retrieve state.
+1. **Target deployment boundary (beyond localhost)**: whether MVP remains strictly localhost-only or must support LAN/VPN with minimal hardening (TLS, IP allowlist, shared operator key).
+2. **DIMSE connectivity model**: confirm if remote PACS can reach Orthanc AE (`4242`) for C-MOVE; otherwise standardize on C-GET where needed.
+3. **Legacy support tooling**: dcmtk (containerized) vs Go library for C-FIND/C-MOVE/C-GET where DICOMweb is absent; confirm licensing/ops constraints.
+4. **Patient identifier mapping**: whether `PatientID == DNI` is acceptable for MVP environments, or must be configurable / resolved via HIS (ANDES MPI) from day one.
+5. **Federated search test environment**: commit to adding a second node (simulated remote Orthanc in compose/CI) to validate SSE + dedup deterministically.
+6. **HIS/ANDES auth details**: provide base URL + authentication requirements (even if config-only), to finalize config schema/validation and future-proofing.

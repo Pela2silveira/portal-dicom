@@ -1,4 +1,6 @@
-# Especificación Técnica (MVP): Portal DICOM Agregador + Caché Local + OHIF
+# Especificación Técnica de Implementación (MVP) — Portal DICOM Agregador + Caché + OHIF
+
+> **Objetivo del MVP:** entregar un portal web operativo mínimo que agregue búsquedas sobre PACS remotos, coordine **retrieve** hacia un **Orthanc local (caché)** y visualice **exclusivamente desde la caché** en **OHIF**, todo levantable con **Docker Compose** y expuesto por **Nginx** en `http://localhost:8080`.
 
 ## 0) Estado, decisiones confirmadas y supuestos
 
@@ -24,6 +26,9 @@
 - El médico debe trabajar sobre un panel propio del portal con búsqueda federada y retrieve asíncrono.
 - Los contratos explícitos de ambas superficies se documentan en `artifacts/05_ui_contracts.md`.
 - Aun en el mock de la landing, ambos ingresos deben aterrizar primero en superficies del portal y no en la home general del visor.
+- Las transferencias de estudios deben ocurrir entre **PACS remotos ↔ Orthanc local**; el backend solo coordina, persiste estado y observa el workflow.
+- Orthanc es la **fuente de verdad** para decidir si un estudio está disponible localmente; Postgres mantiene un índice operacional reconstruible.
+- Las métricas de observabilidad no se persisten por ahora en Postgres; se resuelven con logs estructurados y, si hace falta, stats en memoria.
 
 ### Supuestos del MVP
 - El acceso al stack en desarrollo será por red controlada (p. ej. LAN/VPN); no se expone Internet “abierto” sin hardening adicional.
@@ -98,6 +103,7 @@ Proveer un portal operativo mínimo capaz de:
 - El **portal** decide qué estudios listar y qué acciones exponer por actor.
 - **OHIF** solo visualiza estudios puntuales ya autorizados o seleccionados.
 - La study list nativa de OHIF no constituye control de acceso ni debe usarse como frontera funcional para pacientes.
+- Ocultar la study list nativa de OHIF es una decisión de **UX**, no una medida de seguridad real.
 
 ---
 
@@ -176,8 +182,9 @@ Proveer un portal operativo mínimo capaz de:
 2. OHIF consulta QIDO/WADO contra `nginx -> orthanc`.
 3. Orthanc sirve instancias desde caché local.
 4. El handoff actual del portal usa `GET /ohif/viewer?StudyInstanceUIDs=<uid>` para evitar caer en la study list general.
+5. Las acciones de visualización del portal deben abrirse en una pestaña nueva para no perder el contexto del portal.
 
-### 5.3.1 Flujo futuro de paciente
+### 5.3.1 Flujo paciente
 1. El portal valida identidad del paciente.
 2. El backend compone una lista propia de estudios autorizados para ese paciente.
 3. El paciente selecciona un estudio en el portal.
@@ -193,8 +200,10 @@ Proveer un portal operativo mínimo capaz de:
    - duración total del sync.
 9. Estas métricas no se persisten en PostgreSQL en esta etapa; se resuelven mediante logs estructurados y futuros endpoints de stats en memoria.
 10. Cuando el estudio queda `pending_retrieve`, la UI del paciente ofrece un botón `Retrieve` que llama `POST /api/patient/retrieve` y recarga la lista al completar.
+11. Si QIDO no encuentra estudios, el endpoint debe responder `200` con `studies: []`; la UI no debe tratarlo como error técnico.
+12. El CTA de recarga del paciente debe expresar “Actualizar lista” o equivalente, no “Aplicar filtros”, para dejar claro que también reintenta el sync.
 
-### 5.3.2 Flujo futuro de profesional
+### 5.3.2 Flujo profesional
 1. El profesional ingresa al portal mediante autenticación institucional.
 2. El profesional usa un panel propio de búsqueda federada.
 3. El portal muestra resultados con:
@@ -208,6 +217,7 @@ Proveer un portal operativo mínimo capaz de:
 7. El primer avance operativo expone `POST /api/physician/retrieve` para disparar `C-GET` vía Orthanc REST desde la misma grilla.
 8. La grilla del profesional debe recalcular `cacheStatus`, `retrieveStatus` y `viewer_url` a partir de `cached_studies`, `retrieve_jobs` y verificación real en Orthanc.
 9. Cuando el profesional aplica filtros, `GET /api/physician/results` debe ejecutar QIDO-RS contra el nodo remoto configurado y persistir el resultado como búsqueda reciente.
+10. Sin filtros, el panel puede seguir mostrando recientes persistidos como fallback transitorio, pero no debe considerarse el diseño final de búsqueda federada.
 
 ### 5.4 Landing pública y acceso futuro
 1. El usuario accede a `/` y visualiza la landing institucional.
@@ -230,20 +240,22 @@ Proveer un portal operativo mínimo capaz de:
 - La restricción futura debe validarse en backend/proxy por sesión activa del portal y `StudyInstanceUID` permitido.
 
 ### 6.2 Puertos (propuesta)
-- Nginx: `80` (dev) y opcional `443` (si se agrega TLS).
+- Nginx: `8080` en desarrollo local; opcionalmente `80/443` en otros entornos.
 - Orthanc DICOM (C-STORE/Move SCP): `4242` **publicado** hacia red donde están PACS remotos (si aplica).
-- Orthanc HTTP: **no publicado** directamente; solo accesible vía Nginx.
+- Orthanc HTTP: **no publicado** directamente por Nginx; el admin REST puede ligarse solo a localhost para operación local.
 - Postgres: no publicado de forma pública; en desarrollo puede ligarse solo a `127.0.0.1`.
 - En desarrollo local, los puertos directos de Orthanc pueden quedar ligados a `127.0.0.1` por defecto.
 
 ### 6.3 Secretos y configuración
 - Variables de entorno / archivos montados (`.env`, `config.json`) fuera del código.
 - No almacenar secretos en imágenes Docker ni en repositorio.
+- La configuración versionada debe usar placeholders o referencias a env vars; `app/config/config.json` es local-only y no debe versionarse.
 
 ### 6.4 Auditoría técnica (MVP)
 - Log estructurado (JSON) en backend.
 - Persistencia mínima en Postgres:
   - requests, errores de integración, latencias, estado de jobs.
+- Minimizar PHI en la auditoría técnica; si la UI requiere ver datos clínicos/demográficos, eso no obliga a persistirlos sistemáticamente en `integration_audit`.
 
 ---
 
@@ -337,6 +349,13 @@ Problema: Orthanc puede recibir instancias progresivamente.
 #### Cache status
 - `GET /api/cache/studies/{study_instance_uid}`
   - Indica si está en Orthanc y, si aplica, Orthanc Study ID.
+
+### 9.1.1 Contratos ya materializados en el portal
+- `GET /api/patient/studies?document=<dni>`
+- `POST /api/patient/retrieve`
+- `GET /api/physician/results?username=<dni>&...filters`
+- `POST /api/physician/retrieve`
+- `GET /api/config`
 
 ### 9.2 Criterios de deduplicación
 - Clave: `StudyInstanceUID`.
@@ -452,12 +471,12 @@ Problema: Orthanc puede recibir instancias progresivamente.
   - Build o imagen oficial OHIF.
   - Config para DICOMweb en `/dicomweb` proxied a Orthanc.
 - `nginx`
-  - Publica `80`.
+  - Publica `8080` en desarrollo local.
   - Config:
     - `/api` → backend
     - `/ohif` → ohif
-    - `/dicomweb` → orthanc HTTP (limitado a DICOMweb paths)
-    - `/` → UI estática (opcional)
+    - `/dicomweb` o `/dicom-web` → orthanc HTTP (limitado a DICOMweb paths)
+    - `/` → UI estática
 
 ### 11.2 Redes
 - `frontend_net`: nginx + ohif
@@ -477,8 +496,9 @@ Problema: Orthanc puede recibir instancias progresivamente.
 - `his_config`: persistir valores (no ejecutar lógica obligatoria).
 
 ### 12.2 Referencias de secretos
-- En JSON guardar `*_secret_ref` (nombre de env var o path de archivo), no el secreto en claro.
+- En JSON guardar `*_secret_ref` o `*_env` (nombre de env var o path de archivo), no el secreto en claro.
 - Backend resuelve el secreto desde env o archivo montado.
+- La respuesta de `GET /api/config` debe exponer presencia de secretos (`*_present`) y referencias, pero nunca el valor real.
 
 ---
 
@@ -487,23 +507,43 @@ Problema: Orthanc puede recibir instancias progresivamente.
 ### Infraestructura
 - `docker compose up` levanta `orthanc`, `backend`, `postgres`, `nginx`, `ohif` sin pasos manuales adicionales.
 - Nginx es el único punto de entrada HTTP (backend/orthanc no expuestos directamente por HTTP).
+- `http://localhost:8080/` muestra la landing del portal.
+- `http://localhost:8080/ohif/` carga OHIF.
 
 ### Búsqueda
 - Ejecutar una búsqueda dispara consultas concurrentes a **≥2** nodos configurados (cuando existan).
 - La UI recibe resultados parciales vía SSE y muestra estudios deduplicados por `StudyInstanceUID`.
 - Se registra en Postgres al menos: `search_requests`, `search_node_runs`, auditoría técnica.
+- `GET /api/patient/studies?document=<dni>` devuelve:
+  - estudios sincronizados desde el único nodo configurado en la carga inicial sin filtros;
+  - `studies: []` si no hay resultados, sin convertirlo en error técnico.
+- `GET /api/physician/results`:
+  - sin filtros: puede devolver recientes persistidos;
+  - con filtros: debe ejecutar QIDO real al nodo configurado.
 
 ### Retrieve
 - Botón/endpoint `retrieve` crea job persistente.
 - El job transiciona `queued → running → done/failed`.
 - Al completar, el estudio queda disponible en Orthanc y OHIF puede abrirlo desde el caché local.
+- El backend no debe cortar artificialmente el `C-GET` a Orthanc con el timeout corto general del cliente HTTP.
 
 ### Visualización
-- OHIF consume exclusivamente `/dicomweb` (Orthanc local).
+- OHIF consume exclusivamente `/dicomweb`/`/dicom-web` (Orthanc local).
 - No existe configuración en OHIF que apunte directamente a PACS remotos.
+- El handoff del portal a OHIF usa un `StudyInstanceUID` explícito, no la study list general.
+- La apertura del visor desde el portal ocurre en una pestaña nueva.
 
 ### Retención
 - Existe mecanismo automático (cron backend o equivalente) que elimina estudios expirados (>7 días) y actualiza `cached_studies`.
+
+### Observabilidad
+- El flujo paciente deja logs estructurados para:
+  - inicio de sync;
+  - request de token;
+  - request QIDO;
+  - cantidad de estudios;
+  - duración.
+- Las métricas de observabilidad no se persisten en Postgres en esta etapa.
 
 ---
 
@@ -514,13 +554,17 @@ Problema: Orthanc puede recibir instancias progresivamente.
 - Reverse proxy: **Nginx** (única exposición pública HTTP).
 - Retrieve: **C-MOVE preferido**, con opción de **C-GET** si un nodo no permite C-MOVE (configurable por nodo).
 - Purga: **backend cron** si Orthanc no garantiza la política requerida de forma simple.
+- El flujo paciente usa lista propia del portal y retrieve manual por estudio.
+- El flujo profesional usa panel propio del portal; con filtros ejecuta QIDO real al nodo remoto configurado.
 
 ---
 
 ## Open Questions Requiring Human Decision
 1. **Puertos/hostnames públicos**: ¿qué hostname/puerto debe exponer Nginx en el entorno objetivo (dev/staging/on-prem)? ¿Se requiere TLS en MVP?
-2. **DIMSE networking**: ¿el Orthanc local (Move SCP/C-STORE) será alcanzable desde todos los PACS remotos? (firewall/NAT/VPN). En caso contrario, ¿se permite C-GET desde el backend?
+2. **DIMSE networking**: ¿el Orthanc local (Move SCP/C-STORE) será alcanzable desde todos los PACS remotos? (firewall/NAT/VPN). En caso contrario, ¿se permite C-GET desde Orthanc como estándar?
 3. **Soporte Legacy**: para PACS sin DICOMweb, ¿se confirma uso de **dcmtk** dentro del contenedor backend (licenciamiento/instalación) o hay librería preferida?
 4. **UI del MVP**: ¿se requiere UI web mínima (lista + botones) o basta con API + ejemplos (curl/Postman) para el primer hito?
 5. **Estrategia de completitud**: ¿aceptan “stable window polling” como criterio de completitud de retrieve, o requieren una señal más fuerte (p.ej. conteo esperado de instancias desde metadata remota)?
 6. **Metadatos en Postgres**: ¿hasta qué nivel se persiste metadata (solo studies vs series/instances) para acelerar UX y reporting técnico?
+7. **HIS (ANDES)**: ¿cuál es el endpoint final y el método de autenticación para resolver identificadores alternativos de pacientes?
+8. **OHIF en producción**: ¿la study list nativa quedará completamente deshabilitada para paciente y profesional, o se reservará para soporte técnico?

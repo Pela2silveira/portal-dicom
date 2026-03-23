@@ -1,7 +1,11 @@
-# Implementation Plan (MVP) — Portal DICOM Agregador + Caché Local + OHIF
+# Plan de Implementación (MVP) — Portal DICOM Agregador + Caché (Orthanc) + OHIF
+
+> Este plan se mantiene como **plan vivo**. Los primeros milestones ya están sustancialmente implementados; los ítems “Done/Current/Next” indican el estado real del repo.
 
 ## Milestone 1 — Compose stack + reverse proxy boundary
 **Goal**: Levantar el “one command up” con la frontera HTTP única en Nginx, branding base y servicios internos cableados.
+
+**Status**: **Done (baseline establecida)**
 
 **Deliverables**
 - `docker-compose.yml` con servicios: `nginx`, `backend`, `postgres`, `orthanc`, `ohif`.
@@ -14,13 +18,10 @@
   - `/dicomweb:` alias de compatibilidad a `/dicom-web/`
   - `/portal-assets:` assets estáticos propios del portal
 - Backend “skeleton” (Go) con `/api/health` y logs JSON.
-- Orthanc configurado (DICOM + DICOMweb) accesible **solo** vía Nginx HTTP; DICOM port 4242 publicado según compose (LAN).
+- Orthanc configurado (DICOM + DICOMweb) accesible **solo** vía Nginx HTTP; DICOM port `4242` publicado según compose.
 - OHIF configurado y pinneado a `ohif/app:v3.11.1`, consumiendo DICOMweb en `/dicom-web` (a través de Nginx).
 - Landing pública con branding `RedImagenesNQN`, assets propios y referencia visual ANDES.
 - Landing pública responsive para dispositivos móviles.
-
-**Dependencies**
-- Ninguna externa (no requiere PACS remoto real).
 
 **Exit criteria (testable)**
 - `docker compose up` levanta todo sin pasos manuales.
@@ -34,8 +35,10 @@
 ## Milestone 2 — Persistencia + migraciones + configuración externalizada
 **Goal**: Tener Postgres operativo con migraciones, modelo mínimo, y carga/validación de `config.json` + secretos por env/file refs.
 
+**Status**: **Done (baseline establecida)**
+
 **Deliverables**
-- Migraciones versionadas (p.ej. golang-migrate):
+- Migraciones versionadas:
   - `pacs_nodes`, `his_config`, `patients`, `patient_identifiers`, `patient_sessions`, `patient_study_access`
   - `physicians`, `physician_sessions`, `physician_recent_queries`, `auth_events`, `auth_material_cache`
   - `search_requests`, `search_node_runs`, `retrieve_jobs`, `cached_studies`, `integration_audit`
@@ -46,11 +49,8 @@
   - persistencia de búsquedas recientes y sesiones de profesional
 - Loader de `CONFIG_PATH` (JSON) al arranque:
   - upsert de `pacs_nodes` y `his_config`
-  - validación de schema + “secret_ref resolution” desde env o archivo montado
+  - validación de schema + “secret_ref/env resolution” desde env o archivo montado
 - Endpoint `GET /api/config` (read-only en MVP inicial; `PUT` opcional posterior).
-
-**Dependencies**
-- Milestone 1 (stack levantado y conectividad backend↔postgres).
 
 **Exit criteria (testable)**
 - Arranque del backend ejecuta migraciones automáticamente.
@@ -60,12 +60,45 @@
 
 ---
 
-## Milestone 3 — Landing pública + búsqueda agregada con SSE + deduplicación
-**Goal**: Consolidar la landing pública y la búsqueda concurrente multi-nodo con streaming SSE, dedup por `StudyInstanceUID`, y UI mínima para probar el loop.
+## Milestone 3 — Landing pública + superficies del portal
+**Goal**: Consolidar la landing pública y las superficies propias de paciente/profesional para que el portal sea el control plane y OHIF quede solo como visor.
+
+**Status**: **Done (baseline establecida)**
+
+**Deliverables**
+- Landing pública:
+  - selector `Paciente` / `Profesional`
+  - flujo visual `Documento + OTP`
+  - flujo visual `DNI / usuario + contraseña`
+  - textos alineados con roadmap `LDAP provincial + MFA` para médicos
+  - aclaración visual de que el portal es la superficie de acceso y OHIF es el visor
+  - adaptación responsive para teléfonos y tablets
+- Superficie paciente:
+  - input `Documento`
+  - botón “Actualizar lista”
+  - lista de estudios
+  - botón `Retrieve` por estudio pending
+  - botón `Visualizar` cuando el estudio esté local
+- Superficie profesional:
+  - grilla de resultados
+  - acciones Retrieve / Visualizar
+  - fallback a recientes persistidos sin filtros
+
+**Exit criteria (testable)**
+- Navegación: `/` → superficie paciente/profesional sin pasar por OHIF.
+- Responsive básico (viewport mobile) sin overflow crítico.
+- Acciones de visualización abren OHIF en nueva pestaña.
+
+---
+
+## Milestone 4 — Búsqueda agregada con SSE + deduplicación
+**Goal**: Implementar `POST /api/search` con fan-out concurrente a múltiples nodos, streaming SSE incremental, deduplicación por `StudyInstanceUID` y persistencia operacional.
+
+**Status**: **Pending**
 
 **Deliverables**
 - API:
-  - `POST /api/search` → crea `search_id`, persiste `search_requests`
+  - `POST /api/search` → `{search_id, events_url}`
   - `GET /api/search/{id}/events` (SSE): `node_started`, `study`, `node_finished`, `error`, `done`
 - Engine de búsqueda:
   - Worker pool por search; timeout por nodo (`timeout_ms`)
@@ -77,96 +110,82 @@
   - clave `StudyInstanceUID`
   - metadatos preferidos: nodo de mayor prioridad
   - `locations[]` acumulado + `cache.present`
-- UI estática (Nginx):
-  - Landing pública:
-    - selector `Paciente` / `Profesional`
-    - flujo visual `Documento + OTP`
-    - flujo visual `DNI / usuario + contraseña`
-    - textos alineados con roadmap `LDAP provincial + MFA` para médicos
-    - aclaración visual de que el portal es la superficie de acceso y OHIF es el visor
-    - adaptación responsive para teléfonos y tablets
-  - Form con campos MVP: `patient_id`, `patient_name`, `date_from`, `date_to`, `modalities`
-  - Tabla incremental con columnas requeridas: `PatientName`, `PatientID`, `StudyDate`, `StudyTime`, `ModalitiesInStudy`, `StudyDescription`, `source nodes`, `cache status`
-  - Conexión SSE y render incremental.
+- UI Operativa/Profesional:
+  - Conexión SSE y render incremental real.
 
 **Dependencies**
-- Milestone 2 (config + DB listos).
-- **Bloqueo parcial por inputs humanos**: hostnames/URLs reales del/los PACS remotos + Keycloak details para validación end-to-end con remoto.  
-  - Sin esos datos, se testea con “mock node” o un Orthanc/dcm4chee de laboratorio.
+- Config + DB listos.
+- Al menos 2 nodos operativos o nodos simulados para validar multi-node.
 
 **Exit criteria (testable)**
 - `POST /api/search` devuelve `search_id` y `events_url`.
 - UI muestra resultados parciales en menos de N segundos (configurable) y deduplica por `StudyInstanceUID`.
 - En Postgres: se crean `search_requests` + `search_node_runs` con latencias/estado por nodo.
-- Logs/audit minimizan PHI (no guardar `patient_name` en `integration_audit`; `query_json` en `search_requests` puede incluirlo si se considera “operativo”, pero audit/logs deben redactarlo).
+- Logs/audit minimizan PHI.
+
+**Blocked by open decisions?**
+- **Parcialmente bloqueado**: requiere ≥2 nodos para validar el caso federado real.  
+- **Aporte nuevo a incorporar**: evaluar incluir un **Orthanc remoto simulado** en compose para CI/dev y así destrabar validación repetible del flujo federado.
 
 ---
 
-## Milestone 4 — Retrieve jobs (C-MOVE preferido) + completitud por polling Orthanc
-**Goal**: Permitir “Retrieve manual” persistido, ejecutado por worker, con transición de estados y criterio de completitud estable.
+## Milestone 5 — Retrieve jobs + completitud + handoff a OHIF
+**Goal**: Permitir “Retrieve manual” persistido, ejecutado por Orthanc contra nodos remotos, con transición de estados y criterio de completitud estable.
+
+**Status**: **Done for first slice / needs hardening**
 
 **Deliverables**
 - API:
-  - `POST /api/retrieve` (study_instance_uid, source_node_id) → `job_id`
-  - `GET /api/retrieve/{job_id}` → estado + timestamps + error
-- Scheduler/worker:
-  - cola persistida en `retrieve_jobs` (`queued→running→done/failed`)
-  - ejecución de retrieve por nodo:
-    - **C-MOVE**: orquestado para que el intercambio ocurra entre PACS remoto y Orthanc local
-    - destino: Orthanc local (AE/host/port configurables)
-  - completitud:
-    - polling Orthanc por `StudyInstanceUID`
-    - stable window + timeout global (por config)
-    - guarda `orthanc_study_id`, `instances_received`
-- UI:
-  - Botón “Retrieve” por resultado (si `cache.present=false`)
-  - Estado del job (poll simple al backend)
-  - “Visualizar” deshabilitado hasta `job=done` (decisión humana ya confirmada)
-  - Apertura de OHIF sólo sobre estudios puntuales seleccionados desde el portal
+  - `POST /api/retrieve` + `GET /api/retrieve/{job_id}`
+  - `GET /api/cache/studies/{study_instance_uid}`
+  - Paciente: `GET /api/patient/studies?document=<dni>` + `POST /api/patient/retrieve`
+  - Profesional: `GET /api/physician/results?...` + `POST /api/physician/retrieve`
+- Orquestación C-GET:
+  - Backend configura modalidad en Orthanc (`PUT /modalities/{id}`) si corresponde
+  - Dispara retrieve `POST /modalities/{id}/get` con `StudyInstanceUID`
+  - Timeout específico para retrieve (no usar timeout HTTP corto global)
+- Polling completitud (MVP):
+  - busca Study por `StudyInstanceUID`
+  - observa `instances_count` y considera done con `stable_window` o `global_timeout`
+- Persistencia:
+  - `retrieve_jobs` transiciones `queued → running → done/failed`
+  - `cached_studies` actualizado con `expires_at`, `last_verified_at`
+- Handoff a OHIF:
+  - Portal construye URL `GET /ohif/viewer?StudyInstanceUIDs=<uid>`
+  - UI abre en pestaña nueva; “Visualizar” solo en `done`
 
-**Dependencies**
-- Milestone 3 (búsqueda y UI listos; se requiere `StudyInstanceUID` real).
-- Conectividad DIMSE a remoto (firewall/VPN) y reachability del Orthanc DICOM port desde el PACS remoto para C-MOVE.
+**What is already working**
+- Paciente:
+  - `GET /api/patient/studies?document=<dni>` con QIDO real al nodo configurado
+  - `POST /api/patient/retrieve` con `C-GET` vía Orthanc REST
+  - actualización a `available_local`
+- Profesional:
+  - `POST /api/physician/retrieve`
+  - recalculado de `cacheStatus`, `retrieveStatus` y `viewer_url`
 
-**Exit criteria (testable)**
-- Crear job y ver transición `queued→running→done`.
-- Orthanc muestra el estudio en caché y OHIF lo abre desde `/dicomweb`.
-- Orthanc muestra el estudio en caché y OHIF lo abre desde `/dicom-web`.
-- Timeout produce `failed_timeout` y queda auditado.
-
----
-
-## Milestone 5 — Retrieve fallback (C-GET via Orthanc) + endpoint cache status
-**Goal**: Soportar nodos donde C-MOVE no es posible, usando C-GET “orquestado” por Orthanc, y exponer estado de caché por UID.
-
-**Deliverables**
-- Config por nodo: `retrieve_method = move|get|auto`.
-- Implementación C-GET:
-  - backend llama Orthanc REST para iniciar retrieve hacia remoto (Orthanc como SCU).
-  - reutiliza mismo polling de completitud.
-  - mantiene el principio PACS↔PACS: Orthanc habla con el remoto y el backend solo coordina.
-- `GET /api/cache/studies/{study_instance_uid}`:
-  - `present`, `orthanc_study_id` y timestamps (si hay index)
-- Robustez:
-  - manejo de reintentos (mínimo: 1 retry configurable)
-  - parsing de errores de Orthanc y persistencia en `retrieve_jobs.error`
-
-**Dependencies**
-- Milestone 4 (jobs + polling ya implementados).
-
-**Blocked until open decision is resolved**
-- Resuelto para el primer slice: `PUT /modalities/{id}` para asegurar el remoto y `POST /modalities/{id}/get` para disparar `C-GET` desde Orthanc.
+**Current hardening still needed**
+- Límites de concurrencia de retrieve por nodo/global
+- Timeouts operativos explícitos por job
+- Mejor diferenciación de estados `failed/running/retryable`
+- Formalizar la preferencia `C-MOVE` vs `C-GET` por nodo
 
 **Exit criteria (testable)**
-- Con un nodo configurado como `get`, `POST /api/retrieve` completa con `done` y el estudio se visualiza en OHIF.
-- `GET /api/cache/studies/{uid}` refleja presencia real (source of truth = Orthanc).
+- `POST /api/patient/retrieve` crea `retrieve_job` en DB.
+- Job avanza a `done` al aparecer el estudio en Orthanc (según polling).
+- `Visualizar` abre OHIF y OHIF carga el estudio desde `/dicom-web/` (no desde remoto).
+- Comportamiento de timeout: si no completa a tiempo → `failed_timeout` (o `failed` con error).
+
+**Blocked by open decisions?**
+- **Sí, parcialmente** por conectividad DIMSE real si se quiere mover a `C-MOVE` por defecto en ciertos nodos.
 
 ---
 
 ## Milestone 6 — Patient list surface + physician async panel
-**Goal**: Separar formalmente las superficies de paciente y profesional para que OHIF no sea la lista principal de estudios.
+**Goal**: Consolidar las superficies de paciente y profesional para que OHIF no sea la lista principal de estudios.
 
-**Deliverables**
+**Status**: **Current / partially done**
+
+**Already implemented**
 - Patient surface:
   - endpoint backend para `patient studies`
   - lista propia del portal con estudios autorizados
@@ -176,19 +195,16 @@
   - observabilidad estructurada del sync paciente: token, QIDO, duración y conteos
   - sin persistir métricas de observabilidad en Postgres; sólo logs y futuros stats en memoria
 - Physician surface:
-  - endpoint/backend para búsqueda federada
-  - lista con nodos remotos, disponibilidad local, estado de retrieve y acciones
-  - retrieve asincrónico visible en UI
-  - primer slice funcional con `GET /api/physician/results?username=<dni>` sobre `physician_recent_queries` sembradas en DB hasta integrar búsqueda federada real
-  - primer retrieve real desde la grilla con `POST /api/physician/retrieve` y actualización de estado local contra DB/Orthanc
-  - búsqueda remota real por QIDO cuando el profesional aplica filtros, dejando `recent queries` solo como fallback sin filtros
-- Configuración de OHIF:
-  - study list nativa deshabilitada para los flujos finales de paciente y médico
+  - `GET /api/physician/results?username=<dni>` sobre `physician_recent_queries` sembradas en DB cuando no hay filtros
+  - búsqueda remota real por QIDO cuando el profesional aplica filtros
+  - `POST /api/physician/retrieve` con actualización de estado local contra DB/Orthanc
 
-**Dependencies**
-- Milestones 3–5.
-- Definición posterior del modelo de auth real para paciente y profesional.
-- Publicar contratos explícitos de UI y handoff a viewer para paciente y profesional.
+**Remaining work**
+- Búsqueda federada real multi-nodo para profesional
+- Normalización de filtros entre nodos
+- Contrato definitivo de campos y estados en la grilla profesional
+- Definir si existirá o no una superficie `/portal/operator` separada
+- Resolver el riesgo de `PatientID == DNI` como contrato demasiado rígido para paciente
 
 **Exit criteria (testable)**
 - El paciente navega solo estudios del portal y no ve la study list nativa de OHIF.
@@ -201,6 +217,8 @@
 ## Milestone 7 — Retención: purga Orthanc 7 días + limpieza Postgres 30 días (cron backend)
 **Goal**: Evitar crecimiento ilimitado de caché y tablas operativas, con tareas auditables e idempotentes.
 
+**Status**: **Pending**
+
 **Deliverables**
 - Backend cron (ticker interno) con dos tareas:
   1. **Purge Orthanc**: identifica estudios expirados (7 días) y los borra vía Orthanc REST; actualiza `cached_studies`.
@@ -209,12 +227,15 @@
 - Guards:
   - no borrar estudios con retrieve `running`
   - manejo de errores parcial (continue-on-error)
+- Hardening de rutas:
+  - allowlist precisa para `/dicom-web/*`
+  - headers/flags correctos para SSE (sin buffering)
 
 **Dependencies**
-- Milestone 2 (DB) + Milestone 4 (cached_studies/retrieve_jobs).
+- DB + retrieve jobs/cached_studies implementados.
 
 **Exit criteria (testable)**
-- Forzar un estudio “expirado” (manipulando timestamps en `cached_studies`) y verificar que se elimina de Orthanc y del índice.
+- Forzar un estudio “expirado” y verificar que se elimina de Orthanc y del índice.
 - Forzar registros antiguos en `integration_audit` y confirmar limpieza automática.
 - Logs sin PHI adicional (solo UIDs/timestamps/ids técnicos).
 
@@ -223,6 +244,8 @@
 ## Milestone 8 — End-to-end hardening MVP (proxy allowlist + token handling + test suite)
 **Goal**: Cerrar el MVP con controles mínimos y pruebas repetibles.
 
+**Status**: **Pending**
+
 **Deliverables**
 - Nginx:
   - allowlist precisa de paths DICOMweb requeridos por OHIF
@@ -230,9 +253,14 @@
 - Backend:
   - cache de token Keycloak con TTL; refresh on 401
   - nunca loggear token ni `client_secret`
+  - límites operativos:
+    - `max_concurrent_retrieves_global`
+    - `max_concurrent_retrieves_per_node`
+    - timeout total por job
 - Tests:
   - Unit tests: dedup/merge policy, “partial filtering” flags
-  - Integration tests (docker compose): health, search SSE basic contract, retrieve job state machine (con PACS de laboratorio si existe)
+  - Integration tests (docker compose): health, search SSE basic contract, retrieve job state machine
+  - evaluar incluir “remote Orthanc simulated” como soporte de CI/dev
 - Documentación “Runbook”:
   - cómo levantar stack
   - cómo agregar nodo PACS en `config.json`
@@ -240,10 +268,10 @@
   - troubleshooting (logs, tablas clave)
 
 **Dependencies**
-- Milestones 1–6.
+- Milestones 1–7.
 
 **Exit criteria (testable)**
-- Script de pruebas (make target o bash) que:
+- Script de pruebas que:
   - levanta compose
   - valida health
   - ejecuta una búsqueda (aunque sea contra nodo mock/lab)
@@ -253,26 +281,43 @@
 ---
 
 ## Blockers Summary (Milestones blocked by open human inputs/decisions)
-- **Milestone 3 (parcialmente bloqueado)**: requiere URLs/hostnames de PACS remotos y Keycloak details para validar QIDO-RS real; se puede avanzar con nodo mock/lab.
-- **Milestone 4 (dependiente del entorno)**: requiere conectividad DIMSE real (C-MOVE) desde PACS remoto hacia Orthanc local.
-- **Milestone 5 (bloqueado)**: requiere decisión/confirmación de **endpoints Orthanc REST para orquestar C-GET** (payloads y comportamiento esperado).
-- **Milestone 6 (parcialmente bloqueado)**: requiere definición funcional exacta de la lista del paciente y del panel del médico cuando se conecten los flujos reales de autenticación.
+- **Milestone 4 (parcialmente bloqueado)**: requiere ≥2 nodos para validar búsqueda federada real; se puede destrabar con nodo mock/lab o Orthanc remoto simulado.
+- **Milestone 5 (dependiente del entorno)**: requiere conectividad DIMSE real si se quiere validar `C-MOVE` en vez de `C-GET`.
+- **Milestone 6 (parcialmente bloqueado)**: requiere definir estrategia de identificador paciente (`PatientID == DNI` vs configurable/HIS).
+- **Milestone 8 (parcialmente bloqueado)**: requiere decidir controles mínimos para entornos no-localhost (`X-Portal-Key`, allowlist IP, o similar).
 
 ---
 
-# First Build Slice
-El slice más pequeño “end-to-end” para demostrar valor (search → retrieve → view) con el mínimo de piezas:
+# Current Build Slice
+El slice mínimo **ya implementado** que demuestra valor real hoy es:
 
-1. **Compose + Nginx boundary + OHIF** (Milestone 1, mínimo viable).
-2. **Backend + Postgres con migraciones + config loader** (parte esencial de Milestone 2).
-3. **Landing pública + búsqueda con SSE contra 1 nodo remoto QIDO-RS (o nodo lab) + LocalCacheHandler** (subset de Milestone 3).
-4. **Retrieve C-MOVE único + polling completitud + link Visualizar a OHIF** (subset de Milestone 4).
-5. **UI mínima**: landing + formulario + tabla + botón Retrieve + botón Visualizar (incluido en Milestone 3/4).
+1. **Compose + Nginx boundary + OHIF**.
+2. **Backend + Postgres con migraciones + config loader**.
+3. **Landing pública + superficies paciente/profesional**.
+4. **Paciente**:
+   - QIDO real al único nodo remoto configurado
+   - retrieve real con `C-GET` vía Orthanc REST
+   - handoff a OHIF por `StudyInstanceUID`
+5. **Profesional**:
+   - recientes persistidos sin filtros
+   - QIDO real con filtros
+   - retrieve real desde la grilla
 
-**Definición de “Done” del First Build Slice**
-- Un operador puede:
+**Definición de “Done” del slice actual**
+- Un usuario puede:
   - abrir `http://localhost:8080/`
   - ver la landing pública con branding y flujos paciente/profesional
-  - buscar estudios (SSE) y ver al menos 1 resultado deduplicado
-  - disparar retrieve (C-MOVE) y esperar a `done`
-  - abrir OHIF y visualizar el estudio desde `/dicom-web` (Orthanc local) sin acceso directo a PACS remoto.
+  - consultar estudios de paciente contra nodo remoto real
+  - disparar retrieve y esperar a `done`
+  - abrir OHIF y visualizar el estudio desde `/dicom-web` (Orthanc local) sin acceso directo a PACS remoto
+
+---
+
+# Next Recommended Slice
+El próximo slice de mayor valor es:
+
+1. **Búsqueda profesional federada real multi-nodo**
+2. **Hardening de rutas `/dicom-web` y exposición fuera de localhost**
+3. **Límites operativos de retrieve**
+4. **Definir estrategia configurable del identificador paciente**
+5. **Agregar entorno remoto simulado para CI/dev si sigue haciendo falta repetibilidad**
