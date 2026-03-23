@@ -204,6 +204,7 @@ El sistema debe estar preparado para recibir por configuración:
 * La exposición pública del stack debe pasar por Nginx.
 * Los puertos directos de Orthanc deben poder limitarse a `127.0.0.1` para operación local.
 * Para PACS remotos dcm4chee, el backend debe poder obtener un token OAuth2 por `client_credentials` contra Keycloak y reutilizarlo para invocar la API REST del archivo.
+* Por ahora, las métricas de observabilidad no deben persistirse en PostgreSQL. Deben resolverse mediante logs estructurados y, si hiciera falta, endpoints de stats en memoria.
 
 ### 9.2 Fase posterior
 * Registro de cada DNI consultado, por qué usuario (Médico/Paciente) y desde qué IP.

@@ -173,6 +173,7 @@
   - apertura puntual en OHIF
   - primer slice funcional con QIDO `PatientID=<dni>` contra el único nodo PACS configurado y sincronización en `patient_study_access`
   - observabilidad estructurada del sync paciente: token, QIDO, duración y conteos
+  - sin persistir métricas de observabilidad en Postgres; sólo logs y futuros stats en memoria
 - Physician surface:
   - endpoint/backend para búsqueda federada
   - lista con nodos remotos, disponibilidad local, estado de retrieve y acciones

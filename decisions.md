@@ -40,6 +40,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The first functional physician panel is now backed by `GET /api/physician/results`, with DB-seeded recent-query rows per username until real federated search is implemented.
 - The database must cache patient identity anchors, alternate identifiers from HIS, known authorized study UIDs, physician recent searches, and future session state.
 - Physician credentials must not be stored in clear text; only session state, auth events, and encrypted provider-issued auth material are allowed.
+- Observability metrics should not be persisted in PostgreSQL for now; use structured logs and optional in-memory stats instead.
 - The native OHIF study list is a UX choice only and must not be treated as an access-control mechanism.
 - Future real access control must be enforced by backend/proxy using active portal session and allowed `StudyInstanceUID`, not by viewer visibility rules alone.
 - The explicit patient and physician UI contracts live in `artifacts/05_ui_contracts.md`.

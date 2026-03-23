@@ -178,6 +178,7 @@ Proveer un portal operativo mínimo capaz de:
    - cantidad de estudios sincronizados;
    - cantidad de estudios ya disponibles localmente;
    - duración total del sync.
+9. Estas métricas no se persisten en PostgreSQL en esta etapa; se resuelven mediante logs estructurados y futuros endpoints de stats en memoria.
 
 ### 5.3.2 Flujo futuro de profesional
 1. El profesional ingresa al portal mediante autenticación institucional.
