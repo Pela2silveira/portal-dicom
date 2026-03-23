@@ -56,7 +56,7 @@
 - Arranque del backend ejecuta migraciones automáticamente.
 - Cambiar `config.json` (p.ej. nombre/priority de nodo) se refleja en `GET /api/config`.
 - Logs y `integration_audit` no incluyen `client_secret` ni tokens (verificación manual en logs + DB).
-- Contraseñas de médicos y OTPs no se persisten en claro en ninguna tabla.
+- Contraseñas de médicos y códigos por mail no se persisten en claro en ninguna tabla.
 
 ---
 
@@ -68,7 +68,7 @@
 **Deliverables**
 - Landing pública:
   - selector `Paciente` / `Profesional`
-  - flujo visual `Documento + OTP`
+  - flujo visual `Documento + código por mail`
   - flujo visual `DNI / usuario + contraseña`
   - textos alineados con roadmap `LDAP provincial + MFA` para médicos
   - aclaración visual de que el portal es la superficie de acceso y OHIF es el visor

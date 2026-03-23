@@ -26,7 +26,7 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 ### 2.2 Fuera de alcance en este MVP
 * Login real de médicos.
 * Login real de pacientes.
-* OTP real por SMS o Email.
+* Código real por mail.
 * Gestión de sesiones.
 * JWT para restricción de acceso a OHIF.
 * Permisos finos por usuario.
@@ -45,9 +45,9 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 * **Alcance funcional futuro:** acceso a una consola propia del portal con búsqueda manual mediante filtros, estado federado por PACS remoto, disponibilidad local, estado de retrieve y apertura puntual en el visor.
 
 ### 3.2 Flujo público visible en MVP: Ingreso de Pacientes
-* **UI visible en MVP:** formulario visual con `Documento`, acción `Enviar OTP` e ingreso de `Código OTP`.
-* **Estado actual:** sólo maqueta funcional de interfaz; no hay OTP real ni sesión.
-* **Objetivo de integración posterior:** validación de `DNI + OTP` vía SMS/Email.
+* **UI visible en MVP:** formulario visual con `Documento`, acción `Enviar código` e ingreso de `Código por mail`.
+* **Estado actual:** sólo maqueta funcional de interfaz; no hay código por mail real ni sesión.
+* **Objetivo de integración posterior:** validación de `DNI + código por mail`.
 * **Identidad (HIS Integration):** en fase posterior, el sistema consultará un servicio REST del HIS para obtener los identificadores asociados al DNI del paciente.
 * **Búsqueda Implícita futura:** al validar correctamente el ingreso de paciente, el portal armará una lista propia de estudios autorizados para ese paciente.
 * **Restricción funcional futura:** el paciente no debe navegar la base completa del caché local ni la lista nativa de estudios de OHIF.

@@ -5,7 +5,7 @@
 ## 0) Estado, decisiones confirmadas y supuestos
 
 ### Decisiones confirmadas (Human Decisions Log)
-- El MVP se entrega **antes** de cualquier feature de autenticación (médicos/pacientes/OTP/sesiones/JWT/share links: **fuera**).
+- El MVP se entrega **antes** de cualquier feature de autenticación (médicos/pacientes/código por mail/sesiones/JWT/share links: **fuera**).
 - Primer entregable: **stack completo en Docker Compose**.
 - Servicios mínimos: `orthanc` (caché), `backend` (Go), `postgres`, `nginx`, `ohif`.
 - **Orthanc local obligatorio** como caché y **destino de retrieve** (Move SCP).
@@ -15,7 +15,7 @@
 - La landing pública forma parte del MVP como experiencia visual, aunque sin autenticación real.
 - La marca pública del portal es **RedImagenesNQN**.
 - La identidad visual de la landing toma como referencia la app **ANDES**.
-- El flujo visible de paciente en la landing usa `Documento + OTP` como experiencia UI.
+- El flujo visible de paciente en la landing usa `Documento + código por mail` como experiencia UI.
 - El flujo visible de profesional en la landing usa `DNI / usuario + contraseña` como experiencia UI.
 - La landing y las superficies propias del portal deben ser **responsive** para dispositivos móviles.
 - La integración futura objetivo para profesionales es **LDAP provincial + MFA**.
@@ -52,7 +52,7 @@ Proveer un portal operativo mínimo capaz de:
 - **UI Portal Pública (MVP)**: landing estática servida por Nginx para:
   - Mostrar branding institucional.
   - Presentar selector `Paciente` / `Profesional`.
-  - Exponer el flujo visual de `Documento + OTP` para pacientes.
+  - Exponer el flujo visual de `Documento + código por mail` para pacientes.
   - Exponer el flujo visual de `DNI / usuario + contraseña` para profesionales.
   - Enlazar a OHIF y a verificaciones operativas.
 - **UI Operativa (MVP)**: página simple servida por Nginx o frontend mínimo para:
@@ -94,7 +94,7 @@ Proveer un portal operativo mínimo capaz de:
 
 ## 3) Actores (MVP)
 - **Operador técnico / integrador** (sin login): configura nodos y prueba búsqueda/retrieve.
-- **Paciente** (sin auth real en MVP): visualiza el flujo de acceso basado en documento y OTP.
+- **Paciente** (sin auth real en MVP): visualiza el flujo de acceso basado en documento y código por mail.
 - **Profesional** (sin auth real en MVP): visualiza el flujo de acceso basado en DNI/usuario y contraseña.
 - **Servicios remotos PACS**: responden QIDO-RS/C-FIND y envían estudios al Orthanc local vía C-STORE tras un C-MOVE/C-GET.
 - **OHIF**: consume DICOMweb desde Orthanc local.
@@ -224,7 +224,7 @@ Proveer un portal operativo mínimo capaz de:
 2. Selecciona `Paciente` o `Profesional`.
 3. En MVP, el flujo es sólo visual y no genera sesión.
 4. En una fase posterior:
-   - `Paciente`: validación `DNI + OTP`.
+   - `Paciente`: validación `DNI + código por mail`.
    - `Profesional`: validación `LDAP provincial + MFA`.
 
 ---
@@ -429,7 +429,7 @@ Problema: Orthanc puede recibir instancias progresivamente.
 - `patient_identifiers`
   - identificadores alternativos resueltos desde HIS u otros dominios
 - `patient_sessions`
-  - estado de sesión y verificación OTP futura
+  - estado de sesión y verificación futura de código por mail
 - `patient_study_access`
   - lista autorizada de `StudyInstanceUID` por paciente para la superficie propia del portal
 - `physicians`

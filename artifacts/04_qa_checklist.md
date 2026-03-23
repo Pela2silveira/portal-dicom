@@ -5,7 +5,7 @@
 - [Ready] **Orthanc admin REST not exposed**: Nginx denies non‑DICOMweb Orthanc routes (explicit 403/404).
 - [Ready] **DICOMweb-only viewer data path**: OHIF configured to consume only `/dicom-web/` (Orthanc local) and never remote PACS.
 - [Ready] **Secrets not committed**: config uses `*_secret_ref` / env/file refs; runtime `config.json` is local-only and ignored.
-- [Ready] **No auth in MVP**: no sessions/JWT/OTP validation implemented; UI flows are visual only.
+- [Ready] **No auth in MVP**: no sessions/JWT/email-code validation implemented; UI flows are visual only.
 - [Missing] **Hardening for non-localhost environments**: minimal protections when deployed beyond localhost (TLS termination, IP allowlist, shared operator key, etc.).
 - [Missing] **Token handling hardening**: Keycloak token cache/refresh policy (TTL, refresh-on-401) + explicit guarantee tokens/secrets never appear in logs.
 - [Missing] **PHI minimization policy enforcement**: explicit list of fields allowed in `integration_audit`, `search_*` tables, and logs (and automated checks).

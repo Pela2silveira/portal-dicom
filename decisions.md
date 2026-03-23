@@ -14,7 +14,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Orthanc is the source of truth for cached studies; Postgres keeps only an operational index that can be rebuilt.
 - No doctor login in the MVP.
 - No patient login in the MVP.
-- No OTP, sessions, JWT, or share links in the MVP.
+- No email-code verification, sessions, JWT, or share links in the MVP.
 - HIS integration is configuration-first in the MVP and patient lookup is not required to be fully operational in the first build slice.
 - The first build slice follows HIS Option B: persist and validate HIS configuration only, without executing real Andes MPI patient lookups yet.
 - Remote dcm4chee integration details must be externalized as configuration.
@@ -24,7 +24,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The public landing page is part of the MVP and is served directly by Nginx.
 - The landing page brand is `Portal de Imágenes`.
 - The landing page should use visual identity inspired by the `andes/app` application.
-- The landing page includes a visible patient flow with `Documento + OTP` as a UI-only flow in the MVP.
+- The landing page includes a visible patient flow with `Documento + código por mail` as a UI-only flow in the MVP.
 - The landing page includes a visible physician flow with `DNI / usuario + contraseña` as a UI-only flow in the MVP.
 - The current landing must route patient and physician flows to portal-owned surfaces before any direct OHIF navigation.
 - The public UI should communicate product-ready workflows and avoid demo/mock wording in visible copy, even while some validation steps still use placeholder-backed behavior.
@@ -32,7 +32,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The public landing page should visually center the access form and keep surrounding explanatory content brief and secondary.
 - The landing page and portal-owned UI surfaces must be responsive for mobile devices.
 - Physician authentication is still out of MVP implementation scope, but the target future integration is `LDAP provincial + MFA`.
-- Patient OTP validation is still out of MVP implementation scope, but the target future integration remains `DNI + OTP`.
+- Patient email-code validation is still out of MVP implementation scope, but the target future integration remains `DNI + código por mail`.
 - Portal-specific static assets such as logo and favicon must be served independently from OHIF assets.
 - OHIF is a viewer surface, not the primary search or access surface.
 - Patient access must use a portal-owned study list filtered to authorized patient studies.

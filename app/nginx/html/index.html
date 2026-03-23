@@ -694,15 +694,15 @@
 
               <div class="row">
                 <div class="field-group">
-                  <label for="patient-otp">Codigo OTP</label>
-                  <input id="patient-otp" name="patient-otp" type="text" inputmode="numeric" placeholder="Ingrese el codigo recibido">
+                  <label for="patient-mail-code">Codigo por mail</label>
+                  <input id="patient-mail-code" name="patient-mail-code" type="text" inputmode="numeric" placeholder="Ingrese el codigo recibido por mail">
                 </div>
-              <button class="action action-secondary" id="send-otp" type="button">Enviar OTP</button>
+              <button class="action action-secondary" id="send-mail-code" type="button">Enviar codigo</button>
             </div>
 
               <button class="action action-primary" type="button">Continuar</button>
 
-              <div class="note note-accent hidden" id="otp-feedback"></div>
+              <div class="note note-accent hidden" id="mail-code-feedback"></div>
             </section>
 
             <section class="flow" data-flow="physician">
@@ -854,16 +854,16 @@
       const physicianWorkspace = document.getElementById("physician-workspace");
       const roleButtons = document.querySelectorAll("[data-role]");
       const flows = document.querySelectorAll("[data-flow]");
-      const otpButton = document.getElementById("send-otp");
+      const mailCodeButton = document.getElementById("send-mail-code");
       const patientDocument = document.getElementById("patient-document");
-      const patientOtp = document.getElementById("patient-otp");
+      const patientMailCode = document.getElementById("patient-mail-code");
       const patientFilterFrom = document.getElementById("patient-filter-from");
       const patientFilterTo = document.getElementById("patient-filter-to");
       const patientFilterModality = document.getElementById("patient-filter-modality");
       const patientApplyFiltersButton = document.getElementById("patient-apply-filters");
       const patientStudyList = document.getElementById("patient-study-list");
       const patientSummary = document.getElementById("patient-summary");
-      const otpFeedback = document.getElementById("otp-feedback");
+      const mailCodeFeedback = document.getElementById("mail-code-feedback");
       const patientValidateButton = document.querySelector('[data-flow="patient"] .action-primary');
       const physicianDni = document.getElementById("physician-dni");
       const physicianPassword = document.getElementById("physician-password");
@@ -1229,42 +1229,42 @@
         }
       });
 
-      otpButton.addEventListener("click", () => {
+      mailCodeButton.addEventListener("click", () => {
         const documentValue = patientDocument.value.trim();
 
-        otpFeedback.classList.remove("hidden", "warning");
+        mailCodeFeedback.classList.remove("hidden", "warning");
 
         if (!documentValue) {
-          otpFeedback.textContent = "Ingrese su documento antes de solicitar el OTP.";
-          otpFeedback.classList.add("warning");
+          mailCodeFeedback.textContent = "Ingrese su documento antes de solicitar el codigo por mail.";
+          mailCodeFeedback.classList.add("warning");
           return;
         }
 
-        otpFeedback.textContent =
-          "OTP solicitado para el documento " +
+        mailCodeFeedback.textContent =
+          "Codigo por mail solicitado para el documento " +
           documentValue +
           ". Puede continuar para abrir su espacio de consulta.";
       });
 
       patientValidateButton.addEventListener("click", () => {
         const documentValue = patientDocument.value.trim();
-        const otpValue = patientOtp.value.trim();
+        const mailCodeValue = patientMailCode.value.trim();
 
-        otpFeedback.classList.remove("hidden", "warning");
+        mailCodeFeedback.classList.remove("hidden", "warning");
 
         if (!documentValue) {
-          otpFeedback.textContent = "Ingrese su documento antes de continuar.";
-          otpFeedback.classList.add("warning");
+          mailCodeFeedback.textContent = "Ingrese su documento antes de continuar.";
+          mailCodeFeedback.classList.add("warning");
           return;
         }
 
-        if (!otpValue) {
-          otpFeedback.textContent = "Ingrese el codigo para continuar.";
-          otpFeedback.classList.add("warning");
+        if (!mailCodeValue) {
+          mailCodeFeedback.textContent = "Ingrese el codigo para continuar.";
+          mailCodeFeedback.classList.add("warning");
           return;
         }
 
-        otpFeedback.textContent =
+        mailCodeFeedback.textContent =
           "Ingreso confirmado para el documento " +
           documentValue +
           ". Abriendo su espacio de estudios...";

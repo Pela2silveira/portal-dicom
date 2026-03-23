@@ -26,7 +26,7 @@
 - **The role of OHIF vs portal must be explicit**:
   - if OHIF keeps a native study list enabled, patients could conceptually “see everything” in the local cache;
   - hiding the list in OHIF is useful for UX, but not enough as a product-level access design.
-- **The public landing shows future auth concepts** (`OTP`, `LDAP provincial`, `MFA`) that are intentionally not implemented in the MVP. This must be stated clearly in specs and acceptance criteria to avoid stakeholder confusion.
+- **The public landing shows future auth concepts** (`código por mail`, `LDAP provincial`, `MFA`) that are intentionally not implemented in the MVP. This must be stated clearly in specs and acceptance criteria to avoid stakeholder confusion.
 - **Search semantics across nodes are not normalized**:
   - Differences in remote QIDO behavior (fuzzy name matching, date handling, character sets) can yield inconsistent results.
   - Legacy C-FIND query capabilities may not match QIDO filters (e.g., modality/date ranges).

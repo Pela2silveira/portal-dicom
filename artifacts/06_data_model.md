@@ -17,7 +17,7 @@ The model supports:
 ## Security Rule
 
 - Raw physician passwords must never be stored in Postgres.
-- Raw OTP codes must never be stored in Postgres.
+- Raw email verification codes must never be stored in Postgres.
 - If a provider returns reusable auth material in the future, it must be stored only as encrypted provider-issued material, never as a copied password.
 - Session, audit, and cache tables should prefer references, hashes, provider metadata, and expiry timestamps over secrets.
 
@@ -101,8 +101,8 @@ Key fields:
 
 - `patient_id`
 - `status`
-- `otp_channel`
-- `otp_verified_at`
+- `verification_channel`
+- `verification_completed_at`
 - `expires_at`
 - `last_seen_at`
 - `client_ip`

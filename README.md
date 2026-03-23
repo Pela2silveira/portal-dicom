@@ -183,7 +183,7 @@ Good entries are short and explicit. Example:
 - In progress
 
 ## Decisions
-- Auth model: patients use DNI + OTP via SMS.
+- Auth model: patients use DNI + código por mail.
 - Doctor access: full manual search is allowed only for authenticated staff users.
 - Local cache: Orthanc is mandatory, retention 7 days.
 - OHIF access: only through portal-controlled session, JWT restriction deferred to iteration 2.
