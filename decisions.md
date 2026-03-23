@@ -37,6 +37,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The patient mock surface is now backed by `GET /api/patient/studies`, with DB-seeded sample rows per DNI until real HIS-driven authorization is implemented.
 - Physician access must use a portal-owned search and workflow panel.
 - Physician workflow should be asynchronous and must expose remote PACS context, local cache presence, and retrieve state before opening OHIF.
+- The first functional physician panel is now backed by `GET /api/physician/results`, with DB-seeded recent-query rows per username until real federated search is implemented.
 - The database must cache patient identity anchors, alternate identifiers from HIS, known authorized study UIDs, physician recent searches, and future session state.
 - Physician credentials must not be stored in clear text; only session state, auth events, and encrypted provider-issued auth material are allowed.
 - The native OHIF study list is a UX choice only and must not be treated as an access-control mechanism.

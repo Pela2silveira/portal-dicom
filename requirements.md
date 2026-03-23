@@ -124,6 +124,7 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 * La experiencia debe ser responsive y usable en móvil, al menos para consulta y validación rápida.
 * El contrato explícito de esta superficie queda definido en `artifacts/05_ui_contracts.md`.
 * En el mock actual del portal, el ingreso profesional debe aterrizar primero en esta superficie y no redirigir directamente a la home general de OHIF.
+* La primera implementación funcional de esta superficie consume `GET /api/physician/results?username=<dni>` y renderiza resultados desde búsquedas recientes sembradas en la base hasta integrar la búsqueda federada real.
 
 ---
 

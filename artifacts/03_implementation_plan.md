@@ -176,6 +176,7 @@
   - endpoint/backend para búsqueda federada
   - lista con nodos remotos, disponibilidad local, estado de retrieve y acciones
   - retrieve asincrónico visible en UI
+  - primer slice funcional con `GET /api/physician/results?username=<dni>` sobre `physician_recent_queries` sembradas en DB hasta integrar búsqueda federada real
 - Configuración de OHIF:
   - study list nativa deshabilitada para los flujos finales de paciente y médico
 

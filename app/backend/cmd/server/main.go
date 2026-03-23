@@ -78,6 +78,40 @@ type PatientStudy struct {
 	ViewerURL          string   `json:"viewer_url,omitempty"`
 }
 
+type PhysicianResultsResponse struct {
+	Physician PhysicianSummary       `json:"physician"`
+	Filters   PhysicianSearchFilters `json:"filters"`
+	Results   []PhysicianResult      `json:"results"`
+}
+
+type PhysicianSummary struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+	DNI      string `json:"dni"`
+	FullName string `json:"full_name"`
+}
+
+type PhysicianSearchFilters struct {
+	PatientName string `json:"patient_name,omitempty"`
+	DateFrom    string `json:"date_from,omitempty"`
+	DateTo      string `json:"date_to,omitempty"`
+	Modality    string `json:"modality,omitempty"`
+}
+
+type PhysicianResult struct {
+	StudyInstanceUID string   `json:"study_instance_uid"`
+	PatientName      string   `json:"patient_name"`
+	PatientID        string   `json:"patient_id"`
+	StudyDate        string   `json:"study_date"`
+	StudyDescription string   `json:"study_description"`
+	Modalities       []string `json:"modalities"`
+	Locations        []string `json:"locations"`
+	CacheStatus      string   `json:"cache_status"`
+	RetrieveStatus   string   `json:"retrieve_status"`
+	PartialFilter    bool     `json:"partial_filter"`
+	ViewerURL        string   `json:"viewer_url,omitempty"`
+}
+
 type ConfigResponse struct {
 	AppEnv     string             `json:"app_env"`
 	ConfigPath string             `json:"config_path"`
@@ -227,6 +261,7 @@ func main() {
 	mux.HandleFunc("/api/health", app.handleHealth)
 	mux.HandleFunc("/api/config", app.handleConfig(appliedMigrations))
 	mux.HandleFunc("/api/patient/studies", app.handlePatientStudies)
+	mux.HandleFunc("/api/physician/results", app.handlePhysicianResults)
 
 	app.log("info", "server_starting", map[string]any{
 		"listen_addr":        cfg.ListenAddr,
@@ -392,6 +427,59 @@ func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
 		Patient:        patient,
 		Filters:        filters,
 		Studies:        studies,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (a *App) handlePhysicianResults(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	username := strings.TrimSpace(r.URL.Query().Get("username"))
+	if username == "" {
+		http.Error(w, "missing required query param: username", http.StatusBadRequest)
+		return
+	}
+
+	filters := PhysicianSearchFilters{
+		PatientName: strings.TrimSpace(r.URL.Query().Get("patient_name")),
+		DateFrom:    strings.TrimSpace(r.URL.Query().Get("date_from")),
+		DateTo:      strings.TrimSpace(r.URL.Query().Get("date_to")),
+		Modality:    strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("modality"))),
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	physician, err := a.ensurePhysicianSeed(ctx, username)
+	if err != nil {
+		a.log("error", "physician_seed_failed", map[string]any{
+			"username": username,
+			"error":    err.Error(),
+		})
+		http.Error(w, "failed to prepare physician results", http.StatusInternalServerError)
+		return
+	}
+
+	results, err := a.listPhysicianResults(ctx, physician.ID, filters)
+	if err != nil {
+		a.log("error", "physician_results_query_failed", map[string]any{
+			"username":     username,
+			"physician_id": physician.ID,
+			"error":        err.Error(),
+		})
+		http.Error(w, "failed to query physician results", http.StatusInternalServerError)
+		return
+	}
+
+	resp := PhysicianResultsResponse{
+		Physician: physician,
+		Filters:   filters,
+		Results:   results,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -566,6 +654,131 @@ func (a *App) ensurePatientSeed(ctx context.Context, documentNumber string) (Pat
 	return patient, nil
 }
 
+func (a *App) ensurePhysicianSeed(ctx context.Context, username string) (PhysicianSummary, error) {
+	var physician PhysicianSummary
+	dni := digitsOnly(username)
+	if dni == "" {
+		dni = username
+	}
+
+	err := a.db.QueryRowContext(ctx, `
+		INSERT INTO physicians (username, dni, full_name, auth_provider, mfa_enabled, last_login_at, last_success_auth_at, updated_at)
+		VALUES ($1, $2, $3, 'ldap_provincial', true, now(), now(), now())
+		ON CONFLICT (username) DO UPDATE SET
+			dni = EXCLUDED.dni,
+			full_name = EXCLUDED.full_name,
+			last_login_at = now(),
+			last_success_auth_at = now(),
+			updated_at = now()
+		RETURNING id::text, username, COALESCE(dni, ''), COALESCE(full_name, '')
+	`,
+		username,
+		dni,
+		"Profesional "+username,
+	).Scan(&physician.ID, &physician.Username, &physician.DNI, &physician.FullName)
+	if err != nil {
+		return PhysicianSummary{}, fmt.Errorf("upsert physician: %w", err)
+	}
+
+	seedQueries := []struct {
+		QueryJSON    map[string]any
+		ResultCount  int
+		ExpiresAfter string
+	}{
+		{
+			QueryJSON: map[string]any{
+				"patient_name": "Perez Juan",
+				"date_from":    "2026-03-01",
+				"date_to":      "2026-03-31",
+				"modalities":   []string{"MR"},
+				"results": []map[string]any{
+					{
+						"study_instance_uid": "1.2.826.0.1.3680043.10.54321.mr.101",
+						"patient_name":       "Perez Juan",
+						"patient_id":         "12345678",
+						"study_date":         "2026-03-21",
+						"study_description":  "RM de columna lumbar",
+						"modalities":         []string{"MR"},
+						"locations":          []string{"HPN", "Castro Rendon"},
+						"cache_status":       "local_complete",
+						"retrieve_status":    "done",
+						"partial_filter":     false,
+					},
+				},
+			},
+			ResultCount:  1,
+			ExpiresAfter: "7 days",
+		},
+		{
+			QueryJSON: map[string]any{
+				"patient_name": "Gomez Ana",
+				"date_from":    "2026-03-15",
+				"date_to":      "2026-03-31",
+				"modalities":   []string{"CT"},
+				"results": []map[string]any{
+					{
+						"study_instance_uid": "1.2.826.0.1.3680043.10.54321.ct.102",
+						"patient_name":       "Gomez Ana",
+						"patient_id":         "20111222",
+						"study_date":         "2026-03-19",
+						"study_description":  "TC de abdomen",
+						"modalities":         []string{"CT"},
+						"locations":          []string{"HPN"},
+						"cache_status":       "local_partial",
+						"retrieve_status":    "running",
+						"partial_filter":     true,
+					},
+				},
+			},
+			ResultCount:  1,
+			ExpiresAfter: "7 days",
+		},
+	}
+
+	for _, query := range seedQueries {
+		queryJSON, err := json.Marshal(query.QueryJSON)
+		if err != nil {
+			return PhysicianSummary{}, fmt.Errorf("marshal physician query seed: %w", err)
+		}
+
+		var exists bool
+		if err := a.db.QueryRowContext(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM physician_recent_queries
+				WHERE physician_id = $1::uuid
+				  AND query_json = $2::jsonb
+			)
+		`,
+			physician.ID,
+			string(queryJSON),
+		).Scan(&exists); err != nil {
+			return PhysicianSummary{}, fmt.Errorf("check physician recent query seed: %w", err)
+		}
+
+		if exists {
+			continue
+		}
+
+		if _, err := a.db.ExecContext(ctx, `
+			INSERT INTO physician_recent_queries (
+				physician_id, query_json, result_count, searched_at, expires_at
+			) VALUES (
+				$1::uuid, $2::jsonb, $3, now(), now() + ($4)::interval
+			)
+		`,
+			physician.ID,
+			string(queryJSON),
+			query.ResultCount,
+			query.ExpiresAfter,
+		); err != nil {
+			return PhysicianSummary{}, fmt.Errorf("insert physician recent query: %w", err)
+		}
+	}
+
+	return physician, nil
+}
+
 func (a *App) listPatientStudies(ctx context.Context, patientID string, filters PatientStudiesFilter) ([]PatientStudy, error) {
 	query := `
 		SELECT
@@ -652,6 +865,122 @@ func (a *App) listPatientStudies(ctx context.Context, patientID string, filters 
 	}
 
 	return studies, nil
+}
+
+func (a *App) listPhysicianResults(ctx context.Context, physicianID string, filters PhysicianSearchFilters) ([]PhysicianResult, error) {
+	rows, err := a.db.QueryContext(ctx, `
+		SELECT query_json
+		FROM physician_recent_queries
+		WHERE physician_id = $1::uuid
+		ORDER BY searched_at DESC, id DESC
+		LIMIT 10
+	`, physicianID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := make([]PhysicianResult, 0)
+	seen := make(map[string]struct{})
+
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+
+		var payload struct {
+			PatientName string `json:"patient_name"`
+			DateFrom    string `json:"date_from"`
+			DateTo      string `json:"date_to"`
+			Modalities  []string `json:"modalities"`
+			Results     []struct {
+				StudyInstanceUID string   `json:"study_instance_uid"`
+				PatientName      string   `json:"patient_name"`
+				PatientID        string   `json:"patient_id"`
+				StudyDate        string   `json:"study_date"`
+				StudyDescription string   `json:"study_description"`
+				Modalities       []string `json:"modalities"`
+				Locations        []string `json:"locations"`
+				CacheStatus      string   `json:"cache_status"`
+				RetrieveStatus   string   `json:"retrieve_status"`
+				PartialFilter    bool     `json:"partial_filter"`
+			} `json:"results"`
+		}
+
+		if err := json.Unmarshal(raw, &payload); err != nil {
+			return nil, fmt.Errorf("parse physician query_json: %w", err)
+		}
+
+		for _, item := range payload.Results {
+			if _, ok := seen[item.StudyInstanceUID]; ok {
+				continue
+			}
+			if filters.PatientName != "" && !strings.Contains(strings.ToUpper(item.PatientName), strings.ToUpper(filters.PatientName)) {
+				continue
+			}
+			if filters.DateFrom != "" && item.StudyDate < filters.DateFrom {
+				continue
+			}
+			if filters.DateTo != "" && item.StudyDate > filters.DateTo {
+				continue
+			}
+			if filters.Modality != "" {
+				match := false
+				for _, modality := range item.Modalities {
+					if strings.ToUpper(modality) == filters.Modality {
+						match = true
+						break
+					}
+				}
+				if !match {
+					continue
+				}
+			}
+
+			result := PhysicianResult{
+				StudyInstanceUID: item.StudyInstanceUID,
+				PatientName:      item.PatientName,
+				PatientID:        item.PatientID,
+				StudyDate:        item.StudyDate,
+				StudyDescription: item.StudyDescription,
+				Modalities:       item.Modalities,
+				Locations:        item.Locations,
+				CacheStatus:      item.CacheStatus,
+				RetrieveStatus:   item.RetrieveStatus,
+				PartialFilter:    item.PartialFilter,
+			}
+			if item.RetrieveStatus == "done" || item.CacheStatus == "local_complete" {
+				result.ViewerURL = "/ohif/"
+			}
+
+			results = append(results, result)
+			seen[item.StudyInstanceUID] = struct{}{}
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].StudyDate == results[j].StudyDate {
+			return results[i].StudyInstanceUID < results[j].StudyInstanceUID
+		}
+		return results[i].StudyDate > results[j].StudyDate
+	})
+
+	return results, nil
+}
+
+func digitsOnly(value string) string {
+	var out strings.Builder
+	for _, r := range value {
+		if r >= '0' && r <= '9' {
+			out.WriteRune(r)
+		}
+	}
+	return out.String()
 }
 
 func validateExternalConfig(cfg ExternalConfig) error {

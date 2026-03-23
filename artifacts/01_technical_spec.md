@@ -182,6 +182,7 @@ Proveer un portal operativo mínimo capaz de:
    - acciones operativas.
 4. El profesional dispara retrieve bajo demanda cuando corresponda.
 5. El portal abre OHIF sobre el estudio puntual seleccionado.
+6. La primera implementación funcional expone `GET /api/physician/results?username=<dni>` como contrato inicial del panel del profesional, cargando resultados desde `physician_recent_queries` sembradas en Postgres.
 
 ### 5.4 Landing pública y acceso futuro
 1. El usuario accede a `/` y visualiza la landing institucional.

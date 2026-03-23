@@ -911,7 +911,7 @@
           </div>
           <div class="workspace-grid">
             <section class="workspace-card">
-              <h4>Búsqueda</h4>
+              <h4>Búsqueda<span id="physician-summary">Sin profesional cargado</span></h4>
               <div class="filter-grid">
                 <div class="field-group">
                   <label for="physician-search-patient">Paciente</label>
@@ -930,59 +930,17 @@
                   <input id="physician-search-modality" type="text" value="MR">
                 </div>
               </div>
+              <div class="inline-actions">
+                <button class="action action-secondary" id="physician-apply-filters" type="button">Aplicar búsqueda</button>
+              </div>
               <div class="note note-neutral">
                 Panel mock del portal. La búsqueda real será asíncrona y mostrará nodos remotos, cache local y estado de retrieve.
               </div>
             </section>
             <section class="workspace-card">
               <h4>Resultados</h4>
-              <div class="result-list">
-                <article class="result-item">
-                  <div class="item-head">
-                    <div>
-                      <strong>RM de columna lumbar</strong>
-                      <span>Perez Juan · 21/03/2026</span>
-                    </div>
-                    <div class="chip success">Retrieve done</div>
-                  </div>
-                  <div class="meta-grid">
-                    <div><span>Paciente</span><strong>12345678</strong></div>
-                    <div><span>Modalidades</span><strong>MR</strong></div>
-                    <div><span>Nodos remotos</span><strong>HPN, Castro Rendon</strong></div>
-                    <div><span>Cache local</span><strong>Completo</strong></div>
-                  </div>
-                  <div class="chip-row">
-                    <div class="chip">StudyInstanceUID mock-mr-101</div>
-                    <div class="chip info">Filtro parcial: no</div>
-                  </div>
-                  <div class="inline-actions">
-                    <button class="action action-secondary" type="button">Retrieve</button>
-                    <a class="action action-primary" href="/ohif/">Visualizar</a>
-                  </div>
-                </article>
-                <article class="result-item">
-                  <div class="item-head">
-                    <div>
-                      <strong>TC de abdomen</strong>
-                      <span>Gomez Ana · 19/03/2026</span>
-                    </div>
-                    <div class="chip warn">Retrieve running</div>
-                  </div>
-                  <div class="meta-grid">
-                    <div><span>Paciente</span><strong>20111222</strong></div>
-                    <div><span>Modalidades</span><strong>CT</strong></div>
-                    <div><span>Nodo remoto</span><strong>HPN</strong></div>
-                    <div><span>Cache local</span><strong>Parcial</strong></div>
-                  </div>
-                  <div class="chip-row">
-                    <div class="chip">StudyInstanceUID mock-ct-102</div>
-                    <div class="chip info">Filtro parcial: si</div>
-                  </div>
-                  <div class="inline-actions">
-                    <button class="action action-secondary" type="button">Retrieve</button>
-                    <button class="action ghost" type="button">Visualizar cuando esté listo</button>
-                  </div>
-                </article>
+              <div class="result-list" id="physician-result-list">
+                <div class="empty-state">Ingrese por el flujo profesional para cargar resultados desde la API del portal.</div>
               </div>
             </section>
           </div>
@@ -1009,10 +967,18 @@
       const patientValidateButton = document.querySelector('[data-flow="patient"] .action-primary');
       const physicianDni = document.getElementById("physician-dni");
       const physicianPassword = document.getElementById("physician-password");
+      const physicianSearchPatient = document.getElementById("physician-search-patient");
+      const physicianSearchFrom = document.getElementById("physician-search-from");
+      const physicianSearchTo = document.getElementById("physician-search-to");
+      const physicianSearchModality = document.getElementById("physician-search-modality");
+      const physicianApplyFiltersButton = document.getElementById("physician-apply-filters");
+      const physicianResultList = document.getElementById("physician-result-list");
+      const physicianSummary = document.getElementById("physician-summary");
       const physicianLoginButton = document.querySelector('[data-flow="physician"] .action-primary');
       const physicianNote = document.querySelector('[data-flow="physician"] .note');
       const resetButtons = document.querySelectorAll("[data-reset]");
       let activePatientDocument = "";
+      let activePhysicianUsername = "";
 
       function activateRole(role) {
         roleButtons.forEach(button => {
@@ -1100,6 +1066,78 @@
           .join("");
       }
 
+      function labelForRetrieveStatus(status) {
+        if (status === "done") return "Retrieve done";
+        if (status === "running") return "Retrieve running";
+        if (status === "queued") return "Retrieve queued";
+        return status || "Estado desconocido";
+      }
+
+      function chipClassForRetrieve(status) {
+        if (status === "done") return "chip success";
+        if (status === "running" || status === "queued") return "chip warn";
+        return "chip";
+      }
+
+      function labelForCacheStatus(status) {
+        if (status === "local_complete") return "Completo";
+        if (status === "local_partial") return "Parcial";
+        if (status === "not_local") return "No local";
+        return status || "Desconocido";
+      }
+
+      function renderPhysicianResults(payload) {
+        physicianSummary.textContent =
+          payload.physician.full_name + " · DNI " + payload.physician.dni;
+
+        if (!payload.results.length) {
+          physicianResultList.innerHTML =
+            '<div class="empty-state">No hay resultados para los filtros seleccionados.</div>';
+          return;
+        }
+
+        physicianResultList.innerHTML = payload.results
+          .map(result => {
+            const modalities = (result.modalities || [])
+              .map(modality => '<div class="chip info">' + escapeHTML(modality) + "</div>")
+              .join("");
+
+            const action = result.viewer_url
+              ? '<a class="action action-primary" href="' + escapeHTML(result.viewer_url) + '">Visualizar</a>'
+              : '<button class="action ghost" type="button">Visualizar cuando esté listo</button>';
+
+            return (
+              '<article class="result-item">' +
+                '<div class="item-head">' +
+                  '<div>' +
+                    '<strong>' + escapeHTML(result.study_description || "Estudio sin descripción") + '</strong>' +
+                    '<span>' + escapeHTML(result.patient_name) + " · " + escapeHTML(result.study_date || "Sin fecha") + '</span>' +
+                  '</div>' +
+                  '<div class="' + chipClassForRetrieve(result.retrieve_status) + '">' +
+                    escapeHTML(labelForRetrieveStatus(result.retrieve_status)) +
+                  '</div>' +
+                '</div>' +
+                '<div class="meta-grid">' +
+                  '<div><span>Paciente</span><strong>' + escapeHTML(result.patient_id) + '</strong></div>' +
+                  '<div><span>Modalidades</span><strong>' + escapeHTML((result.modalities || []).join(", ")) + '</strong></div>' +
+                  '<div><span>Nodos remotos</span><strong>' + escapeHTML((result.locations || []).join(", ")) + '</strong></div>' +
+                  '<div><span>Cache local</span><strong>' + escapeHTML(labelForCacheStatus(result.cache_status)) + '</strong></div>' +
+                '</div>' +
+                '<div class="chip-row">' +
+                  modalities +
+                  '<div class="chip">' + escapeHTML(result.study_instance_uid) + '</div>' +
+                  '<div class="chip info">Filtro parcial: ' + escapeHTML(result.partial_filter ? "si" : "no") + '</div>' +
+                '</div>' +
+                '<div class="inline-actions">' +
+                  '<button class="action action-secondary" type="button">Retrieve</button>' +
+                  action +
+                '</div>' +
+              '</article>'
+            );
+          })
+          .join("");
+      }
+
       async function loadPatientStudies(documentNumber) {
         activePatientDocument = documentNumber;
 
@@ -1123,6 +1161,30 @@
         renderPatientStudies(payload);
       }
 
+      async function loadPhysicianResults(username) {
+        activePhysicianUsername = username;
+
+        const params = new URLSearchParams({ username });
+        if (physicianSearchPatient.value.trim()) params.set("patient_name", physicianSearchPatient.value.trim());
+        if (physicianSearchFrom.value) params.set("date_from", physicianSearchFrom.value);
+        if (physicianSearchTo.value) params.set("date_to", physicianSearchTo.value);
+        if (physicianSearchModality.value.trim()) params.set("modality", physicianSearchModality.value.trim());
+
+        physicianResultList.innerHTML =
+          '<div class="empty-state">Cargando resultados del profesional...</div>';
+
+        const response = await fetch("/api/physician/results?" + params.toString(), {
+          headers: { Accept: "application/json" }
+        });
+
+        if (!response.ok) {
+          throw new Error("physician results request failed");
+        }
+
+        const payload = await response.json();
+        renderPhysicianResults(payload);
+      }
+
       roleButtons.forEach(button => {
         button.addEventListener("click", () => activateRole(button.dataset.role));
       });
@@ -1143,6 +1205,21 @@
         } catch (error) {
           patientStudyList.innerHTML =
             '<div class="empty-state">No se pudieron cargar los estudios del paciente.</div>';
+        }
+      });
+
+      physicianApplyFiltersButton.addEventListener("click", async () => {
+        if (!activePhysicianUsername) {
+          physicianResultList.innerHTML =
+            '<div class="empty-state">Ingrese primero por el flujo profesional para aplicar filtros.</div>';
+          return;
+        }
+
+        try {
+          await loadPhysicianResults(activePhysicianUsername);
+        } catch (error) {
+          physicianResultList.innerHTML =
+            '<div class="empty-state">No se pudieron cargar los resultados del profesional.</div>';
         }
       });
 
@@ -1221,8 +1298,15 @@
           dniValue +
           ". Abriendo el panel profesional del portal...";
 
-        window.setTimeout(() => {
+        window.setTimeout(async () => {
           showWorkspace("physician");
+          try {
+            await loadPhysicianResults(dniValue);
+          } catch (error) {
+            physicianSummary.textContent = "Profesional " + dniValue;
+            physicianResultList.innerHTML =
+              '<div class="empty-state">No se pudieron cargar los resultados del profesional.</div>';
+          }
         }, 700);
       });
     </script>
