@@ -77,6 +77,7 @@ Allow a patient to see only their authorized studies and open one selected study
 ### OHIF Handoff
 
 - Portal opens OHIF for a specific `studyInstanceUID`
+- The current portal UX opens the viewer in a new browser tab
 - OHIF should not expose a global study list in the final patient flow
 
 ### Backend Contract For Patient Surface
@@ -178,6 +179,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 ### OHIF Handoff
 
 - Portal opens OHIF for a selected `studyInstanceUID`
+- The current portal UX opens the viewer in a new browser tab
 - OHIF is not the primary search or workflow surface
 
 ### Backend Contract For Physician Surface

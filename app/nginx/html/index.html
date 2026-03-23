@@ -1042,7 +1042,7 @@
               .join("");
 
             const action = study.viewer_url
-              ? '<a class="action action-primary" href="' + escapeHTML(study.viewer_url) + '">Visualizar estudio</a>'
+              ? '<a class="action action-primary" href="' + escapeHTML(study.viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar estudio</a>'
               : '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '">Retrieve</button>';
 
             return (
@@ -1104,7 +1104,7 @@
               .join("");
 
             const action = result.viewer_url
-              ? '<a class="action action-primary" href="' + escapeHTML(result.viewer_url) + '">Visualizar</a>'
+              ? '<a class="action action-primary" href="' + escapeHTML(result.viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar</a>'
               : '<button class="action ghost" type="button">Visualizar cuando esté listo</button>';
 
             return (
