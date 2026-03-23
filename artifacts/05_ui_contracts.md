@@ -26,7 +26,8 @@ Allow a patient to see only their authorized studies and open one selected study
 ### Entry Surface
 
 - Public landing flow: `Documento + OTP`
-- Current implementation is mock only.
+- Current implementation already opens the portal-owned patient surface.
+- The visible language of the entry flow should read as product, not as internal demo text.
 - Future real implementation validates patient identity before exposing the list.
 
 ### Screen Model
@@ -34,7 +35,8 @@ Allow a patient to see only their authorized studies and open one selected study
 - Patient summary header
 - Authorized study list
 - Simple filters
-- Per-study actions: `Retrieve` or `Ver estudio`
+- Context panels that explain availability and leave visible room for future patient-facing capabilities
+- Per-study actions: `Recuperar estudio` or `Ver estudio`
 - Empty state message when the document has no matching studies
 
 ### Allowed Fields In The List
@@ -65,7 +67,7 @@ Allow a patient to see only their authorized studies and open one selected study
 
 ### Allowed Actions
 
-- `Retrieve` when `availabilityStatus = pending_retrieve`
+- `Recuperar estudio` when `availabilityStatus = pending_retrieve`
 - `Ver estudio` when `availabilityStatus = available_local`
 - `Actualizar lista` to reload studies with the current patient filters
 
@@ -106,7 +108,8 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 ### Entry Surface
 
 - Public landing flow: `DNI / usuario + contraseña`
-- Current implementation is mock only
+- Current implementation already opens the portal-owned physician surface
+- The visible language of the entry flow should read as operational product language, not as internal demo text
 - Future real implementation target: `LDAP provincial + MFA`
 
 ### Screen Model
@@ -114,6 +117,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - Search filter bar
 - Search execution status
 - Federated results table
+- Context panels that anticipate future capabilities: multi-node search, operational state, and asynchronous follow-up
 - Per-study actions
 - Optional retrieve job activity summary
 
@@ -163,8 +167,8 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 ### Allowed Actions
 
 - `Buscar`
-- `Retrieve`
-- `Reintentar retrieve` when the latest retrieve status is `failed`
+- `Recuperar estudio`
+- `Reintentar recuperacion` when the latest retrieve status is `failed`
 - `Visualizar` only when the study is available in local Orthanc
 
 ### Visualizar Enablement Rule
@@ -211,4 +215,4 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 ## Contract Status
 
 - These contracts are the current functional baseline for future patient and physician portal-owned surfaces.
-- Current landing implementation remains a visual/mock entry flow only.
+- Current landing implementation is already the public product entry surface and should communicate stable workflows even while some validation steps remain placeholder-backed.

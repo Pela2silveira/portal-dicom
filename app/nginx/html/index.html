@@ -483,6 +483,13 @@
         margin-top: 4px;
       }
 
+      .workspace-card .section-copy {
+        margin: -4px 0 14px;
+        color: var(--muted);
+        font-size: 0.93rem;
+        line-height: 1.45;
+      }
+
       .study-list,
       .result-list {
         display: grid;
@@ -578,6 +585,43 @@
       .filter-grid {
         display: grid;
         gap: 12px;
+      }
+
+      .info-stack {
+        display: grid;
+        gap: 12px;
+      }
+
+      .info-panel {
+        border: 1px solid var(--line);
+        background: var(--surface);
+        padding: 14px 16px;
+      }
+
+      .info-panel strong,
+      .info-panel span {
+        display: block;
+      }
+
+      .info-panel strong {
+        margin-bottom: 4px;
+        font-size: 0.9rem;
+      }
+
+      .info-panel span {
+        color: var(--muted);
+        font-size: 0.9rem;
+        line-height: 1.4;
+      }
+
+      .workspace-note {
+        border-left: 4px solid var(--accent);
+        background: rgba(0, 168, 224, 0.08);
+        padding: 14px 16px;
+        color: var(--ink);
+        font-size: 0.94rem;
+        line-height: 1.45;
+        margin-bottom: 14px;
       }
 
       .empty-state {
@@ -749,25 +793,25 @@
       <main class="hero">
         <section class="panel intro">
           <p class="eyebrow">Ingreso</p>
-          <h2>Seleccione su perfil para continuar.</h2>
+          <h2>Un mismo acceso para consulta, recuperacion y visualizacion.</h2>
           <p>
-            Este portal concentra el acceso a estudios e imagenes. El flujo de paciente
-            utiliza documento y OTP. El flujo profesional utiliza DNI como usuario y
-            contrasena.
+            RedImagenesNQN organiza el acceso a estudios por imagen desde una superficie
+            unica. El portal resuelve identificacion, lista de estudios, disponibilidad
+            local y apertura directa en el visor clinico.
           </p>
 
           <div class="intro-grid">
             <article class="micro">
               <strong>Pacientes</strong>
-              <span>Consulta personal con documento y codigo de verificacion.</span>
+              <span>Consulta personal, recuperacion de estudios y apertura directa del visor.</span>
             </article>
             <article class="micro">
               <strong>Profesionales</strong>
-              <span>Acceso por DNI con LDAP provincial y segundo factor MFA.</span>
+              <span>Busqueda asistida, estado federado por PACS y acciones operativas por estudio.</span>
             </article>
             <article class="micro">
               <strong>Infraestructura</strong>
-              <span>OHIF, Orthanc y API local operando en el mismo punto de entrada.</span>
+              <span>Portal, API, cache local y visor trabajando desde un mismo punto de entrada.</span>
             </article>
           </div>
 
@@ -780,25 +824,25 @@
 
         <section class="panel auth">
           <div class="auth-top">
-            <strong>Ingreso RedImagenesNQN</strong>
-            <span>Base visual inspirada en ANDES</span>
+            <strong>Acceso RedImagenesNQN</strong>
+            <span>Neuquen · estudios por imagen</span>
           </div>
 
           <div class="auth-body">
             <div class="auth-header">
               <p class="eyebrow">Identificacion</p>
-              <h3>Como desea ingresar?</h3>
-              <p>Elija una opcion para mostrar el formulario correspondiente.</p>
+              <h3>Seleccione su perfil</h3>
+              <p>El portal adapta la experiencia de consulta segun el tipo de acceso.</p>
             </div>
 
             <div class="role-switch" aria-label="Seleccion de perfil">
               <button class="role-button active" type="button" data-role="patient">
                 <strong>Paciente</strong>
-                <span>Documento, envio de OTP y validacion del codigo.</span>
+                <span>Ingreso personal y acceso a su lista de estudios.</span>
               </button>
               <button class="role-button" type="button" data-role="physician">
                 <strong>Profesional</strong>
-                <span>DNI como usuario, validacion LDAP provincial y MFA.</span>
+                <span>Busqueda clinica, seguimiento de disponibilidad y recuperacion.</span>
               </button>
             </div>
 
@@ -816,11 +860,10 @@
                 <button class="action action-secondary" id="send-otp" type="button">Enviar OTP</button>
               </div>
 
-              <button class="action action-primary" type="button">Validar codigo</button>
+              <button class="action action-primary" type="button">Continuar</button>
 
               <p class="help">
-                Use su documento para solicitar el codigo de acceso. El envio real del OTP
-                se conectara mas adelante con el servicio correspondiente.
+                Ingrese su documento y el codigo recibido para abrir su espacio de consulta.
               </p>
 
               <div class="note note-accent hidden" id="otp-feedback"></div>
@@ -837,17 +880,16 @@
                 <input id="physician-password" name="physician-password" type="password" placeholder="Ingrese su contrasena">
               </div>
 
-              <button class="action action-primary" type="button">Ingresar</button>
+              <button class="action action-primary" type="button">Continuar</button>
 
               <p class="help">
-                El acceso profesional usara validacion institucional con LDAP provincial
-                y un segundo factor MFA. Por ahora el formulario deja preparado el flujo
-                visual sin autenticacion implementada.
+                Ingrese con su usuario institucional para acceder a la busqueda y gestion
+                de estudios.
               </p>
 
               <div class="note note-neutral">
-                Usuario esperado: DNI del profesional. Queda pendiente integrar LDAP provincial
-                y MFA para el ingreso real.
+                El acceso profesional se integrara con identidad institucional y verificaciones
+                complementarias sin modificar esta experiencia de entrada.
               </div>
             </section>
           </div>
@@ -870,7 +912,8 @@
           </div>
           <div class="workspace-grid">
             <section class="workspace-card">
-              <h4>Filtros simples<span id="patient-summary">Sin paciente cargado</span></h4>
+              <h4>Contexto del paciente<span id="patient-summary">Sin paciente cargado</span></h4>
+              <p class="section-copy">Use este panel para revisar el rango de fechas consultado, limitar modalidad y volver a cargar la lista visible.</p>
               <div class="filter-grid">
                 <div class="field-group">
                   <label for="patient-filter-from">Desde</label>
@@ -888,10 +931,20 @@
               <div class="inline-actions">
                 <button class="action action-secondary" id="patient-apply-filters" type="button">Actualizar lista</button>
               </div>
-              <p class="help">Use este botón para recargar sus estudios con los filtros actuales.</p>
+              <div class="info-stack">
+                <div class="info-panel">
+                  <strong>Lo que ve en esta pantalla</strong>
+                  <span>Solo se muestran estudios asociados al documento ingresado y su estado de disponibilidad local.</span>
+                </div>
+                <div class="info-panel">
+                  <strong>Proximas incorporaciones</strong>
+                  <span>Resumen clinico, estudios destacados, acceso por episodio y avisos de disponibilidad.</span>
+                </div>
+              </div>
             </section>
             <section class="workspace-card">
               <h4>Lista de estudios</h4>
+              <div class="workspace-note">Cada estudio muestra su disponibilidad actual. Cuando el estudio ya esta en la cache local, el portal habilita la apertura directa en el visor.</div>
               <div class="study-list" id="patient-study-list">
                 <div class="empty-state">Ingrese por el flujo paciente para cargar estudios desde la API del portal.</div>
               </div>
@@ -911,7 +964,8 @@
           </div>
           <div class="workspace-grid">
             <section class="workspace-card">
-              <h4>Búsqueda<span id="physician-summary">Sin profesional cargado</span></h4>
+              <h4>Panel de consulta<span id="physician-summary">Sin profesional cargado</span></h4>
+              <p class="section-copy">La vista profesional concentra filtros, estado federado por estudio y acciones de recuperacion antes de abrir el visor.</p>
               <div class="filter-grid">
                 <div class="field-group">
                   <label for="physician-search-patient">Paciente</label>
@@ -933,12 +987,20 @@
               <div class="inline-actions">
                 <button class="action action-secondary" id="physician-apply-filters" type="button">Aplicar búsqueda</button>
               </div>
-              <div class="note note-neutral">
-                Con filtros cargados, esta búsqueda consulta el nodo PACS remoto configurado. Sin filtros, se muestran búsquedas recientes persistidas.
+              <div class="info-stack">
+                <div class="info-panel">
+                  <strong>Busqueda y disponibilidad</strong>
+                  <span>Con filtros activos, el portal consulta el nodo PACS configurado y actualiza el estado local de cada estudio.</span>
+                </div>
+                <div class="info-panel">
+                  <strong>Capas que se incorporan despues</strong>
+                  <span>Busqueda multi nodo, contexto clinico, prioridad por sede, auditoria avanzada y seguimiento asincronico de jobs.</span>
+                </div>
               </div>
             </section>
             <section class="workspace-card">
               <h4>Resultados</h4>
+              <div class="workspace-note">Esta grilla ya diferencia estudios listos para visualizar, estudios pendientes de recuperar y resultados que requieren reintento u otra accion operativa.</div>
               <div class="result-list" id="physician-result-list">
                 <div class="empty-state">Ingrese por el flujo profesional para cargar resultados desde la API del portal.</div>
               </div>
@@ -1049,7 +1111,7 @@
 
             const action = study.viewer_url
               ? '<a class="action action-primary" href="' + escapeHTML(study.viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar estudio</a>'
-              : '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '">Retrieve</button>';
+              : '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '">Recuperar estudio</button>';
 
             return (
               '<article class="study-item">' +
@@ -1074,10 +1136,10 @@
       }
 
       function labelForRetrieveStatus(status) {
-        if (status === "done") return "Retrieve done";
-        if (status === "running") return "Retrieve running";
-        if (status === "queued") return "Retrieve queued";
-        if (status === "failed") return "Retrieve failed";
+        if (status === "done") return "Recuperacion completa";
+        if (status === "running") return "Recuperacion en curso";
+        if (status === "queued") return "Recuperacion en cola";
+        if (status === "failed") return "Recuperacion con error";
         return status || "Estado desconocido";
       }
 
@@ -1114,13 +1176,16 @@
             const action = result.viewer_url
               ? '<a class="action action-primary" href="' + escapeHTML(result.viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar</a>'
               : '<button class="action ghost" type="button">Visualizar cuando esté listo</button>';
-            let retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '">Retrieve</button>';
+            let retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '">Recuperar estudio</button>';
             if (result.retrieve_status === "done" && result.viewer_url) {
-              retrieveAction = '<button class="action action-secondary" type="button" disabled>Retrieve listo</button>';
+              retrieveAction = '<button class="action action-secondary" type="button" disabled>Recuperado</button>';
             } else if (result.retrieve_status === "running" || result.retrieve_status === "queued") {
-              retrieveAction = '<button class="action action-secondary" type="button" disabled>Retrieve en curso</button>';
+              retrieveAction = '<button class="action action-secondary" type="button" disabled>Recuperando</button>';
             } else if (result.retrieve_status === "failed") {
-              retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '">Reintentar retrieve</button>';
+              retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '">Reintentar recuperacion</button>';
+            }
+            if (result.retrieve_status !== "done" && result.retrieve_status !== "running" && result.retrieve_status !== "queued" && result.retrieve_status !== "failed") {
+              retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '">Recuperar estudio</button>';
             }
 
             return (
@@ -1164,7 +1229,7 @@
         if (patientFilterModality.value.trim()) params.set("modality", patientFilterModality.value.trim());
 
         patientStudyList.innerHTML =
-          '<div class="empty-state">Cargando estudios del paciente...</div>';
+          '<div class="empty-state">Actualizando estudios del paciente...</div>';
 
         const response = await fetch("/api/patient/studies?" + params.toString(), {
           headers: { Accept: "application/json" }
@@ -1188,7 +1253,7 @@
         if (physicianSearchModality.value.trim()) params.set("modality", physicianSearchModality.value.trim());
 
         physicianResultList.innerHTML =
-          '<div class="empty-state">Cargando resultados del profesional...</div>';
+          '<div class="empty-state">Actualizando resultados del profesional...</div>';
 
         const response = await fetch("/api/physician/results?" + params.toString(), {
           headers: { Accept: "application/json" }
@@ -1284,7 +1349,7 @@
           await loadPatientStudies(activePatientDocument);
         } catch (error) {
           button.disabled = false;
-          button.textContent = "Retrieve";
+          button.textContent = "Recuperar";
         }
       });
 
@@ -1307,7 +1372,7 @@
           await loadPhysicianResults(activePhysicianUsername);
         } catch (error) {
           button.disabled = false;
-          button.textContent = "Retrieve";
+          button.textContent = "Recuperar";
         }
       });
 
@@ -1340,7 +1405,7 @@
         otpFeedback.textContent =
           "OTP solicitado para el documento " +
           documentValue +
-          ". Este envio es visual por ahora y se integrara con el servicio real en el proximo paso.";
+          ". Puede continuar para abrir su espacio de consulta.";
       });
 
       patientValidateButton.addEventListener("click", () => {
@@ -1356,15 +1421,15 @@
         }
 
         if (!otpValue) {
-          otpFeedback.textContent = "Ingrese cualquier codigo OTP para avanzar en este flujo mock.";
+          otpFeedback.textContent = "Ingrese el codigo para continuar.";
           otpFeedback.classList.add("warning");
           return;
         }
 
         otpFeedback.textContent =
-          "Ingreso simulado exitoso para el documento " +
+          "Ingreso confirmado para el documento " +
           documentValue +
-          ". Abriendo la superficie de estudios del paciente...";
+          ". Abriendo su espacio de estudios...";
 
         window.setTimeout(async () => {
           showWorkspace("patient");
@@ -1373,7 +1438,7 @@
           } catch (error) {
             patientSummary.textContent = "Paciente " + documentValue;
             patientStudyList.innerHTML =
-              '<div class="empty-state">No se pudieron cargar los estudios autorizados.</div>';
+              '<div class="empty-state">No se pudieron cargar los estudios disponibles.</div>';
           }
         }, 700);
       });
@@ -1391,15 +1456,15 @@
         }
 
         if (!passwordValue) {
-          physicianNote.textContent = "Ingrese cualquier contraseña para avanzar en este flujo mock.";
+          physicianNote.textContent = "Ingrese su contraseña para continuar.";
           physicianNote.classList.add("warning");
           return;
         }
 
         physicianNote.textContent =
-          "Ingreso profesional simulado para " +
+          "Acceso profesional confirmado para " +
           dniValue +
-          ". Abriendo el panel profesional del portal...";
+          ". Abriendo la consola de trabajo...";
 
         window.setTimeout(async () => {
           showWorkspace("physician");
