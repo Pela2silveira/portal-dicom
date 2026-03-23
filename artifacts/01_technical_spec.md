@@ -23,6 +23,7 @@
 - El paciente debe navegar una lista propia del portal, no la study list nativa de OHIF.
 - El médico debe trabajar sobre un panel propio del portal con búsqueda federada y retrieve asíncrono.
 - Los contratos explícitos de ambas superficies se documentan en `artifacts/05_ui_contracts.md`.
+- Aun en el mock de la landing, ambos ingresos deben aterrizar primero en superficies del portal y no en la home general del visor.
 
 ### Supuestos del MVP
 - El acceso al stack en desarrollo será por red controlada (p. ej. LAN/VPN); no se expone Internet “abierto” sin hardening adicional.

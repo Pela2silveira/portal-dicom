@@ -439,6 +439,153 @@
         color: #ffd6d2;
       }
 
+      .workspace {
+        display: grid;
+        gap: 20px;
+      }
+
+      .workspace-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        padding: 22px 24px;
+      }
+
+      .workspace-header h3 {
+        margin: 4px 0 0;
+        font-size: 1.65rem;
+        letter-spacing: -0.03em;
+      }
+
+      .workspace-grid {
+        display: grid;
+        gap: 20px;
+        padding: 0 24px 24px;
+      }
+
+      .workspace-card {
+        border: 1px solid var(--line);
+        background: var(--surface-soft);
+        padding: 18px;
+      }
+
+      .workspace-card h4 {
+        margin: 0 0 12px;
+        font-size: 1rem;
+      }
+
+      .study-list,
+      .result-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .study-item,
+      .result-item {
+        border: 1px solid var(--line);
+        background: var(--surface);
+        padding: 16px;
+      }
+
+      .item-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .item-head strong,
+      .item-head span {
+        display: block;
+      }
+
+      .item-head span {
+        color: var(--muted);
+        margin-top: 4px;
+      }
+
+      .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 10px;
+        border: 1px solid var(--line);
+        background: var(--surface-soft);
+        color: var(--ink);
+        font-size: 0.82rem;
+        font-weight: 700;
+      }
+
+      .chip.info {
+        color: var(--accent-dark);
+        border-color: rgba(0, 168, 224, 0.2);
+        background: var(--accent-faint);
+      }
+
+      .chip.warn {
+        color: #8a4b00;
+        border-color: rgba(138, 75, 0, 0.18);
+        background: rgba(255, 183, 77, 0.14);
+      }
+
+      .chip.success {
+        color: #116329;
+        border-color: rgba(17, 99, 41, 0.2);
+        background: rgba(17, 99, 41, 0.1);
+      }
+
+      .meta-grid {
+        display: grid;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      .meta-grid span {
+        display: block;
+        color: var(--muted);
+        font-size: 0.84rem;
+        margin-bottom: 2px;
+      }
+
+      .inline-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .action.ghost {
+        background: var(--surface);
+        color: var(--accent-dark);
+        border: 1px solid var(--line);
+      }
+
+      .filter-grid {
+        display: grid;
+        gap: 12px;
+      }
+
+      @media (min-width: 760px) {
+        .workspace-grid {
+          grid-template-columns: 0.95fr 1.05fr;
+        }
+
+        .filter-grid {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
+        .meta-grid {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+      }
+
       @media (max-width: 719px) {
         .shell {
           width: min(100% - 24px, 1160px);
@@ -488,6 +635,16 @@
         .footer-links a {
           width: fit-content;
         }
+
+        .workspace-header,
+        .workspace-grid {
+          padding-left: 20px;
+          padding-right: 20px;
+        }
+
+        .item-head {
+          flex-direction: column;
+        }
       }
 
       @media (max-width: 639px) {
@@ -527,13 +684,15 @@
         }
 
         .intro,
-        .auth-body {
+        .auth-body,
+        .workspace-grid {
           padding-left: 16px;
           padding-right: 16px;
         }
 
         .auth-top,
-        .auth-bottom {
+        .auth-bottom,
+        .workspace-header {
           padding-left: 16px;
           padding-right: 16px;
         }
@@ -684,9 +843,170 @@
           </div>
         </section>
       </main>
+
+      <main class="workspace hidden" id="patient-workspace">
+        <section class="panel">
+          <div class="workspace-header">
+            <div>
+              <p class="eyebrow">Superficie Paciente</p>
+              <h3>Sus estudios autorizados</h3>
+            </div>
+            <button class="action action-secondary" type="button" data-reset>Salir</button>
+          </div>
+          <div class="workspace-grid">
+            <section class="workspace-card">
+              <h4>Filtros simples</h4>
+              <div class="filter-grid">
+                <div class="field-group">
+                  <label for="patient-filter-from">Desde</label>
+                  <input id="patient-filter-from" type="date">
+                </div>
+                <div class="field-group">
+                  <label for="patient-filter-to">Hasta</label>
+                  <input id="patient-filter-to" type="date">
+                </div>
+                <div class="field-group">
+                  <label for="patient-filter-modality">Modalidad</label>
+                  <input id="patient-filter-modality" type="text" value="CT">
+                </div>
+              </div>
+              <p class="help">Superficie mock del portal. En la versión final esta lista se construirá con estudios autorizados por sesión.</p>
+            </section>
+            <section class="workspace-card">
+              <h4>Lista de estudios</h4>
+              <div class="study-list">
+                <article class="study-item">
+                  <div class="item-head">
+                    <div>
+                      <strong>Tomografía de tórax</strong>
+                      <span>18/03/2026</span>
+                    </div>
+                    <div class="chip success">Disponible en cache</div>
+                  </div>
+                  <div class="chip-row">
+                    <div class="chip info">CT</div>
+                    <div class="chip">StudyInstanceUID mock-ct-001</div>
+                  </div>
+                  <div class="inline-actions">
+                    <a class="action action-primary" href="/ohif/">Visualizar estudio</a>
+                  </div>
+                </article>
+                <article class="study-item">
+                  <div class="item-head">
+                    <div>
+                      <strong>Radiografía de tórax</strong>
+                      <span>10/03/2026</span>
+                    </div>
+                    <div class="chip warn">Pendiente retrieve</div>
+                  </div>
+                  <div class="chip-row">
+                    <div class="chip info">CR</div>
+                    <div class="chip">StudyInstanceUID mock-cr-002</div>
+                  </div>
+                  <div class="inline-actions">
+                    <button class="action ghost" type="button">No disponible todavía</button>
+                  </div>
+                </article>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
+
+      <main class="workspace hidden" id="physician-workspace">
+        <section class="panel">
+          <div class="workspace-header">
+            <div>
+              <p class="eyebrow">Superficie Profesional</p>
+              <h3>Búsqueda federada y retrieve</h3>
+            </div>
+            <button class="action action-secondary" type="button" data-reset>Salir</button>
+          </div>
+          <div class="workspace-grid">
+            <section class="workspace-card">
+              <h4>Búsqueda</h4>
+              <div class="filter-grid">
+                <div class="field-group">
+                  <label for="physician-search-patient">Paciente</label>
+                  <input id="physician-search-patient" type="text" value="Perez Juan">
+                </div>
+                <div class="field-group">
+                  <label for="physician-search-from">Desde</label>
+                  <input id="physician-search-from" type="date">
+                </div>
+                <div class="field-group">
+                  <label for="physician-search-to">Hasta</label>
+                  <input id="physician-search-to" type="date">
+                </div>
+                <div class="field-group">
+                  <label for="physician-search-modality">Modalidad</label>
+                  <input id="physician-search-modality" type="text" value="MR">
+                </div>
+              </div>
+              <div class="note note-neutral">
+                Panel mock del portal. La búsqueda real será asíncrona y mostrará nodos remotos, cache local y estado de retrieve.
+              </div>
+            </section>
+            <section class="workspace-card">
+              <h4>Resultados</h4>
+              <div class="result-list">
+                <article class="result-item">
+                  <div class="item-head">
+                    <div>
+                      <strong>RM de columna lumbar</strong>
+                      <span>Perez Juan · 21/03/2026</span>
+                    </div>
+                    <div class="chip success">Retrieve done</div>
+                  </div>
+                  <div class="meta-grid">
+                    <div><span>Paciente</span><strong>12345678</strong></div>
+                    <div><span>Modalidades</span><strong>MR</strong></div>
+                    <div><span>Nodos remotos</span><strong>HPN, Castro Rendon</strong></div>
+                    <div><span>Cache local</span><strong>Completo</strong></div>
+                  </div>
+                  <div class="chip-row">
+                    <div class="chip">StudyInstanceUID mock-mr-101</div>
+                    <div class="chip info">Filtro parcial: no</div>
+                  </div>
+                  <div class="inline-actions">
+                    <button class="action action-secondary" type="button">Retrieve</button>
+                    <a class="action action-primary" href="/ohif/">Visualizar</a>
+                  </div>
+                </article>
+                <article class="result-item">
+                  <div class="item-head">
+                    <div>
+                      <strong>TC de abdomen</strong>
+                      <span>Gomez Ana · 19/03/2026</span>
+                    </div>
+                    <div class="chip warn">Retrieve running</div>
+                  </div>
+                  <div class="meta-grid">
+                    <div><span>Paciente</span><strong>20111222</strong></div>
+                    <div><span>Modalidades</span><strong>CT</strong></div>
+                    <div><span>Nodo remoto</span><strong>HPN</strong></div>
+                    <div><span>Cache local</span><strong>Parcial</strong></div>
+                  </div>
+                  <div class="chip-row">
+                    <div class="chip">StudyInstanceUID mock-ct-102</div>
+                    <div class="chip info">Filtro parcial: si</div>
+                  </div>
+                  <div class="inline-actions">
+                    <button class="action action-secondary" type="button">Retrieve</button>
+                    <button class="action ghost" type="button">Visualizar cuando esté listo</button>
+                  </div>
+                </article>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
     </div>
 
     <script>
+      const hero = document.querySelector(".hero");
+      const patientWorkspace = document.getElementById("patient-workspace");
+      const physicianWorkspace = document.getElementById("physician-workspace");
       const roleButtons = document.querySelectorAll("[data-role]");
       const flows = document.querySelectorAll("[data-flow]");
       const otpButton = document.getElementById("send-otp");
@@ -698,6 +1018,7 @@
       const physicianPassword = document.getElementById("physician-password");
       const physicianLoginButton = document.querySelector('[data-flow="physician"] .action-primary');
       const physicianNote = document.querySelector('[data-flow="physician"] .note');
+      const resetButtons = document.querySelectorAll("[data-reset]");
 
       function activateRole(role) {
         roleButtons.forEach(button => {
@@ -709,8 +1030,24 @@
         });
       }
 
+      function showWorkspace(kind) {
+        hero.classList.add("hidden");
+        patientWorkspace.classList.toggle("hidden", kind !== "patient");
+        physicianWorkspace.classList.toggle("hidden", kind !== "physician");
+      }
+
+      function resetLanding() {
+        hero.classList.remove("hidden");
+        patientWorkspace.classList.add("hidden");
+        physicianWorkspace.classList.add("hidden");
+      }
+
       roleButtons.forEach(button => {
         button.addEventListener("click", () => activateRole(button.dataset.role));
+      });
+
+      resetButtons.forEach(button => {
+        button.addEventListener("click", resetLanding);
       });
 
       otpButton.addEventListener("click", () => {
@@ -751,10 +1088,10 @@
         otpFeedback.textContent =
           "Ingreso simulado exitoso para el documento " +
           documentValue +
-          ". Redirigiendo al visor...";
+          ". Abriendo la superficie de estudios del paciente...";
 
         window.setTimeout(() => {
-          window.location.href = "/ohif/";
+          showWorkspace("patient");
         }, 700);
       });
 
@@ -779,10 +1116,10 @@
         physicianNote.textContent =
           "Ingreso profesional simulado para " +
           dniValue +
-          ". Redirigiendo al visor...";
+          ". Abriendo el panel profesional del portal...";
 
         window.setTimeout(() => {
-          window.location.href = "/ohif/";
+          showWorkspace("physician");
         }, 700);
       });
     </script>

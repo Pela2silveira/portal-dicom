@@ -14,6 +14,7 @@
 ### Functional
 - [Ready] Public landing page is part of the MVP surface and is served by Nginx.
 - [Ready] Public landing reflects current UX decisions: patient `Documento + OTP` and physician `DNI / usuario + contraseña`.
+- [Ready] Current mock login flows land on portal-owned mock surfaces before opening OHIF for a specific study.
 - [Ready] Physician future target auth is documented as `LDAP provincial + MFA`, but remains out of MVP implementation scope.
 - [Ready] Mobile responsiveness is an explicit requirement for the landing and portal-owned surfaces.
 - [Ready] OHIF is treated as a viewer surface, not the primary patient or physician search surface.

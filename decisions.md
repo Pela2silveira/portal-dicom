@@ -26,6 +26,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The landing page should use visual identity inspired by the `andes/app` application.
 - The landing page includes a visible patient flow with `Documento + OTP` as a UI-only flow in the MVP.
 - The landing page includes a visible physician flow with `DNI / usuario + contraseña` as a UI-only flow in the MVP.
+- The current mock landing must route patient and physician flows to portal-owned mock surfaces before any direct OHIF navigation.
 - The landing page and portal-owned UI surfaces must be responsive for mobile devices.
 - Physician authentication is still out of MVP implementation scope, but the target future integration is `LDAP provincial + MFA`.
 - Patient OTP validation is still out of MVP implementation scope, but the target future integration remains `DNI + OTP`.
