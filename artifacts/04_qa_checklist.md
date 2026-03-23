@@ -1,7 +1,7 @@
 ## QA Readiness Checklist (Pre-coding)
 
 ### Security
-- [Ready] Nginx is the **only** public HTTP entrypoint; backend/Orthanc HTTP/Postgres remain internal-only.
+- [Ready] Nginx is the **only** public HTTP entrypoint; backend/Orthanc HTTP remain internal-only, and Postgres may be bound only to `127.0.0.1` for local development access.
 - [Ready] Nginx exposes HTTP only on `http://localhost:8080` for MVP; TLS deferred.
 - [Ready] Portal-owned static assets can be served from a dedicated route namespace independent from OHIF assets.
 - [Missing] Nginx **explicit allowlist** of DICOMweb paths required by OHIF, with explicit deny for Orthanc admin REST (confirm exact path list and add negative tests).

@@ -198,7 +198,8 @@ Proveer un portal operativo mínimo capaz de:
 
 ### 6.1 Frontera pública
 - **Solo Nginx** expone puertos al exterior del compose.
-- Backend, Postgres y Orthanc quedan en red docker interna (sin publicar puertos, salvo necesidad de DICOM).
+- Backend y Orthanc quedan en red docker interna (salvo necesidad de DICOM).
+- En desarrollo local, Postgres puede publicarse solo sobre `127.0.0.1` para inspección manual y debugging sin convertirlo en un endpoint público de red.
 - Los assets del portal público deben servirse desde una ruta propia para no colisionar con los assets raíz de OHIF.
 - El acceso a estudios para pacientes o médicos no debe depender solo de ocultar o mostrar la study list nativa del visor.
 - La restricción futura debe validarse en backend/proxy por sesión activa del portal y `StudyInstanceUID` permitido.
@@ -207,7 +208,7 @@ Proveer un portal operativo mínimo capaz de:
 - Nginx: `80` (dev) y opcional `443` (si se agrega TLS).
 - Orthanc DICOM (C-STORE/Move SCP): `4242` **publicado** hacia red donde están PACS remotos (si aplica).
 - Orthanc HTTP: **no publicado** directamente; solo accesible vía Nginx.
-- Postgres: no publicado.
+- Postgres: no publicado de forma pública; en desarrollo puede ligarse solo a `127.0.0.1`.
 - En desarrollo local, los puertos directos de Orthanc pueden quedar ligados a `127.0.0.1` por defecto.
 
 ### 6.3 Secretos y configuración
