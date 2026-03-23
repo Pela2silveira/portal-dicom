@@ -23,6 +23,9 @@ This includes, when applicable:
 - Prefer small, sequential commits over large grouped commits.
 - Include both implementation and documentation/spec synchronization in the same commit unless the user explicitly asks to separate them.
 - Before making a new change, check whether there are pending uncommitted changes from the previous step and commit them first when feasible.
+- Never commit secrets, tokens, passwords, or private environment values into tracked config files.
+- `app/config/config.json` is local-only and must remain ignored by git.
+- Changes to shared config shape must be reflected in `app/config/config.example.json`, not by committing local runtime values.
 
 ## Current Documentation Intent
 

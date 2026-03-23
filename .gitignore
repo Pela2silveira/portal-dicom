@@ -1,6 +1,7 @@
 .venv/
 .env
 app/.env
+app/config/config.json
 artifacts/*
 !artifacts/
 !artifacts/*.md

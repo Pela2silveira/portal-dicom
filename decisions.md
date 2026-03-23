@@ -47,6 +47,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Remote dcm4chee REST authentication uses Keycloak `client_credentials`.
 - The backend must request an access token using `client_id` and `client_secret` from environment configuration.
 - The backend must call the remote PACS REST API with `Authorization: Bearer <token>`.
+- Committed configuration files must contain placeholders or env references only; local runtime values belong in ignored files such as `app/config/config.json`.
 - The Andes MPI patient lookup candidate endpoint is `GET /api/core-v2/mpi/pacientes?documento=<dni>`.
 - If Andes MPI returns multiple matches, the backend should refine using `fechaNacimiento`, `sexo`, `apellido`, or `nombre`.
 - The MVP includes a minimal web UI served by Nginx: search form, streaming results, Retrieve action, and Visualizar link.
