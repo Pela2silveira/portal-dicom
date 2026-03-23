@@ -22,7 +22,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Nginx is the only public HTTP entrypoint.
 - Nginx must proxy only the Orthanc DICOMweb paths needed by OHIF and must not expose Orthanc admin REST endpoints.
 - The public landing page is part of the MVP and is served directly by Nginx.
-- The landing page brand is `RedImagenesNQN`.
+- The landing page brand is `Portal DICOM`.
 - The landing page should use visual identity inspired by the `andes/app` application.
 - The landing page includes a visible patient flow with `Documento + OTP` as a UI-only flow in the MVP.
 - The landing page includes a visible physician flow with `DNI / usuario + contraseña` as a UI-only flow in the MVP.
