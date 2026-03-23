@@ -17,6 +17,7 @@ RUN adduser -D -u 10001 appuser
 WORKDIR /app
 
 COPY --from=build /bin/backend /app/backend
+COPY --from=build /src/migrations /app/migrations
 
 USER appuser
 

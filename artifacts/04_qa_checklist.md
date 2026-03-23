@@ -49,7 +49,7 @@
 - [Ready] One-command `docker compose up` is a hard acceptance criterion.
 - [Ready] Branding/static assets are part of the runtime contract and should be included in smoke verification for `/` and favicon delivery.
 - [Missing] Deterministic startup ordering/healthchecks (postgres ready → migrations → backend ready; orthanc ready → backend health returns `orthanc_ok`).
-- [Missing] Database migrations automation defined (tool choice, container entrypoint, rollback policy, idempotency).
+- [Ready] Database migrations automation is defined and implemented in the backend startup using versioned SQL files plus `schema_migrations`.
 - [Missing] Observability baseline: structured JSON logs for backend + where logs live; minimal metrics (latency per node run, retrieve durations) persisted and/or exposed.
 - [Missing] Runbook content list and ownership (how to add PACS nodes, test search/retrieve/view, troubleshoot common failures).
 - [Missing] Automated smoke tests for compose: health endpoint, SSE contract, proxy negative tests (Orthanc admin blocked), basic retrieve state machine (even against lab/mock).
