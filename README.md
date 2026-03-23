@@ -11,6 +11,24 @@ This folder is set up for a human-in-the-loop spec-driven development flow, so y
 - `artifacts/`: generated outputs from each step.
 - `app/`: the runnable implementation workspace for Docker, backend, Nginx, Orthanc, OHIF, and config files.
 
+## Document index
+
+### Core project docs
+
+- [README.md](README.md)
+- [AGENTS.md](AGENTS.md)
+- [requirements.md](requirements.md)
+- [decisions.md](decisions.md)
+- [IMPLEMENTATION_CHECKLIST.md](IMPLEMENTATION_CHECKLIST.md)
+
+### Generated and maintained artifacts
+
+- [artifacts/01_technical_spec.md](artifacts/01_technical_spec.md)
+- [artifacts/02_agent_debate.md](artifacts/02_agent_debate.md)
+- [artifacts/03_implementation_plan.md](artifacts/03_implementation_plan.md)
+- [artifacts/04_qa_checklist.md](artifacts/04_qa_checklist.md)
+- [artifacts/05_ui_contracts.md](artifacts/05_ui_contracts.md)
+
 ## Runtime topology
 
 ```mermaid
