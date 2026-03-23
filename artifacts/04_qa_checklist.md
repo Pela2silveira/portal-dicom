@@ -52,7 +52,7 @@
 - [Ready] Branding/static assets are part of the runtime contract and should be included in smoke verification for `/` and favicon delivery.
 - [Missing] Deterministic startup ordering/healthchecks (postgres ready → migrations → backend ready; orthanc ready → backend health returns `orthanc_ok`).
 - [Ready] Database migrations automation is defined and implemented in the backend startup using versioned SQL files plus `schema_migrations`.
-- [Missing] Observability baseline: structured JSON logs for backend + where logs live; minimal metrics (latency per node run, retrieve durations) persisted and/or exposed.
+- [Partial] Observability baseline started: the patient sync path now emits structured JSON logs for token request, QIDO request, sync durations, and study counts. Broader metrics and non-patient flows remain pending.
 - [Missing] Runbook content list and ownership (how to add PACS nodes, test search/retrieve/view, troubleshoot common failures).
 - [Missing] Automated smoke tests for compose: health endpoint, SSE contract, proxy negative tests (Orthanc admin blocked), basic retrieve state machine (even against lab/mock).
 - [Needs Decision] Test strategy for “remote PACS not available” in CI: include a lab Orthanc/dcm4chee container as a simulated remote vs. mock handler only.

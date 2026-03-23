@@ -620,6 +620,13 @@ func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient Pati
 		return patient, fmt.Errorf("patient qido flow requires qido_rs node, found %s", node.Protocol)
 	}
 
+	syncStartedAt := time.Now()
+	a.log("info", "patient_qido_sync_started", map[string]any{
+		"document_number": documentNumber,
+		"patient_id":      patient.ID,
+		"node_id":         node.ID,
+	})
+
 	remoteStudies, fullName, err := a.fetchPatientStudiesFromQIDO(ctx, node, documentNumber)
 	if err != nil {
 		return patient, err
@@ -643,6 +650,7 @@ func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient Pati
 		return patient, fmt.Errorf("clear patient study access: %w", err)
 	}
 
+	availableLocalCount := 0
 	for _, study := range remoteStudies {
 		sourceJSON, err := json.Marshal(map[string]any{
 			"study_date":          study.StudyDate,
@@ -657,6 +665,7 @@ func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient Pati
 		availabilityStatus := "remote_available"
 		if study.ViewerURL != "" {
 			availabilityStatus = "available_local"
+			availableLocalCount++
 		}
 
 		if _, err := a.db.ExecContext(ctx, `
@@ -676,10 +685,20 @@ func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient Pati
 		}
 	}
 
+	a.log("info", "patient_qido_sync_completed", map[string]any{
+		"document_number":      documentNumber,
+		"patient_id":           patient.ID,
+		"node_id":              node.ID,
+		"studies_synced":       len(remoteStudies),
+		"studies_local_ready":  availableLocalCount,
+		"duration_ms":          time.Since(syncStartedAt).Milliseconds(),
+	})
+
 	return patient, nil
 }
 
 func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConfig, documentNumber string) ([]PatientStudy, string, error) {
+	qidoStartedAt := time.Now()
 	token, err := a.fetchPACSBearerToken(ctx, node)
 	if err != nil {
 		return nil, "", fmt.Errorf("fetch pacs token for %s: %w", node.ID, err)
@@ -699,6 +718,12 @@ func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConf
 	query.Add("includefield", "ModalitiesInStudy")
 	query.Add("includefield", "PatientName")
 	endpoint.RawQuery = query.Encode()
+
+	a.log("info", "patient_qido_request_started", map[string]any{
+		"document_number": documentNumber,
+		"node_id":         node.ID,
+		"url":             endpoint.String(),
+	})
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
 	if err != nil {
@@ -765,6 +790,13 @@ func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConf
 		return studies[i].StudyDate > studies[j].StudyDate
 	})
 
+	a.log("info", "patient_qido_request_completed", map[string]any{
+		"document_number": documentNumber,
+		"node_id":         node.ID,
+		"study_count":     len(studies),
+		"duration_ms":     time.Since(qidoStartedAt).Milliseconds(),
+	})
+
 	return studies, patientName, nil
 }
 
@@ -782,6 +814,19 @@ func (a *App) fetchPACSBearerToken(ctx context.Context, node PACSNodeConfig) (st
 	form.Set("grant_type", "client_credentials")
 	form.Set("client_id", clientID)
 	form.Set("client_secret", clientSecret)
+
+	tokenStartedAt := time.Now()
+	tokenURL, err := url.Parse(node.Auth.TokenURL)
+	if err != nil {
+		return "", fmt.Errorf("parse token url: %w", err)
+	}
+	a.log("info", "pacs_token_request_started", map[string]any{
+		"node_id":     node.ID,
+		"auth_type":   node.Auth.Type,
+		"token_host":  tokenURL.Host,
+		"token_path":  tokenURL.Path,
+		"client_id_env": node.Auth.ClientIDEnv,
+	})
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, node.Auth.TokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
@@ -810,6 +855,13 @@ func (a *App) fetchPACSBearerToken(ctx context.Context, node PACSNodeConfig) (st
 	if strings.TrimSpace(payload.AccessToken) == "" {
 		return "", errors.New("empty access_token in token response")
 	}
+
+	a.log("info", "pacs_token_request_completed", map[string]any{
+		"node_id":      node.ID,
+		"auth_type":    node.Auth.Type,
+		"token_host":   tokenURL.Host,
+		"duration_ms":  time.Since(tokenStartedAt).Milliseconds(),
+	})
 
 	return payload.AccessToken, nil
 }
