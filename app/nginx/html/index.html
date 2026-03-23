@@ -48,30 +48,16 @@
         align-items: center;
         justify-content: space-between;
         gap: 16px;
-        margin-bottom: 22px;
+        margin-bottom: 18px;
       }
 
       .brand {
-        display: flex;
-        align-items: flex-start;
-        gap: 14px;
         min-width: 0;
       }
 
-      .brand-logo {
-        display: block;
-        width: min(300px, 56vw);
-        flex-shrink: 0;
-      }
-
-      .brand-logo img {
-        display: block;
-        width: 100%;
-        height: auto;
-      }
-
       .brand-copy {
-        padding-top: 6px;
+        display: grid;
+        gap: 4px;
         min-width: 0;
       }
 
@@ -89,6 +75,12 @@
         font-size: clamp(1.65rem, 3vw, 2.2rem);
         line-height: 1;
         letter-spacing: -0.03em;
+      }
+
+      .brand-copy p:last-child {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.98rem;
       }
 
       .status-pill {
@@ -120,8 +112,8 @@
 
       @media (min-width: 960px) {
         .hero {
-          grid-template-columns: 1.12fr 0.88fr;
-          align-items: stretch;
+          grid-template-columns: 0.78fr 1.22fr;
+          align-items: start;
         }
       }
 
@@ -134,7 +126,7 @@
       }
 
       .intro {
-        padding: 30px 30px 28px;
+        padding: 28px 30px 26px;
         overflow: hidden;
         position: relative;
         background:
@@ -157,8 +149,8 @@
 
       .intro h2 {
         margin: 0 0 14px;
-        font-size: clamp(2rem, 5vw, 4rem);
-        line-height: 0.92;
+        font-size: clamp(1.9rem, 4.5vw, 3.35rem);
+        line-height: 0.94;
         letter-spacing: -0.05em;
       }
 
@@ -171,18 +163,12 @@
 
       .intro-grid {
         display: grid;
-        gap: 14px;
-        margin-top: 24px;
-      }
-
-      @media (min-width: 720px) {
-        .intro-grid {
-          grid-template-columns: repeat(3, 1fr);
-        }
+        gap: 12px;
+        margin-top: 18px;
       }
 
       .micro {
-        padding: 16px 16px 14px;
+        padding: 14px 16px 13px;
         border-radius: 0;
         border: 1px solid rgba(255, 255, 255, 0.14);
         background: rgba(255, 255, 255, 0.08);
@@ -202,7 +188,7 @@
       }
 
       .micro span {
-        font-size: 0.98rem;
+        font-size: 0.94rem;
       }
 
       .auth {
@@ -212,8 +198,7 @@
         grid-template-rows: auto 1fr auto;
       }
 
-      .auth-top,
-      .auth-bottom {
+      .auth-top {
         min-height: 66px;
         padding: 0 22px;
         display: flex;
@@ -223,14 +208,12 @@
         color: #ffffff;
       }
 
-      .auth-top strong,
-      .auth-bottom strong {
+      .auth-top strong {
         font-size: 0.95rem;
         letter-spacing: 0.02em;
       }
 
-      .auth-top span,
-      .auth-bottom span {
+      .auth-top span {
         font-size: 0.85rem;
         opacity: 0.88;
       }
@@ -242,7 +225,7 @@
       }
 
       .auth-header {
-        margin-bottom: 18px;
+        margin-bottom: 16px;
       }
 
       .auth-header h3 {
@@ -254,6 +237,37 @@
       .auth-header p {
         margin: 0;
         color: rgba(255, 255, 255, 0.78);
+      }
+
+      .site-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 18px;
+        margin-top: 22px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+      }
+
+      .site-footer-copy {
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .site-footer-copy strong {
+        color: var(--ink);
+      }
+
+      .footer-logo {
+        display: block;
+        width: min(220px, 48vw);
+        flex-shrink: 0;
+      }
+
+      .footer-logo img {
+        display: block;
+        width: 100%;
+        height: auto;
       }
 
       .role-switch {
@@ -636,22 +650,7 @@
 
         .masthead {
           align-items: flex-start;
-          flex-direction: column;
           gap: 12px;
-        }
-
-        .brand {
-          width: 100%;
-          flex-direction: column;
-          gap: 10px;
-        }
-
-        .brand-logo {
-          width: min(280px, 78vw);
-        }
-
-        .brand-copy {
-          padding-top: 0;
         }
 
         .status-pill {
@@ -678,11 +677,15 @@
         .item-head {
           flex-direction: column;
         }
+
+        .site-footer {
+          flex-direction: column;
+          align-items: flex-start;
+        }
       }
 
       @media (max-width: 639px) {
-        .auth-top,
-        .auth-bottom {
+        .auth-top {
           min-height: auto;
           padding: 14px 18px;
           gap: 6px;
@@ -724,7 +727,6 @@
         }
 
         .auth-top,
-        .auth-bottom,
         .workspace-header {
           padding-left: 16px;
           padding-right: 16px;
@@ -753,39 +755,32 @@
     <div class="shell">
       <header class="masthead">
         <div class="brand">
-          <a class="brand-logo" href="/" aria-label="RedImagenesNQN">
-            <img src="/portal-assets/andes-logo-wide.svg" alt="ANDES">
-          </a>
           <div class="brand-copy">
             <p class="eyebrow">Red provincial de imagenes</p>
             <h1>RedImagenesNQN</h1>
+            <p>Acceso a estudios por imagen para pacientes y equipos asistenciales.</p>
           </div>
         </div>
-        <div class="status-pill">Visor y cache local disponibles</div>
+        <div class="status-pill">Portal de acceso</div>
       </header>
 
       <main class="hero">
         <section class="panel intro">
           <p class="eyebrow">Ingreso</p>
-          <h2>Un mismo acceso para consulta, recuperacion y visualizacion.</h2>
+          <h2>El acceso comienza aca.</h2>
           <p>
-            RedImagenesNQN organiza el acceso a estudios por imagen desde una superficie
-            unica. El portal resuelve identificacion, lista de estudios, disponibilidad
-            local y apertura directa en el visor clinico.
+            Seleccione su perfil para continuar con el recorrido correspondiente y abrir
+            su espacio de consulta o gestion.
           </p>
 
           <div class="intro-grid">
             <article class="micro">
-              <strong>Pacientes</strong>
-              <span>Consulta personal, recuperacion de estudios y apertura directa del visor.</span>
+              <strong>Paciente</strong>
+              <span>Consulta su lista de estudios y recupera disponibilidad cuando sea necesario.</span>
             </article>
             <article class="micro">
-              <strong>Profesionales</strong>
-              <span>Busqueda asistida, estado federado por PACS y acciones operativas por estudio.</span>
-            </article>
-            <article class="micro">
-              <strong>Infraestructura</strong>
-              <span>Portal, API, cache local y visor trabajando desde un mismo punto de entrada.</span>
+              <strong>Profesional</strong>
+              <span>Busca estudios, revisa disponibilidad y opera recuperaciones antes de abrir el visor.</span>
             </article>
           </div>
 
@@ -800,8 +795,8 @@
           <div class="auth-body">
             <div class="auth-header">
               <p class="eyebrow">Identificacion</p>
-              <h3>Seleccione su perfil</h3>
-              <p>El portal adapta la experiencia de consulta segun el tipo de acceso.</p>
+              <h3>Seleccione su perfil de acceso</h3>
+              <p>Continúe con el ingreso correspondiente para abrir su espacio de trabajo.</p>
             </div>
 
             <div class="role-switch" aria-label="Seleccion de perfil">
@@ -862,13 +857,17 @@
               </div>
             </section>
           </div>
-          
-          <div class="auth-bottom">
-            <strong>Neuquen</strong>
-            <span>Portal de estudios por imagen</span>
-          </div>
         </section>
       </main>
+
+      <footer class="site-footer">
+        <div class="site-footer-copy">
+          <strong>RedImagenesNQN</strong> integra acceso, consulta y visualizacion de estudios por imagen desde un unico portal.
+        </div>
+        <a class="footer-logo" href="/" aria-label="ANDES">
+          <img src="/portal-assets/andes-logo-wide.svg" alt="ANDES">
+        </a>
+      </footer>
 
       <main class="workspace hidden" id="patient-workspace">
         <section class="panel">

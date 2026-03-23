@@ -29,6 +29,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - Public landing flow: `Documento + OTP`
 - Current implementation already opens the portal-owned patient surface.
 - The visible language of the entry flow should read as product, not as internal demo text.
+- The public landing should keep the access form as the visual center and leave only brief orientation copy around it.
 - Future real implementation validates patient identity before exposing the list.
 
 ### Screen Model
@@ -111,6 +112,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - Public landing flow: `DNI / usuario + contraseña`
 - Current implementation already opens the portal-owned physician surface
 - The visible language of the entry flow should read as operational product language, not as internal demo text
+- The public landing should keep supporting context concise so the professional access form remains the dominant visual element.
 - Future real implementation target: `LDAP provincial + MFA`
 
 ### Screen Model
