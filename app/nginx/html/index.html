@@ -886,9 +886,9 @@
                 </div>
               </div>
               <div class="inline-actions">
-                <button class="action action-secondary" id="patient-apply-filters" type="button">Aplicar filtros</button>
+                <button class="action action-secondary" id="patient-apply-filters" type="button">Actualizar lista</button>
               </div>
-              <p class="help">Superficie mock del portal. En la versión final esta lista se construirá con estudios autorizados por sesión.</p>
+              <p class="help">Use este botón para recargar sus estudios con los filtros actuales.</p>
             </section>
             <section class="workspace-card">
               <h4>Lista de estudios</h4>
@@ -1217,7 +1217,7 @@
       patientApplyFiltersButton.addEventListener("click", async () => {
         if (!activePatientDocument) {
           patientStudyList.innerHTML =
-            '<div class="empty-state">Ingrese primero por el flujo paciente para aplicar filtros.</div>';
+            '<div class="empty-state">Ingrese primero por el flujo paciente para cargar su lista.</div>';
           return;
         }
 

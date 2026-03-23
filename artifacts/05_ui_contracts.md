@@ -66,7 +66,7 @@ Allow a patient to see only their authorized studies and open one selected study
 
 - `Retrieve` when `availabilityStatus = pending_retrieve`
 - `Ver estudio` when `availabilityStatus = available_local`
-- passive refresh of the list
+- `Actualizar lista` to reload studies with the current patient filters
 
 ### Explicitly Forbidden Actions
 
