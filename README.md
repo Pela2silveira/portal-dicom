@@ -1,6 +1,6 @@
 # Portal Spec-Driven Workflow
 
-This folder is set up for a human-in-the-loop spec-driven development flow, based on the multi-agent approach already used in `portal`, but adapted for `portal2` so you can review and steer decisions before coding.
+This folder is set up for a human-in-the-loop spec-driven development flow, so you can review and steer decisions before coding.
 
 ## What is in this folder
 
@@ -9,6 +9,7 @@ This folder is set up for a human-in-the-loop spec-driven development flow, base
 - `spec.py`: the workflow runner.
 - `requirements-dev.txt`: Python dependencies for the workflow.
 - `artifacts/`: generated outputs from each step.
+- `app/`: the runnable implementation workspace for Docker, backend, Nginx, Orthanc, OHIF, and config files.
 
 ## Step 1: create and activate the virtual environment
 
