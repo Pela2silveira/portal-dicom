@@ -171,7 +171,7 @@
   - endpoint backend para `patient studies`
   - lista propia del portal con estudios autorizados
   - apertura puntual en OHIF
-  - primer slice funcional con datos sembrados por DNI hasta integrar autorización real
+  - primer slice funcional con QIDO `PatientID=<dni>` contra el único nodo PACS configurado y sincronización en `patient_study_access`
 - Physician surface:
   - endpoint/backend para búsqueda federada
   - lista con nodos remotos, disponibilidad local, estado de retrieve y acciones

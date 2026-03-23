@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -76,6 +78,12 @@ type PatientStudy struct {
 	AvailabilityStatus string   `json:"availability_status"`
 	AuthorizationBasis string   `json:"authorization_basis"`
 	ViewerURL          string   `json:"viewer_url,omitempty"`
+}
+
+type qidoResponseItem map[string]dicomJSONAttribute
+
+type dicomJSONAttribute struct {
+	Value []json.RawMessage `json:"Value"`
 }
 
 type PhysicianResultsResponse struct {
@@ -250,7 +258,7 @@ func main() {
 		cfg: cfg,
 		db:  db,
 		httpClient: &http.Client{
-			Timeout: 5 * time.Second,
+			Timeout: 15 * time.Second,
 		},
 		logger:         logger,
 		externalConfig: externalConfig,
@@ -398,10 +406,10 @@ func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
 		Modality: strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("modality"))),
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
-	patient, err := a.ensurePatientSeed(ctx, documentNumber)
+	patient, err := a.ensurePatientRecord(ctx, documentNumber)
 	if err != nil {
 		a.log("error", "patient_seed_failed", map[string]any{
 			"document_number": documentNumber,
@@ -409,6 +417,19 @@ func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
 		})
 		http.Error(w, "failed to prepare patient studies", http.StatusInternalServerError)
 		return
+	}
+
+	if filters.DateFrom == "" && filters.DateTo == "" && filters.Modality == "" {
+		patient, err = a.syncPatientStudiesFromSingleNode(ctx, patient, documentNumber)
+		if err != nil {
+			a.log("error", "patient_qido_sync_failed", map[string]any{
+				"document_number": documentNumber,
+				"patient_id":      patient.ID,
+				"error":           err.Error(),
+			})
+			http.Error(w, "failed to load patient studies from remote pacs", http.StatusBadGateway)
+			return
+		}
 	}
 
 	studies, err := a.listPatientStudies(ctx, patient.ID, filters)
@@ -550,7 +571,7 @@ func loadExternalConfig(path string) (*ExternalConfig, error) {
 	return &cfg, nil
 }
 
-func (a *App) ensurePatientSeed(ctx context.Context, documentNumber string) (PatientSummary, error) {
+func (a *App) ensurePatientRecord(ctx context.Context, documentNumber string) (PatientSummary, error) {
 	var patient PatientSummary
 
 	err := a.db.QueryRowContext(ctx, `
@@ -586,43 +607,56 @@ func (a *App) ensurePatientSeed(ctx context.Context, documentNumber string) (Pat
 		return PatientSummary{}, fmt.Errorf("upsert patient identifier: %w", err)
 	}
 
-	seedRows := []struct {
-		StudyUID            string
-		AuthorizationBasis  string
-		AvailabilityStatus  string
-		LocalOrthancStudyID sql.NullString
-		Metadata            map[string]any
-	}{
-		{
-			StudyUID:           fmt.Sprintf("1.2.826.0.1.3680043.10.54321.%s.1", documentNumber),
-			AuthorizationBasis: "patient_document_match",
-			AvailabilityStatus: "available_local",
-			LocalOrthancStudyID: sql.NullString{
-				String: "mock-local-" + documentNumber + "-001",
-				Valid:  true,
-			},
-			Metadata: map[string]any{
-				"study_date":          "2026-03-18",
-				"study_description":   "Tomografia de torax",
-				"modalities_in_study": []string{"CT"},
-			},
-		},
-		{
-			StudyUID:           fmt.Sprintf("1.2.826.0.1.3680043.10.54321.%s.2", documentNumber),
-			AuthorizationBasis: "patient_document_match",
-			AvailabilityStatus: "pending_retrieve",
-			Metadata: map[string]any{
-				"study_date":          "2026-03-10",
-				"study_description":   "Radiografia de torax",
-				"modalities_in_study": []string{"CR"},
-			},
-		},
+	return patient, nil
+}
+
+func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient PatientSummary, documentNumber string) (PatientSummary, error) {
+	if len(a.externalConfig.PACSNodes) != 1 {
+		return patient, fmt.Errorf("patient qido flow requires exactly one pacs node, found %d", len(a.externalConfig.PACSNodes))
 	}
 
-	for _, row := range seedRows {
-		sourceJSON, err := json.Marshal(row.Metadata)
+	node := a.externalConfig.PACSNodes[0]
+	if strings.ToLower(node.Protocol) != "qido_rs" {
+		return patient, fmt.Errorf("patient qido flow requires qido_rs node, found %s", node.Protocol)
+	}
+
+	remoteStudies, fullName, err := a.fetchPatientStudiesFromQIDO(ctx, node, documentNumber)
+	if err != nil {
+		return patient, err
+	}
+
+	if fullName != "" && fullName != patient.FullName {
+		if _, err := a.db.ExecContext(ctx, `
+			UPDATE patients
+			SET full_name = $2, updated_at = now()
+			WHERE id = $1::uuid
+		`, patient.ID, fullName); err != nil {
+			return patient, fmt.Errorf("update patient full name: %w", err)
+		}
+		patient.FullName = fullName
+	}
+
+	if _, err := a.db.ExecContext(ctx, `
+		DELETE FROM patient_study_access
+		WHERE patient_id = $1::uuid
+	`, patient.ID); err != nil {
+		return patient, fmt.Errorf("clear patient study access: %w", err)
+	}
+
+	for _, study := range remoteStudies {
+		sourceJSON, err := json.Marshal(map[string]any{
+			"study_date":          study.StudyDate,
+			"study_description":   study.StudyDescription,
+			"modalities_in_study": study.ModalitiesInStudy,
+			"source_node_id":      node.ID,
+		})
 		if err != nil {
-			return PatientSummary{}, fmt.Errorf("marshal patient study seed: %w", err)
+			return patient, fmt.Errorf("marshal patient qido study: %w", err)
+		}
+
+		availabilityStatus := "remote_available"
+		if study.ViewerURL != "" {
+			availabilityStatus = "available_local"
 		}
 
 		if _, err := a.db.ExecContext(ctx, `
@@ -630,28 +664,229 @@ func (a *App) ensurePatientSeed(ctx context.Context, documentNumber string) (Pat
 				patient_id, study_instance_uid, authorization_basis, availability_status,
 				local_orthanc_study_id, first_seen_at, last_seen_at, last_authorized_at, source_json
 			) VALUES (
-				$1::uuid, $2, $3, $4, $5, now(), now(), now(), $6::jsonb
+				$1::uuid, $2, 'patient_document_qido_match', $3, NULL, now(), now(), now(), $4::jsonb
 			)
-			ON CONFLICT (patient_id, study_instance_uid) DO UPDATE SET
-				authorization_basis = EXCLUDED.authorization_basis,
-				availability_status = EXCLUDED.availability_status,
-				local_orthanc_study_id = EXCLUDED.local_orthanc_study_id,
-				last_seen_at = now(),
-				last_authorized_at = now(),
-				source_json = EXCLUDED.source_json
 		`,
 			patient.ID,
-			row.StudyUID,
-			row.AuthorizationBasis,
-			row.AvailabilityStatus,
-			row.LocalOrthancStudyID,
+			study.StudyInstanceUID,
+			availabilityStatus,
 			string(sourceJSON),
 		); err != nil {
-			return PatientSummary{}, fmt.Errorf("upsert patient study access: %w", err)
+			return patient, fmt.Errorf("insert qido-backed patient study access: %w", err)
 		}
 	}
 
 	return patient, nil
+}
+
+func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConfig, documentNumber string) ([]PatientStudy, string, error) {
+	token, err := a.fetchPACSBearerToken(ctx, node)
+	if err != nil {
+		return nil, "", fmt.Errorf("fetch pacs token for %s: %w", node.ID, err)
+	}
+
+	endpoint, err := url.Parse(strings.TrimRight(node.DICOMwebBaseURL, "/") + "/studies")
+	if err != nil {
+		return nil, "", fmt.Errorf("build qido url: %w", err)
+	}
+
+	query := endpoint.Query()
+	query.Set("PatientID", documentNumber)
+	query.Set("limit", "50")
+	query.Add("includefield", "StudyInstanceUID")
+	query.Add("includefield", "StudyDate")
+	query.Add("includefield", "StudyDescription")
+	query.Add("includefield", "ModalitiesInStudy")
+	query.Add("includefield", "PatientName")
+	endpoint.RawQuery = query.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("build qido request: %w", err)
+	}
+	req.Header.Set("Accept", "application/dicom+json, application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	res, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("execute qido request: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+		return nil, "", fmt.Errorf("qido bad status %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var payload []qidoResponseItem
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		return nil, "", fmt.Errorf("decode qido response: %w", err)
+	}
+
+	studies := make([]PatientStudy, 0, len(payload))
+	patientName := ""
+	for _, item := range payload {
+		studyUID := dicomFirstString(item, "0020000D")
+		if studyUID == "" {
+			continue
+		}
+
+		study := PatientStudy{
+			StudyInstanceUID:   studyUID,
+			StudyDate:          dicomFirstString(item, "00080020"),
+			StudyDescription:   dicomFirstString(item, "00081030"),
+			ModalitiesInStudy:  dicomStringList(item, "00080061"),
+			AvailabilityStatus: "remote_available",
+			AuthorizationBasis: "patient_document_qido_match",
+		}
+
+		cached, err := a.isStudyAvailableLocal(ctx, studyUID)
+		if err != nil {
+			return nil, "", fmt.Errorf("check local cache for study %s: %w", studyUID, err)
+		}
+		if cached {
+			study.AvailabilityStatus = "available_local"
+			study.ViewerURL = "/ohif/"
+		}
+
+		if patientName == "" {
+			patientName = dicomFirstPersonName(item, "00100010")
+		}
+
+		studies = append(studies, study)
+	}
+
+	sort.Slice(studies, func(i, j int) bool {
+		if studies[i].StudyDate == studies[j].StudyDate {
+			return studies[i].StudyInstanceUID < studies[j].StudyInstanceUID
+		}
+		return studies[i].StudyDate > studies[j].StudyDate
+	})
+
+	return studies, patientName, nil
+}
+
+func (a *App) fetchPACSBearerToken(ctx context.Context, node PACSNodeConfig) (string, error) {
+	if node.Auth.Type == "" {
+		return "", nil
+	}
+	if node.Auth.Type != "keycloak_client_credentials" {
+		return "", fmt.Errorf("unsupported pacs auth type %q", node.Auth.Type)
+	}
+
+	clientID := strings.TrimSpace(os.Getenv(node.Auth.ClientIDEnv))
+	clientSecret := strings.TrimSpace(os.Getenv(node.Auth.ClientSecretEnv))
+	form := url.Values{}
+	form.Set("grant_type", "client_credentials")
+	form.Set("client_id", clientID)
+	form.Set("client_secret", clientSecret)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, node.Auth.TokenURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", fmt.Errorf("build token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	res, err := a.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("execute token request: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+		return "", fmt.Errorf("token bad status %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var payload struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		return "", fmt.Errorf("decode token response: %w", err)
+	}
+	if strings.TrimSpace(payload.AccessToken) == "" {
+		return "", errors.New("empty access_token in token response")
+	}
+
+	return payload.AccessToken, nil
+}
+
+func (a *App) isStudyAvailableLocal(ctx context.Context, studyUID string) (bool, error) {
+	endpoint := strings.TrimRight(a.cfg.OrthancURL, "/") + "/dicom-web/studies?StudyInstanceUID=" + url.QueryEscape(studyUID) + "&limit=1"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return false, fmt.Errorf("build orthanc qido request: %w", err)
+	}
+	req.Header.Set("Accept", "application/dicom+json, application/json")
+	if a.cfg.OrthancUser != "" {
+		req.SetBasicAuth(a.cfg.OrthancUser, a.cfg.OrthancPass)
+	}
+
+	res, err := a.httpClient.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("execute orthanc qido request: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+		return false, fmt.Errorf("orthanc qido bad status %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var payload []qidoResponseItem
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		return false, fmt.Errorf("decode orthanc qido response: %w", err)
+	}
+
+	return len(payload) > 0, nil
+}
+
+func dicomFirstString(item qidoResponseItem, tag string) string {
+	attribute, ok := item[tag]
+	if !ok || len(attribute.Value) == 0 {
+		return ""
+	}
+
+	var direct string
+	if err := json.Unmarshal(attribute.Value[0], &direct); err == nil {
+		return strings.TrimSpace(direct)
+	}
+
+	var named struct {
+		Alphabetic string `json:"Alphabetic"`
+	}
+	if err := json.Unmarshal(attribute.Value[0], &named); err == nil {
+		return strings.TrimSpace(named.Alphabetic)
+	}
+
+	return ""
+}
+
+func dicomFirstPersonName(item qidoResponseItem, tag string) string {
+	return dicomFirstString(item, tag)
+}
+
+func dicomStringList(item qidoResponseItem, tag string) []string {
+	attribute, ok := item[tag]
+	if !ok || len(attribute.Value) == 0 {
+		return nil
+	}
+
+	values := make([]string, 0, len(attribute.Value))
+	for _, raw := range attribute.Value {
+		var direct string
+		if err := json.Unmarshal(raw, &direct); err == nil {
+			direct = strings.TrimSpace(direct)
+			if direct != "" {
+				values = append(values, direct)
+			}
+		}
+	}
+
+	return values
 }
 
 func (a *App) ensurePhysicianSeed(ctx context.Context, username string) (PhysicianSummary, error) {

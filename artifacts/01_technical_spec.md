@@ -171,6 +171,7 @@ Proveer un portal operativo mínimo capaz de:
 4. El portal abre OHIF directamente sobre ese estudio.
 5. El paciente no navega la study list nativa de OHIF.
 6. La primera implementación funcional expone `GET /api/patient/studies?document=<dni>` como contrato inicial del portal-owned list.
+7. En la carga inicial sin filtros, el backend ejecuta `QIDO-RS /studies?PatientID=<dni>` contra el único nodo PACS configurado, sincroniza `patient_study_access` y marca como `available_local` los estudios ya presentes en Orthanc.
 
 ### 5.3.2 Flujo futuro de profesional
 1. El profesional ingresa al portal mediante autenticación institucional.
