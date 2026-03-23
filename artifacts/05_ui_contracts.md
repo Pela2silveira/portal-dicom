@@ -32,7 +32,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - The institutional strapline in the public header should read `Ministerio de Salud - Provincia del Neuquén`.
 - The public landing should keep the access form as the visual center and leave only brief orientation copy around it.
 - The supporting public copy should converge into a single compact visual element instead of duplicating the role descriptions already present in the selector.
-- The public orientation message should live inside the login panel itself, not as an independent sibling block.
+- The public orientation message should live in the top band of the login panel, not as an independent sibling block outside it.
 - The orientation message may use a lighter accent band inside the login panel to separate it from the role selector without becoming a competing primary call to action.
 - The login panel should prefer short labels and should avoid explanatory helper paragraphs unless they change the next action.
 - The login panel should avoid redundant internal banners or badges that restate the access context without changing the next action.
@@ -122,7 +122,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - The institutional strapline in the public header should read `Ministerio de Salud - Provincia del Neuquén`.
 - The public landing should keep supporting context concise so the professional access form remains the dominant visual element.
 - The supporting public copy should converge into a single compact visual element instead of restating the patient and professional descriptions outside the selector.
-- The public orientation message should live inside the login panel itself, not as an independent sibling block.
+- The public orientation message should live in the top band of the login panel, not as an independent sibling block outside it.
 - The orientation message may use a lighter accent band inside the login panel to separate it from the role selector without becoming a competing primary call to action.
 - The login panel should prefer short labels and should avoid explanatory helper paragraphs unless they change the next action.
 - The login panel should avoid redundant internal banners or badges that restate the access context without changing the next action.

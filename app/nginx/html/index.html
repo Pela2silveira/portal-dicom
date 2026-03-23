@@ -112,6 +112,13 @@
         width: 100%;
       }
 
+      .auth-top {
+        padding: 14px 16px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(0, 168, 224, 0.18);
+        color: #ffffff;
+      }
+
       .auth-body {
         padding: 24px 22px 22px;
         background: var(--accent-dark);
@@ -128,21 +135,14 @@
         letter-spacing: -0.03em;
       }
 
-      .auth-lead {
-        margin-bottom: 16px;
-        padding: 14px 16px;
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        background: rgba(0, 168, 224, 0.18);
-      }
-
-      .auth-lead h3 {
+      .auth-top h3 {
         margin: 0;
         font-size: 1.3rem;
         letter-spacing: -0.03em;
         color: #ffffff;
       }
 
-      .auth-lead p {
+      .auth-top p {
         margin: 6px 0 0;
         color: rgba(255, 255, 255, 0.92);
       }
@@ -626,6 +626,7 @@
           padding-right: 16px;
         }
 
+        .auth-top,
         .workspace-header {
           padding-left: 16px;
           padding-right: 16px;
@@ -643,7 +644,7 @@
           font-size: 1.35rem;
         }
 
-        .auth-lead,
+        .auth-top,
         .note {
           padding: 13px 14px;
         }
@@ -664,12 +665,12 @@
 
       <main class="hero">
         <section class="panel auth">
-          <div class="auth-body">
-            <div class="auth-lead">
-              <h3>El acceso comienza aca.</h3>
-              <p>Seleccione su perfil para continuar.</p>
-            </div>
+          <div class="auth-top">
+            <h3>El acceso comienza aca.</h3>
+            <p>Seleccione su perfil para continuar.</p>
+          </div>
 
+          <div class="auth-body">
             <div class="auth-header">
               <h3>Seleccione su perfil</h3>
             </div>
