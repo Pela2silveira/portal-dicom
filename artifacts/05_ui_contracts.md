@@ -29,6 +29,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - Public landing flow: `Documento + OTP`
 - Current implementation already opens the portal-owned patient surface.
 - The visible language of the entry flow should read as product, not as internal demo text.
+- The institutional strapline in the public header should read `Red Provincial de Imágenes - Ministerio de Salud - Provincia del Neuquén`.
 - The public landing should keep the access form as the visual center and leave only brief orientation copy around it.
 - The supporting public copy should converge into a single compact visual element instead of duplicating the role descriptions already present in the selector.
 - The public orientation message should live inside the login panel itself, not as an independent sibling block.
@@ -118,6 +119,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - Public landing flow: `DNI / usuario + contraseña`
 - Current implementation already opens the portal-owned physician surface
 - The visible language of the entry flow should read as operational product language, not as internal demo text
+- The institutional strapline in the public header should read `Red Provincial de Imágenes - Ministerio de Salud - Provincia del Neuquén`.
 - The public landing should keep supporting context concise so the professional access form remains the dominant visual element.
 - The supporting public copy should converge into a single compact visual element instead of restating the patient and professional descriptions outside the selector.
 - The public orientation message should live inside the login panel itself, not as an independent sibling block.
