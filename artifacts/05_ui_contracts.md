@@ -12,6 +12,7 @@ These contracts are intentionally separate from OHIF. OHIF remains a viewer surf
 ## Global Rules
 
 - The portal is the primary access surface for both actors.
+- The public landing page must not expose direct operational links to OHIF root, backend health routes, or raw DICOMweb routes.
 - OHIF is opened only for a specific authorized study or series.
 - Hiding the native OHIF study list is a UX choice and is not a security control.
 - Real access control, when implemented, must be enforced in the backend and image proxy by active portal session and allowed `StudyInstanceUID`.
