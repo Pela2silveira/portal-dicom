@@ -75,6 +75,7 @@ Allow a patient to see only their authorized studies and open one selected study
 ### Patient Summary Layout
 
 - `fullName` should occupy twice the horizontal width of each other demographic field whenever the available width allows a multi-column layout
+- `documentNumber`, `birthDate`, `sex`, and `genderIdentity` should remain proportionally narrower than `fullName` in desktop layouts while keeping responsive collapse behavior
 - the patient summary grid should collapse fluidly as available width shrinks, including browser zoom scenarios
 
 ### Allowed Filters
