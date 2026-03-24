@@ -183,6 +183,13 @@
         border-color: var(--accent);
       }
 
+      .footer-brand-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
       .footer-logo {
         display: block;
         width: min(220px, 48vw);
@@ -192,6 +199,19 @@
       .footer-logo img {
         display: block;
         width: 100%;
+        height: auto;
+      }
+
+      .footer-logo-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 10px 12px;
+        background: var(--accent-dark);
+      }
+
+      .footer-logo-badge img {
+        display: block;
+        width: min(170px, 36vw);
         height: auto;
       }
 
@@ -917,9 +937,14 @@
             <a href="https://app.andes.gob.ar/auth/login" target="_blank" rel="noopener noreferrer">ANDES</a>
           </div>
         </div>
-        <a class="footer-logo" href="/" aria-label="ANDES">
-          <img src="/portal-assets/andes-logo-wide.svg" alt="ANDES">
-        </a>
+        <div class="footer-brand-row">
+          <a class="footer-logo" href="/" aria-label="ANDES">
+            <img src="/portal-assets/andes-logo-wide.svg" alt="ANDES">
+          </a>
+          <a class="footer-logo-badge" href="https://app.andes.gob.ar/auth/login" target="_blank" rel="noopener noreferrer" aria-label="RedTICS">
+            <img src="/portal-assets/redtics-white.svg" alt="RedTICS">
+          </a>
+        </div>
       </footer>
     </div>
 
