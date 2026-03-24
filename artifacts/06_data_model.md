@@ -64,6 +64,7 @@ Notes:
 - A temporary backend-only `his_mongo_direct` provider may coexist as a transitional read-only source.
 - Provider selection must stay behind a stable backend abstraction so the future REST provider can replace MongoDB access without changing portal-facing contracts.
 - The current backend baseline already routes patient identity resolution through a provider abstraction before writing normalized values into relational tables.
+- The first Mongo patient document baseline currently maps fields such as `documento`, `apellido`, `nombre`, `alias`, `sexo`, `genero`, and `fechaNacimiento` into the normalized patient identity abstraction.
 
 ## Patient Identity And Access Cache
 

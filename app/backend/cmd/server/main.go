@@ -65,6 +65,17 @@ type PatientAlternateIdentifier struct {
 	IsPrimary    bool
 }
 
+type MongoPacienteDocument struct {
+	Documento       string    `bson:"documento"`
+	Nombre          string    `bson:"nombre"`
+	Apellido        string    `bson:"apellido"`
+	Alias           string    `bson:"alias"`
+	Nacionalidad    string    `bson:"nacionalidad"`
+	Sexo            string    `bson:"sexo"`
+	Genero          string    `bson:"genero"`
+	FechaNacimiento time.Time `bson:"fechaNacimiento"`
+}
+
 type LocalSeedPatientIdentitySource struct{}
 
 func (s *LocalSeedPatientIdentitySource) ProviderName() string {
@@ -87,6 +98,54 @@ func (s *LocalSeedPatientIdentitySource) ResolveByDocument(_ context.Context, do
 		},
 		LastSynchronizedAt: time.Now().UTC(),
 	}, nil
+}
+
+func mongoPacienteToPatientIdentity(documentNumber string, doc MongoPacienteDocument) PatientIdentity {
+	resolvedDocument := strings.TrimSpace(doc.Documento)
+	if resolvedDocument == "" {
+		resolvedDocument = documentNumber
+	}
+
+	fullName := strings.TrimSpace(strings.TrimSpace(doc.Apellido) + ", " + strings.TrimSpace(doc.Nombre))
+	if strings.TrimSpace(doc.Apellido) == "" && strings.TrimSpace(doc.Nombre) != "" {
+		fullName = strings.TrimSpace(doc.Nombre)
+	}
+	if strings.TrimSpace(doc.Apellido) != "" && strings.TrimSpace(doc.Nombre) == "" {
+		fullName = strings.TrimSpace(doc.Apellido)
+	}
+
+	identity := PatientIdentity{
+		DocumentType:   "dni",
+		DocumentNumber: resolvedDocument,
+		FullName:       fullName,
+		Sex:            strings.TrimSpace(doc.Sexo),
+		GenderIdentity: strings.TrimSpace(doc.Genero),
+		SourceSystem:   "his_mongo_direct",
+		AlternateIDs: []PatientAlternateIdentifier{
+			{
+				SourceSystem: "his_mongo_direct",
+				Type:         "document_number",
+				Value:        resolvedDocument,
+				IsPrimary:    true,
+			},
+		},
+		LastSynchronizedAt: time.Now().UTC(),
+	}
+
+	if !doc.FechaNacimiento.IsZero() {
+		identity.BirthDate = doc.FechaNacimiento.UTC().Format("2006-01-02")
+	}
+
+	if alias := strings.TrimSpace(doc.Alias); alias != "" {
+		identity.AlternateIDs = append(identity.AlternateIDs, PatientAlternateIdentifier{
+			SourceSystem: "his_mongo_direct",
+			Type:         "alias",
+			Value:        alias,
+			IsPrimary:    false,
+		})
+	}
+
+	return identity
 }
 
 type HealthResponse struct {
