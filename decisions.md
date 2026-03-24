@@ -23,6 +23,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The temporary MongoDB adapter must be read-only: no inserts, updates, deletes, migrations, schema changes, or side effects are allowed through portal code.
 - MongoDB queries used for patient lookup must be explicitly performance-oriented: indexed lookups only, bounded result sets, projection-limited reads, and no collection scans.
 - The temporary MongoDB adapter is transitional and must remain replaceable by the future REST HIS integration without changing portal-facing contracts.
+- The backend now owns a stable `PatientIdentitySource` abstraction so patient identity resolution remains decoupled from handlers and can switch from local seed to MongoDB or REST providers without changing patient-facing endpoints.
 - Remote dcm4chee integration details must be externalized as configuration.
 - Nginx is exposed only on `http://localhost:8080` for the MVP.
 - Nginx is the only public HTTP entrypoint.

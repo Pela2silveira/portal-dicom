@@ -38,6 +38,55 @@ type App struct {
 	logger         *log.Logger
 	externalConfig *ExternalConfig
 	configLoadedAt time.Time
+	identitySource PatientIdentitySource
+}
+
+type PatientIdentitySource interface {
+	ProviderName() string
+	ResolveByDocument(ctx context.Context, documentNumber string) (PatientIdentity, error)
+}
+
+type PatientIdentity struct {
+	DocumentType       string
+	DocumentNumber     string
+	FullName           string
+	BirthDate          string
+	Sex                string
+	GenderIdentity     string
+	AlternateIDs       []PatientAlternateIdentifier
+	SourceSystem       string
+	LastSynchronizedAt time.Time
+}
+
+type PatientAlternateIdentifier struct {
+	SourceSystem string
+	Type         string
+	Value        string
+	IsPrimary    bool
+}
+
+type LocalSeedPatientIdentitySource struct{}
+
+func (s *LocalSeedPatientIdentitySource) ProviderName() string {
+	return "local_seed"
+}
+
+func (s *LocalSeedPatientIdentitySource) ResolveByDocument(_ context.Context, documentNumber string) (PatientIdentity, error) {
+	return PatientIdentity{
+		DocumentType:   "dni",
+		DocumentNumber: documentNumber,
+		FullName:       "Paciente " + documentNumber,
+		SourceSystem:   "landing_mock",
+		AlternateIDs: []PatientAlternateIdentifier{
+			{
+				SourceSystem: "landing_mock",
+				Type:         "document_number",
+				Value:        documentNumber,
+				IsPrimary:    true,
+			},
+		},
+		LastSynchronizedAt: time.Now().UTC(),
+	}, nil
 }
 
 type HealthResponse struct {
@@ -290,6 +339,7 @@ func main() {
 		logger:         logger,
 		externalConfig: externalConfig,
 		configLoadedAt: time.Now().UTC(),
+		identitySource: buildPatientIdentitySource(*externalConfig),
 	}
 
 	mux := http.NewServeMux()
@@ -703,13 +753,52 @@ func loadExternalConfig(path string) (*ExternalConfig, error) {
 	return &cfg, nil
 }
 
+func buildPatientIdentitySource(cfg ExternalConfig) PatientIdentitySource {
+	// The current backend keeps a stable abstraction even before Mongo or REST HIS
+	// providers are wired, so handlers do not depend on provider-specific logic.
+	return &LocalSeedPatientIdentitySource{}
+}
+
+func nullTime(value time.Time) any {
+	if value.IsZero() {
+		return nil
+	}
+	return value
+}
+
 func (a *App) ensurePatientRecord(ctx context.Context, documentNumber string) (PatientSummary, error) {
 	var patient PatientSummary
 
-	err := a.db.QueryRowContext(ctx, `
-		INSERT INTO patients (document_type, document_number, full_name, last_login_at, updated_at)
-		VALUES ('dni', $1, $2, now(), now())
+	identity, err := a.identitySource.ResolveByDocument(ctx, documentNumber)
+	if err != nil {
+		return PatientSummary{}, fmt.Errorf("resolve patient identity via %s: %w", a.identitySource.ProviderName(), err)
+	}
+
+	documentType := identity.DocumentType
+	if documentType == "" {
+		documentType = "dni"
+	}
+	if strings.TrimSpace(identity.DocumentNumber) == "" {
+		identity.DocumentNumber = documentNumber
+	}
+	if strings.TrimSpace(identity.SourceSystem) == "" {
+		identity.SourceSystem = a.identitySource.ProviderName()
+	}
+	if strings.TrimSpace(identity.FullName) == "" {
+		identity.FullName = "Paciente " + identity.DocumentNumber
+	}
+
+	err = a.db.QueryRowContext(ctx, `
+		INSERT INTO patients (
+			document_type, document_number, full_name, birth_date, sex, gender_identity, last_his_sync_at, last_login_at, updated_at
+		)
+		VALUES ($1, $2, $3, NULLIF($4, '')::date, NULLIF($5, ''), NULLIF($6, ''), $7, now(), now())
 		ON CONFLICT (document_type, document_number) DO UPDATE SET
+			full_name = EXCLUDED.full_name,
+			birth_date = COALESCE(EXCLUDED.birth_date, patients.birth_date),
+			sex = COALESCE(EXCLUDED.sex, patients.sex),
+			gender_identity = COALESCE(EXCLUDED.gender_identity, patients.gender_identity),
+			last_his_sync_at = COALESCE(EXCLUDED.last_his_sync_at, patients.last_his_sync_at),
 			last_login_at = now(),
 			updated_at = now()
 		RETURNING
@@ -718,10 +807,16 @@ func (a *App) ensurePatientRecord(ctx context.Context, documentNumber string) (P
 			document_number,
 			COALESCE(full_name, ''),
 			COALESCE(to_char(birth_date, 'YYYY-MM-DD'), ''),
-			COALESCE(sex, '')
+			COALESCE(sex, ''),
+			COALESCE(gender_identity, '')
 	`,
-		documentNumber,
-		"Paciente "+documentNumber,
+		documentType,
+		identity.DocumentNumber,
+		identity.FullName,
+		identity.BirthDate,
+		identity.Sex,
+		identity.GenderIdentity,
+		nullTime(identity.LastSynchronizedAt),
 	).Scan(
 		&patient.ID,
 		&patient.DocumentType,
@@ -729,27 +824,75 @@ func (a *App) ensurePatientRecord(ctx context.Context, documentNumber string) (P
 		&patient.FullName,
 		&patient.BirthDate,
 		&patient.Sex,
+		&patient.GenderIdentity,
 	)
 	if err != nil {
 		return PatientSummary{}, fmt.Errorf("upsert patient: %w", err)
 	}
 
-	if _, err := a.db.ExecContext(ctx, `
-		INSERT INTO patient_identifiers (
-			patient_id, source_system, identifier_type, identifier_value, is_primary, last_verified_at, metadata_json, updated_at
-		) VALUES (
-			$1::uuid, 'landing_mock', 'document_number', $2, true, now(), '{}'::jsonb, now()
-		)
-		ON CONFLICT (source_system, identifier_type, identifier_value) DO UPDATE SET
-			patient_id = EXCLUDED.patient_id,
-			is_primary = true,
-			last_verified_at = now(),
-			updated_at = now()
-	`,
-		patient.ID,
-		documentNumber,
-	); err != nil {
-		return PatientSummary{}, fmt.Errorf("upsert patient identifier: %w", err)
+	if len(identity.AlternateIDs) == 0 {
+		identity.AlternateIDs = []PatientAlternateIdentifier{
+			{
+				SourceSystem: identity.SourceSystem,
+				Type:         "document_number",
+				Value:        documentNumber,
+				IsPrimary:    true,
+			},
+		}
+	}
+
+	for _, identifier := range identity.AlternateIDs {
+		sourceSystem := strings.TrimSpace(identifier.SourceSystem)
+		if sourceSystem == "" {
+			sourceSystem = identity.SourceSystem
+		}
+		if sourceSystem == "" {
+			sourceSystem = a.identitySource.ProviderName()
+		}
+
+		identifierType := strings.TrimSpace(identifier.Type)
+		if identifierType == "" {
+			identifierType = "document_number"
+		}
+
+		identifierValue := strings.TrimSpace(identifier.Value)
+		if identifierValue == "" {
+			identifierValue = documentNumber
+		}
+
+		if _, err := a.db.ExecContext(ctx, `
+			INSERT INTO patient_identifiers (
+				patient_id, source_system, identifier_type, identifier_value, is_primary, last_verified_at, metadata_json, updated_at
+			) VALUES (
+				$1::uuid, $2, $3, $4, $5, now(), '{}'::jsonb, now()
+			)
+			ON CONFLICT (source_system, identifier_type, identifier_value) DO UPDATE SET
+				patient_id = EXCLUDED.patient_id,
+				is_primary = EXCLUDED.is_primary,
+				last_verified_at = now(),
+				updated_at = now()
+		`,
+			patient.ID,
+			sourceSystem,
+			identifierType,
+			identifierValue,
+			identifier.IsPrimary,
+		); err != nil {
+			return PatientSummary{}, fmt.Errorf("upsert patient identifier: %w", err)
+		}
+	}
+
+	patient.DocumentType = documentType
+	patient.DocumentNumber = identity.DocumentNumber
+	patient.FullName = identity.FullName
+	if identity.BirthDate != "" {
+		patient.BirthDate = identity.BirthDate
+	}
+	if identity.Sex != "" {
+		patient.Sex = identity.Sex
+	}
+	if identity.GenderIdentity != "" {
+		patient.GenderIdentity = identity.GenderIdentity
 	}
 
 	return patient, nil

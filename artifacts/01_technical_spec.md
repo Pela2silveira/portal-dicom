@@ -97,6 +97,7 @@ Proveer un portal operativo mínimo capaz de:
   - debe quedar encapsulado detrás de una abstracción de fuente de identidad de paciente;
   - no debe contaminar contratos externos ni modelado del portal con detalles de Mongo;
   - sus consultas deben ser performantes: uso de índices, filtros acotados, proyecciones mínimas y resultados limitados.
+  - la implementación base del backend ya expone esa abstracción (`PatientIdentitySource`) y hoy la resuelve con un provider local de seed.
 
 ---
 
