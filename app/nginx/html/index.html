@@ -1447,6 +1447,9 @@
           patientDateFilter.from = dateISO;
           patientDateFilter.to = "";
           patientDateFilter.awaitingRangeEnd = true;
+        } else if (dateISO === patientDateFilter.from) {
+          patientDateFilter.to = "";
+          patientDateFilter.awaitingRangeEnd = false;
         } else if (dateISO < patientDateFilter.from) {
           patientDateFilter.to = patientDateFilter.from;
           patientDateFilter.from = dateISO;
