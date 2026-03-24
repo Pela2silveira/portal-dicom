@@ -31,7 +31,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - The `Enviar código` action must call backend prevalidation before any future mail delivery integration.
 - Required patient outcomes:
   - `ready_to_send`: proceed with mail-code UX
-  - `missing_active_email`: show contact-update guidance
+  - `missing_active_email`: show contact-update guidance in a prominent warning style
   - `patient_not_found`: show that the patient has no records
 - Current implementation already opens the portal-owned patient surface.
 - The visible language of the entry flow should read as product, not as internal demo text.

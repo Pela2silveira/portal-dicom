@@ -384,6 +384,12 @@
         color: #ffd6d2;
       }
 
+      #mail-code-feedback.warning {
+        font-size: 1.02rem;
+        font-weight: 800;
+        line-height: 1.5;
+      }
+
       .workspace {
         display: grid;
         gap: 20px;
@@ -1931,7 +1937,7 @@
             payload.message || "Se enviará un código por mail al contacto registrado.";
         } catch (error) {
           mailCodeFeedback.textContent =
-            error?.payload?.message || "No se pudo validar el contacto del paciente.";
+            error?.payload?.message || "No se pudo validar el contacto del paciente. Concurra a su centro de salud más cercano para actualizar sus datos de contacto.";
           mailCodeFeedback.classList.add("warning");
         } finally {
           mailCodeButton.disabled = false;
