@@ -536,18 +536,45 @@
         gap: 12px;
       }
 
-      .date-filter-panel {
-        display: grid;
-        gap: 12px;
+      .date-filter-summary {
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .date-filter-dropdown {
         margin-top: 12px;
-        padding: 14px;
         border: 1px solid var(--line);
         background: var(--surface);
       }
 
-      .date-filter-summary {
+      .date-filter-dropdown summary {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 14px;
+        cursor: pointer;
+        list-style: none;
+      }
+
+      .date-filter-dropdown summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .date-filter-dropdown summary::after {
+        content: "▾";
         color: var(--muted);
-        font-size: 0.92rem;
+        font-size: 0.9rem;
+      }
+
+      .date-filter-dropdown[open] summary::after {
+        content: "▴";
+      }
+
+      .date-filter-panel {
+        display: grid;
+        gap: 12px;
+        padding: 0 14px 14px;
       }
 
       .calendar-shell {
@@ -985,28 +1012,33 @@
                   </select>
                 </div>
               </div>
-              <div class="date-filter-panel">
-                <div class="date-filter-summary" id="patient-date-summary">Sin rango seleccionado.</div>
-                <div class="calendar-shell">
-                  <div class="calendar-toolbar">
-                    <div class="calendar-month-label" id="patient-calendar-month-label">-</div>
-                    <div class="calendar-nav">
-                      <button id="patient-calendar-prev" type="button" aria-label="Mes anterior">‹</button>
-                      <button id="patient-calendar-next" type="button" aria-label="Mes siguiente">›</button>
+              <details class="date-filter-dropdown" id="patient-date-dropdown">
+                <summary>
+                  <span>Seleccionar rango</span>
+                  <span class="date-filter-summary" id="patient-date-summary">Sin rango seleccionado.</span>
+                </summary>
+                <div class="date-filter-panel">
+                  <div class="calendar-shell">
+                    <div class="calendar-toolbar">
+                      <div class="calendar-month-label" id="patient-calendar-month-label">-</div>
+                      <div class="calendar-nav">
+                        <button id="patient-calendar-prev" type="button" aria-label="Mes anterior">‹</button>
+                        <button id="patient-calendar-next" type="button" aria-label="Mes siguiente">›</button>
+                      </div>
                     </div>
+                    <div class="calendar-weekdays">
+                      <span>Lun</span>
+                      <span>Mar</span>
+                      <span>Mie</span>
+                      <span>Jue</span>
+                      <span>Vie</span>
+                      <span>Sab</span>
+                      <span>Dom</span>
+                    </div>
+                    <div class="calendar-grid" id="patient-calendar-grid"></div>
                   </div>
-                  <div class="calendar-weekdays">
-                    <span>Lun</span>
-                    <span>Mar</span>
-                    <span>Mie</span>
-                    <span>Jue</span>
-                    <span>Vie</span>
-                    <span>Sab</span>
-                    <span>Dom</span>
-                  </div>
-                  <div class="calendar-grid" id="patient-calendar-grid"></div>
                 </div>
-              </div>
+              </details>
               <div class="inline-actions align-end">
                 <button class="action action-secondary" id="patient-apply-filters" type="button">Buscar</button>
               </div>
@@ -1108,6 +1140,7 @@
       const patientMailCode = document.getElementById("patient-mail-code");
       const patientFilterPeriod = document.getElementById("patient-filter-period");
       const patientFilterModality = document.getElementById("patient-filter-modality");
+      const patientDateDropdown = document.getElementById("patient-date-dropdown");
       const patientDateSummary = document.getElementById("patient-date-summary");
       const patientCalendarMonthLabel = document.getElementById("patient-calendar-month-label");
       const patientCalendarGrid = document.getElementById("patient-calendar-grid");
@@ -1309,6 +1342,7 @@
         }
 
         renderPatientCalendar();
+        patientDateDropdown.open = period === "custom";
       }
 
       function selectPatientCalendarDate(dateISO) {
