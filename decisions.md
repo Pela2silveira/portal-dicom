@@ -17,6 +17,12 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - No email-code verification, sessions, JWT, or share links in the MVP.
 - HIS integration is configuration-first in the MVP and patient lookup is not required to be fully operational in the first build slice.
 - The first build slice follows HIS Option B: persist and validate HIS configuration only, without executing real Andes MPI patient lookups yet.
+- As a temporary unblocker before the REST HIS integration is available, the backend may use a direct MongoDB read-only adapter to resolve patient identity data.
+- This MongoDB integration is strictly backend-only and must not leak Mongo-specific concerns into handlers, UI contracts, or general domain logic.
+- The temporary MongoDB adapter must be encapsulated behind the same identity-source abstraction that will later support the REST HIS provider.
+- The temporary MongoDB adapter must be read-only: no inserts, updates, deletes, migrations, schema changes, or side effects are allowed through portal code.
+- MongoDB queries used for patient lookup must be explicitly performance-oriented: indexed lookups only, bounded result sets, projection-limited reads, and no collection scans.
+- The temporary MongoDB adapter is transitional and must remain replaceable by the future REST HIS integration without changing portal-facing contracts.
 - Remote dcm4chee integration details must be externalized as configuration.
 - Nginx is exposed only on `http://localhost:8080` for the MVP.
 - Nginx is the only public HTTP entrypoint.

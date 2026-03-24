@@ -20,6 +20,7 @@ The model supports:
 - Raw email verification codes must never be stored in Postgres.
 - If a provider returns reusable auth material in the future, it must be stored only as encrypted provider-issued material, never as a copied password.
 - Session, audit, and cache tables should prefer references, hashes, provider metadata, and expiry timestamps over secrets.
+- A temporary direct MongoDB patient-identity adapter, if enabled before REST HIS integration exists, must be read-only and must not write operational state back into MongoDB.
 
 ## Core Configuration Tables
 
@@ -56,6 +57,12 @@ Key fields:
 - `auth_type`
 - `params_json`
 - `secret_refs_json`
+
+Notes:
+
+- The long-term target provider is REST HIS / MPI.
+- A temporary backend-only `his_mongo_direct` provider may coexist as a transitional read-only source.
+- Provider selection must stay behind a stable backend abstraction so the future REST provider can replace MongoDB access without changing portal-facing contracts.
 
 ## Patient Identity And Access Cache
 

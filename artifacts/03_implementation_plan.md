@@ -284,6 +284,7 @@
 - **Milestone 4 (parcialmente bloqueado)**: requiere ≥2 nodos para validar búsqueda federada real; se puede destrabar con nodo mock/lab o Orthanc remoto simulado.
 - **Milestone 5 (dependiente del entorno)**: requiere conectividad DIMSE real si se quiere validar `C-MOVE` en vez de `C-GET`.
 - **Milestone 6 (parcialmente bloqueado)**: requiere definir estrategia de identificador paciente (`PatientID == DNI` vs configurable/HIS).
+- **Desbloqueo táctico aceptado**: hasta disponer de la API REST del HIS, se permite un adapter backend-only `his_mongo_direct` para lectura de identidad de paciente, siempre que sea read-only, performante y reemplazable por el provider REST futuro.
 - **Milestone 8 (parcialmente bloqueado)**: requiere decidir controles mínimos para entornos no-localhost (`X-Portal-Key`, allowlist IP, o similar).
 
 ---

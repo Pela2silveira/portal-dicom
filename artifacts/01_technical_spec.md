@@ -11,6 +11,7 @@
 - **Orthanc local obligatorio** como caché y **destino de retrieve** (Move SCP).
 - **PostgreSQL** como persistencia operativa por defecto.
 - Integración HIS **solo configurable** (valores provistos posteriormente).
+- Excepción transitoria permitida: mientras no exista integración REST operativa del HIS, el backend puede consultar MongoDB en forma directa solo para resolver identidad de paciente e identificadores alternativos.
 - Configuración de PACS remotos (dcm4chee, Orthanc, legacy) **externalizada**.
 - La landing pública forma parte del MVP como experiencia visual, aunque sin autenticación real.
 - La marca pública del portal es **RedImagenesNQN**.
@@ -89,6 +90,13 @@ Proveer un portal operativo mínimo capaz de:
 ### Sistemas externos
 - **PACS remotos**: dcm4chee, Orthanc remoto, legacy DICOM (sin REST).
 - **HIS (futuro)**: en MVP se guarda configuración, no se ejecutan consultas reales obligatorias.
+- **HIS / MPI transitorio**:
+  - el camino objetivo sigue siendo API REST;
+  - mientras eso no esté disponible, se admite un adapter `his_mongo_direct` en backend;
+  - ese adapter debe ser estrictamente read-only;
+  - debe quedar encapsulado detrás de una abstracción de fuente de identidad de paciente;
+  - no debe contaminar contratos externos ni modelado del portal con detalles de Mongo;
+  - sus consultas deben ser performantes: uso de índices, filtros acotados, proyecciones mínimas y resultados limitados.
 
 ---
 
