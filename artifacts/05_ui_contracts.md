@@ -42,9 +42,9 @@ Allow a patient to see only their authorized studies and open one selected study
 
 ### Screen Model
 
-- Patient data summary section
-- Authorized study list grouped by modality
-- Simple filters
+- Patient data summary section at the top of the page
+- Simple filters below the patient data block
+- Authorized study list grouped by modality as the primary visual element
 - Per-study actions: `Recuperar estudio` or `Ver estudio`
 - Empty state message when the document has no matching studies
 
@@ -58,7 +58,8 @@ Allow a patient to see only their authorized studies and open one selected study
 
 ### Patient Summary Fields
 
-- `fullName`
+- `lastName`
+- `firstName`
 - `documentNumber`
 - `birthDate`
 - `sex`
