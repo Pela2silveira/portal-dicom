@@ -826,12 +826,8 @@
               <h4>Datos del paciente</h4>
               <div class="summary-grid">
                 <div class="summary-item">
-                  <span>Apellido</span>
-                  <strong id="patient-last-name-value">-</strong>
-                </div>
-                <div class="summary-item">
-                  <span>Nombre</span>
-                  <strong id="patient-first-name-value">Sin paciente cargado</strong>
+                  <span>Nombre y apellido</span>
+                  <strong id="patient-full-name-value">Sin paciente cargado</strong>
                 </div>
                 <div class="summary-item">
                   <span>Documento</span>
@@ -972,8 +968,7 @@
       const patientFilterModality = document.getElementById("patient-filter-modality");
       const patientApplyFiltersButton = document.getElementById("patient-apply-filters");
       const patientStudyList = document.getElementById("patient-study-list");
-      const patientLastNameValue = document.getElementById("patient-last-name-value");
-      const patientFirstNameValue = document.getElementById("patient-first-name-value");
+      const patientFullNameValue = document.getElementById("patient-full-name-value");
       const patientDocumentValue = document.getElementById("patient-document-value");
       const patientBirthDateValue = document.getElementById("patient-birth-date-value");
       const patientSexValue = document.getElementById("patient-sex-value");
@@ -1032,32 +1027,6 @@
         return "chip";
       }
 
-      function splitPatientName(fullName) {
-        const normalized = String(fullName || "").trim();
-
-        if (!normalized) {
-          return { firstName: "-", lastName: "-" };
-        }
-
-        if (normalized.includes(",")) {
-          const [lastName, firstName] = normalized.split(",", 2);
-          return {
-            firstName: (firstName || "").trim() || "-",
-            lastName: (lastName || "").trim() || "-"
-          };
-        }
-
-        const parts = normalized.split(/\s+/).filter(Boolean);
-        if (parts.length === 1) {
-          return { firstName: parts[0], lastName: "-" };
-        }
-
-        return {
-          firstName: parts.slice(1).join(" "),
-          lastName: parts[0]
-        };
-      }
-
       function labelForStatus(status) {
         if (status === "available_local") return "Disponible en cache";
         if (status === "pending_retrieve") return "Pendiente retrieve";
@@ -1067,10 +1036,7 @@
       }
 
       function renderPatientStudies(payload) {
-        const patientNames = splitPatientName(payload.patient.full_name);
-
-        patientLastNameValue.textContent = patientNames.lastName;
-        patientFirstNameValue.textContent = patientNames.firstName;
+        patientFullNameValue.textContent = payload.patient.full_name || "-";
         patientDocumentValue.textContent = payload.patient.document_number;
         patientBirthDateValue.textContent = payload.patient.birth_date || "-";
         patientSexValue.textContent = payload.patient.sex || "-";

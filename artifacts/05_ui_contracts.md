@@ -58,8 +58,7 @@ Allow a patient to see only their authorized studies and open one selected study
 
 ### Patient Summary Fields
 
-- `lastName`
-- `firstName`
+- `fullName`
 - `documentNumber`
 - `birthDate`
 - `sex`
