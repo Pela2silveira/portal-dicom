@@ -88,6 +88,10 @@ Key fields:
 - `last_his_sync_at`
 - `last_login_at`
 
+Migration note:
+
+- Existing dev databases created before the demographic extension require a follow-up migration to add `patients.gender_identity`.
+
 ### `patient_identifiers`
 
 Stores alternate patient identifiers resolved from HIS or remote domains.
