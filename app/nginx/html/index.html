@@ -536,6 +536,94 @@
         gap: 12px;
       }
 
+      .date-filter-panel {
+        display: grid;
+        gap: 12px;
+        margin-top: 12px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+      }
+
+      .date-filter-summary {
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .calendar-shell {
+        display: grid;
+        gap: 12px;
+      }
+
+      .calendar-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .calendar-month-label {
+        font-weight: 700;
+      }
+
+      .calendar-nav {
+        display: inline-flex;
+        gap: 8px;
+      }
+
+      .calendar-nav button {
+        appearance: none;
+        border: 1px solid var(--line);
+        background: var(--surface-soft);
+        color: var(--accent-dark);
+        min-width: 36px;
+        min-height: 36px;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 700;
+      }
+
+      .calendar-weekdays,
+      .calendar-grid {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+        gap: 6px;
+      }
+
+      .calendar-weekdays span {
+        text-align: center;
+        color: var(--muted);
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      .calendar-day {
+        appearance: none;
+        min-height: 42px;
+        border: 1px solid var(--line);
+        background: var(--surface-soft);
+        color: var(--ink);
+        cursor: pointer;
+        font: inherit;
+      }
+
+      .calendar-day.is-muted {
+        opacity: 0.35;
+      }
+
+      .calendar-day.is-in-range {
+        background: rgba(0, 168, 224, 0.16);
+        border-color: rgba(0, 168, 224, 0.28);
+      }
+
+      .calendar-day.is-selected {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #ffffff;
+        font-weight: 700;
+      }
+
       .summary-grid {
         display: grid;
         gap: 12px;
@@ -879,6 +967,7 @@
                     <option value="week">Esta semana</option>
                     <option value="month">Este mes</option>
                     <option value="year">Este año</option>
+                    <option value="custom">Personalizado</option>
                   </select>
                 </div>
                 <div class="field-group">
@@ -894,6 +983,28 @@
                     <option value="XA">Angiografia</option>
                     <option value="OT">Otros estudios</option>
                   </select>
+                </div>
+              </div>
+              <div class="date-filter-panel">
+                <div class="date-filter-summary" id="patient-date-summary">Sin rango seleccionado.</div>
+                <div class="calendar-shell">
+                  <div class="calendar-toolbar">
+                    <div class="calendar-month-label" id="patient-calendar-month-label">-</div>
+                    <div class="calendar-nav">
+                      <button id="patient-calendar-prev" type="button" aria-label="Mes anterior">‹</button>
+                      <button id="patient-calendar-next" type="button" aria-label="Mes siguiente">›</button>
+                    </div>
+                  </div>
+                  <div class="calendar-weekdays">
+                    <span>Lun</span>
+                    <span>Mar</span>
+                    <span>Mie</span>
+                    <span>Jue</span>
+                    <span>Vie</span>
+                    <span>Sab</span>
+                    <span>Dom</span>
+                  </div>
+                  <div class="calendar-grid" id="patient-calendar-grid"></div>
                 </div>
               </div>
               <div class="inline-actions align-end">
@@ -997,6 +1108,11 @@
       const patientMailCode = document.getElementById("patient-mail-code");
       const patientFilterPeriod = document.getElementById("patient-filter-period");
       const patientFilterModality = document.getElementById("patient-filter-modality");
+      const patientDateSummary = document.getElementById("patient-date-summary");
+      const patientCalendarMonthLabel = document.getElementById("patient-calendar-month-label");
+      const patientCalendarGrid = document.getElementById("patient-calendar-grid");
+      const patientCalendarPrev = document.getElementById("patient-calendar-prev");
+      const patientCalendarNext = document.getElementById("patient-calendar-next");
       const patientApplyFiltersButton = document.getElementById("patient-apply-filters");
       const patientStudyList = document.getElementById("patient-study-list");
       const patientFullNameValue = document.getElementById("patient-full-name-value");
@@ -1020,6 +1136,15 @@
       const resetButtons = document.querySelectorAll("[data-reset]");
       let activePatientDocument = "";
       let activePhysicianUsername = "";
+      const patientDateFilter = (() => {
+        const now = new Date();
+        return {
+          from: "",
+          to: "",
+          viewYear: now.getFullYear(),
+          viewMonth: now.getMonth()
+        };
+      })();
 
       function activateRole(role) {
         roleButtons.forEach(button => {
@@ -1100,6 +1225,105 @@
           date_from: formatDate(fromDate),
           date_to: formatDate(toDate)
         };
+      }
+
+      function formatDateISO(date) {
+        return date.toISOString().slice(0, 10);
+      }
+
+      function formatDateLabel(value) {
+        if (!value) {
+          return "-";
+        }
+
+        return new Date(value + "T00:00:00").toLocaleDateString("es-AR");
+      }
+
+      function syncPatientDateSummary() {
+        if (patientDateFilter.from && patientDateFilter.to) {
+          patientDateSummary.textContent =
+            "Desde " + formatDateLabel(patientDateFilter.from) +
+            " hasta " + formatDateLabel(patientDateFilter.to) + ".";
+          return;
+        }
+
+        if (patientDateFilter.from) {
+          patientDateSummary.textContent =
+            "Inicio seleccionado: " + formatDateLabel(patientDateFilter.from) + ". Seleccione la fecha de fin.";
+          return;
+        }
+
+        patientDateSummary.textContent = "Sin rango seleccionado.";
+      }
+
+      function renderPatientCalendar() {
+        const monthNames = [
+          "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+          "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+        ];
+        patientCalendarMonthLabel.textContent =
+          monthNames[patientDateFilter.viewMonth] + " " + patientDateFilter.viewYear;
+
+        const firstDay = new Date(patientDateFilter.viewYear, patientDateFilter.viewMonth, 1);
+        const firstWeekday = (firstDay.getDay() + 6) % 7;
+        const gridStart = new Date(patientDateFilter.viewYear, patientDateFilter.viewMonth, 1 - firstWeekday);
+        const from = patientDateFilter.from ? new Date(patientDateFilter.from + "T00:00:00") : null;
+        const to = patientDateFilter.to ? new Date(patientDateFilter.to + "T00:00:00") : null;
+
+        patientCalendarGrid.innerHTML = Array.from({ length: 42 }, (_, index) => {
+          const date = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + index);
+          const dateISO = formatDateISO(date);
+          const isCurrentMonth = date.getMonth() === patientDateFilter.viewMonth;
+          const isSelected = patientDateFilter.from === dateISO || patientDateFilter.to === dateISO;
+          const isInRange = from && to && date >= from && date <= to;
+          const classes = [
+            "calendar-day",
+            !isCurrentMonth ? "is-muted" : "",
+            isInRange ? "is-in-range" : "",
+            isSelected ? "is-selected" : ""
+          ].filter(Boolean).join(" ");
+
+          return (
+            '<button class="' + classes + '" type="button" data-patient-calendar-day="' + dateISO + '">' +
+              date.getDate() +
+            '</button>'
+          );
+        }).join("");
+
+        syncPatientDateSummary();
+      }
+
+      function applyPatientPreset(period) {
+        const range = patientDateRangeForPeriod(period);
+        patientDateFilter.from = range.date_from || "";
+        patientDateFilter.to = range.date_to || "";
+
+        if (patientDateFilter.from) {
+          const focusDate = new Date(patientDateFilter.from + "T00:00:00");
+          patientDateFilter.viewYear = focusDate.getFullYear();
+          patientDateFilter.viewMonth = focusDate.getMonth();
+        } else {
+          const now = new Date();
+          patientDateFilter.viewYear = now.getFullYear();
+          patientDateFilter.viewMonth = now.getMonth();
+        }
+
+        renderPatientCalendar();
+      }
+
+      function selectPatientCalendarDate(dateISO) {
+        if (!patientDateFilter.from || (patientDateFilter.from && patientDateFilter.to)) {
+          patientDateFilter.from = dateISO;
+          patientDateFilter.to = "";
+        } else if (dateISO < patientDateFilter.from) {
+          patientDateFilter.to = patientDateFilter.from;
+          patientDateFilter.from = dateISO;
+        } else {
+          patientDateFilter.to = dateISO;
+        }
+
+        patientFilterPeriod.value = "custom";
+        renderPatientCalendar();
       }
 
       function renderPatientStudies(payload) {
@@ -1276,9 +1500,8 @@
         activePatientDocument = documentNumber;
 
         const params = new URLSearchParams({ document: documentNumber });
-        const patientDateRange = patientDateRangeForPeriod(patientFilterPeriod.value);
-        if (patientDateRange.date_from) params.set("date_from", patientDateRange.date_from);
-        if (patientDateRange.date_to) params.set("date_to", patientDateRange.date_to);
+        if (patientDateFilter.from) params.set("date_from", patientDateFilter.from);
+        if (patientDateFilter.to) params.set("date_to", patientDateFilter.to);
         if (patientFilterModality.value) params.set("modality", patientFilterModality.value);
 
         patientStudyList.innerHTML =
@@ -1362,6 +1585,41 @@
 
       roleButtons.forEach(button => {
         button.addEventListener("click", () => activateRole(button.dataset.role));
+      });
+
+      patientFilterPeriod.addEventListener("change", () => {
+        applyPatientPreset(patientFilterPeriod.value);
+      });
+
+      patientCalendarPrev.addEventListener("click", () => {
+        if (patientDateFilter.viewMonth === 0) {
+          patientDateFilter.viewMonth = 11;
+          patientDateFilter.viewYear -= 1;
+        } else {
+          patientDateFilter.viewMonth -= 1;
+        }
+
+        renderPatientCalendar();
+      });
+
+      patientCalendarNext.addEventListener("click", () => {
+        if (patientDateFilter.viewMonth === 11) {
+          patientDateFilter.viewMonth = 0;
+          patientDateFilter.viewYear += 1;
+        } else {
+          patientDateFilter.viewMonth += 1;
+        }
+
+        renderPatientCalendar();
+      });
+
+      patientCalendarGrid.addEventListener("click", event => {
+        const button = event.target.closest("[data-patient-calendar-day]");
+        if (!button) {
+          return;
+        }
+
+        selectPatientCalendarDate(button.getAttribute("data-patient-calendar-day"));
       });
 
       resetButtons.forEach(button => {
@@ -1530,6 +1788,9 @@
           }
         }, 700);
       });
+
+      activateRole("patient");
+      renderPatientCalendar();
     </script>
   </body>
 </html>

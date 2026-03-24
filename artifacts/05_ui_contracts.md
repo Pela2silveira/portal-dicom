@@ -67,7 +67,10 @@ Allow a patient to see only their authorized studies and open one selected study
 ### Allowed Filters
 
 - `period`
-  values: `today`, `week`, `month`, `year`, or empty for all dates
+  values: `today`, `week`, `month`, `year`, `custom`, or empty for all dates
+  behavior: the dropdown presets must set the patient date range automatically
+- `dateRange`
+  behavior: a calendar range picker allows first click = start date and second click = end date, with the selected interval highlighted
 - `modality`
   values: `all` or one enumerated public-facing modality at a time, shown to the patient with plain-language labels in Spanish
 - free text is out of scope for the first patient surface
