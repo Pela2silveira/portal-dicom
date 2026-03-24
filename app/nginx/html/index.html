@@ -1725,6 +1725,29 @@
         return response.json();
       }
 
+      async function sendPatientMailCode(documentNumber) {
+        const response = await fetch("/api/patient/send-code", {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            document_number: documentNumber
+          })
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const error = new Error(payload.message || "patient send code request failed");
+          error.status = response.status;
+          error.payload = payload;
+          throw error;
+        }
+
+        return payload;
+      }
+
       async function triggerPhysicianRetrieve(studyInstanceUID) {
         const response = await fetch("/api/physician/retrieve", {
           method: "POST",
@@ -1882,7 +1905,7 @@
         }
       });
 
-      mailCodeButton.addEventListener("click", () => {
+      mailCodeButton.addEventListener("click", async () => {
         const documentValue = normalizePatientDocumentInput(patientDocument.value);
         patientDocument.value = documentValue;
 
@@ -1899,10 +1922,21 @@
           return;
         }
 
-        mailCodeFeedback.textContent =
-          "Codigo por mail solicitado para el documento " +
-          documentValue +
-          ". Puede continuar para abrir su espacio de consulta.";
+        mailCodeButton.disabled = true;
+        mailCodeButton.textContent = "Validando...";
+
+        try {
+          const payload = await sendPatientMailCode(documentValue);
+          mailCodeFeedback.textContent =
+            payload.message || "Se enviará un código por mail al contacto registrado.";
+        } catch (error) {
+          mailCodeFeedback.textContent =
+            error?.payload?.message || "No se pudo validar el contacto del paciente.";
+          mailCodeFeedback.classList.add("warning");
+        } finally {
+          mailCodeButton.disabled = false;
+          mailCodeButton.textContent = "Enviar codigo";
+        }
       });
 
       patientValidateButton.addEventListener("click", () => {

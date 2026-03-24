@@ -69,6 +69,7 @@ Notes:
 - For downstream PACS searches, the candidate patient lookup keys sourced from Mongo are `documento` and the string value of `_id`.
 - The expected environment baseline for the temporary adapter is `HIS_MONGO_URI`, `HIS_MONGO_DATABASE`, `HIS_MONGO_CONNECT_TIMEOUT_MS`, and `HIS_MONGO_QUERY_TIMEOUT_MS`.
 - The first collection is intentionally hardcoded as `paciente` inside the adapter so future collections can be added with explicit contracts instead of expanding generic configuration prematurely.
+- Successful Mongo identity resolutions are normalized into `patients` and `patient_identifiers` in Postgres.
 
 ## Patient Identity And Access Cache
 

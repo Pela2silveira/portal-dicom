@@ -12,12 +12,14 @@
 - **PostgreSQL** como persistencia operativa por defecto.
 - Integración HIS **solo configurable** (valores provistos posteriormente).
 - Excepción transitoria permitida: mientras no exista integración REST operativa del HIS, el backend puede consultar MongoDB en forma directa solo para resolver identidad de paciente e identificadores alternativos.
+- Cuando el provider activo es `his_mongo_direct`, el backend consulta la colección Mongo `paciente` en modo read-only y persiste en Postgres los resultados exitosos ya normalizados.
 - Configuración de PACS remotos (dcm4chee, Orthanc, legacy) **externalizada**.
 - La landing pública forma parte del MVP como experiencia visual, aunque sin autenticación real.
 - La marca pública del portal es **RedImagenesNQN**.
 - La identidad visual de la landing toma como referencia la app **ANDES**.
 - El flujo visible de paciente en la landing usa `Documento + código por mail` como experiencia UI.
 - El campo `Documento` del flujo paciente debe validarse tanto en frontend como en backend con formato numérico acotado antes de tocar búsquedas, retrieve o futuros pasos de verificación.
+- El paso `Enviar código` debe consultar backend antes del envío real del mail para distinguir tres resultados: `ready_to_send`, `missing_active_email` y `patient_not_found`.
 - El flujo visible de profesional en la landing usa `DNI / usuario + contraseña` como experiencia UI.
 - La landing y las superficies propias del portal deben ser **responsive** para dispositivos móviles.
 - La integración futura objetivo para profesionales es **LDAP provincial + MFA**.

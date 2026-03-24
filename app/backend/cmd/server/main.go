@@ -8,16 +8,22 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type Config struct {
@@ -42,9 +48,15 @@ type App struct {
 	identitySource PatientIdentitySource
 }
 
+var ErrPatientIdentityNotFound = errors.New("patient identity not found")
+
 type PatientIdentitySource interface {
 	ProviderName() string
 	ResolveByDocument(ctx context.Context, documentNumber string) (PatientIdentity, error)
+}
+
+type patientIdentitySourceCloser interface {
+	Close(ctx context.Context) error
 }
 
 type PatientIdentity struct {
@@ -68,8 +80,8 @@ type PatientAlternateIdentifier struct {
 }
 
 type MongoPacienteDocument struct {
-	ID              string                `bson:"_id"`
-	Documento       string    `bson:"documento"`
+	ID              primitive.ObjectID    `bson:"_id"`
+	Documento       any                   `bson:"documento"`
 	Nombre          string    `bson:"nombre"`
 	Apellido        string    `bson:"apellido"`
 	Alias           string    `bson:"alias"`
@@ -88,6 +100,13 @@ type MongoPacienteContacto struct {
 
 type LocalSeedPatientIdentitySource struct{}
 
+type MongoPatientIdentitySource struct {
+	client         *mongo.Client
+	collection     *mongo.Collection
+	connectTimeout time.Duration
+	queryTimeout   time.Duration
+}
+
 func (s *LocalSeedPatientIdentitySource) ProviderName() string {
 	return "local_seed"
 }
@@ -97,6 +116,7 @@ func (s *LocalSeedPatientIdentitySource) ResolveByDocument(_ context.Context, do
 		DocumentType:   "dni",
 		DocumentNumber: documentNumber,
 		FullName:       "Paciente " + documentNumber,
+		Email:          "paciente." + documentNumber + "@example.invalid",
 		SourceSystem:   "landing_mock",
 		AlternateIDs: []PatientAlternateIdentifier{
 			{
@@ -110,8 +130,48 @@ func (s *LocalSeedPatientIdentitySource) ResolveByDocument(_ context.Context, do
 	}, nil
 }
 
+func (s *MongoPatientIdentitySource) ProviderName() string {
+	return "his_mongo_direct"
+}
+
+func (s *MongoPatientIdentitySource) ResolveByDocument(ctx context.Context, documentNumber string) (PatientIdentity, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, s.queryTimeout)
+	defer cancel()
+
+	filter := bson.D{{Key: "$or", Value: mongoDocumentoCandidates(documentNumber)}}
+	projection := bson.D{
+		{Key: "_id", Value: 1},
+		{Key: "documento", Value: 1},
+		{Key: "nombre", Value: 1},
+		{Key: "apellido", Value: 1},
+		{Key: "alias", Value: 1},
+		{Key: "nacionalidad", Value: 1},
+		{Key: "sexo", Value: 1},
+		{Key: "genero", Value: 1},
+		{Key: "fechaNacimiento", Value: 1},
+		{Key: "contacto", Value: 1},
+	}
+
+	var doc MongoPacienteDocument
+	err := s.collection.FindOne(queryCtx, filter, options.FindOne().SetProjection(projection)).Decode(&doc)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return PatientIdentity{}, ErrPatientIdentityNotFound
+		}
+		return PatientIdentity{}, fmt.Errorf("find paciente by documento: %w", err)
+	}
+
+	return mongoPacienteToPatientIdentity(documentNumber, doc), nil
+}
+
+func (s *MongoPatientIdentitySource) Close(ctx context.Context) error {
+	disconnectCtx, cancel := context.WithTimeout(ctx, s.connectTimeout)
+	defer cancel()
+	return s.client.Disconnect(disconnectCtx)
+}
+
 func mongoPacienteToPatientIdentity(documentNumber string, doc MongoPacienteDocument) PatientIdentity {
-	resolvedDocument := strings.TrimSpace(doc.Documento)
+	resolvedDocument := normalizeMongoDocumento(doc.Documento)
 	if resolvedDocument == "" {
 		resolvedDocument = documentNumber
 	}
@@ -167,7 +227,7 @@ func mongoPacienteToPatientIdentity(documentNumber string, doc MongoPacienteDocu
 		})
 	}
 
-	if mongoID := strings.TrimSpace(doc.ID); mongoID != "" {
+	if mongoID := doc.ID.Hex(); mongoID != "" && mongoID != "000000000000000000000000" {
 		identity.AlternateIDs = append(identity.AlternateIDs, PatientAlternateIdentifier{
 			SourceSystem: "his_mongo_direct",
 			Type:         "mongo_object_id",
@@ -241,6 +301,15 @@ type PatientRetrieveResponse struct {
 	StudyInstanceUID string `json:"study_instance_uid"`
 	Status           string `json:"status"`
 	ViewerURL        string `json:"viewer_url,omitempty"`
+}
+
+type PatientSendCodeRequest struct {
+	DocumentNumber string `json:"document_number"`
+}
+
+type PatientSendCodeResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
 }
 
 type qidoResponseItem map[string]dicomJSONAttribute
@@ -444,10 +513,21 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", app.handleHealth)
 	mux.HandleFunc("/api/config", app.handleConfig(appliedMigrations))
+	mux.HandleFunc("/api/patient/send-code", app.handlePatientSendCode)
 	mux.HandleFunc("/api/patient/studies", app.handlePatientStudies)
 	mux.HandleFunc("/api/patient/retrieve", app.handlePatientRetrieve)
 	mux.HandleFunc("/api/physician/results", app.handlePhysicianResults)
 	mux.HandleFunc("/api/physician/retrieve", app.handlePhysicianRetrieve)
+
+	if closer, ok := app.identitySource.(patientIdentitySourceCloser); ok {
+		defer func() {
+			closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := closer.Close(closeCtx); err != nil {
+				app.log("error", "patient_identity_source_close_failed", map[string]any{"error": err.Error()})
+			}
+		}()
+	}
 
 	app.log("info", "server_starting", map[string]any{
 		"listen_addr":        cfg.ListenAddr,
@@ -564,6 +644,78 @@ func (a *App) handleConfig(appliedMigrations []string) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)
 	}
+}
+
+func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var reqBody PatientSendCodeRequest
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		http.Error(w, "invalid json body", http.StatusBadRequest)
+		return
+	}
+
+	reqBody.DocumentNumber = strings.TrimSpace(reqBody.DocumentNumber)
+	if reqBody.DocumentNumber == "" {
+		http.Error(w, "document_number is required", http.StatusBadRequest)
+		return
+	}
+	if err := validateDocumentNumber(reqBody.DocumentNumber); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	patient, identity, err := a.ensurePatientRecordWithIdentity(ctx, reqBody.DocumentNumber)
+	if err != nil {
+		if errors.Is(err, ErrPatientIdentityNotFound) {
+			a.log("info", "patient_send_code_patient_not_found", map[string]any{
+				"document_number": reqBody.DocumentNumber,
+				"provider":        a.identitySource.ProviderName(),
+			})
+			writeJSON(w, http.StatusNotFound, PatientSendCodeResponse{
+				Status:  "patient_not_found",
+				Message: "El paciente no cuenta con registros.",
+			})
+			return
+		}
+
+		a.log("error", "patient_send_code_failed", map[string]any{
+			"document_number": reqBody.DocumentNumber,
+			"provider":        a.identitySource.ProviderName(),
+			"error":           err.Error(),
+		})
+		http.Error(w, "failed to validate patient contact", http.StatusBadGateway)
+		return
+	}
+
+	if strings.TrimSpace(identity.Email) == "" {
+		a.log("info", "patient_send_code_missing_email", map[string]any{
+			"document_number": reqBody.DocumentNumber,
+			"patient_id":      patient.ID,
+			"provider":        a.identitySource.ProviderName(),
+		})
+		writeJSON(w, http.StatusConflict, PatientSendCodeResponse{
+			Status:  "missing_active_email",
+			Message: "El paciente no tiene mail asociado. Concurra a su centro de salud más cercano para la actualización de sus datos de contacto.",
+		})
+		return
+	}
+
+	a.log("info", "patient_send_code_ready", map[string]any{
+		"document_number": reqBody.DocumentNumber,
+		"patient_id":      patient.ID,
+		"provider":        a.identitySource.ProviderName(),
+	})
+	writeJSON(w, http.StatusOK, PatientSendCodeResponse{
+		Status:  "ready_to_send",
+		Message: "Se enviará un código por mail al contacto registrado.",
+	})
 }
 
 func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
@@ -861,9 +1013,37 @@ func loadExternalConfig(path string) (*ExternalConfig, error) {
 }
 
 func buildPatientIdentitySource(cfg ExternalConfig) PatientIdentitySource {
-	// The current backend keeps a stable abstraction even before Mongo or REST HIS
-	// providers are wired, so handlers do not depend on provider-specific logic.
-	return &LocalSeedPatientIdentitySource{}
+	if !strings.EqualFold(strings.TrimSpace(cfg.HIS.Provider), "his_mongo_direct") {
+		return &LocalSeedPatientIdentitySource{}
+	}
+
+	mongoURI := strings.TrimSpace(os.Getenv("HIS_MONGO_URI"))
+	mongoDatabase := strings.TrimSpace(os.Getenv("HIS_MONGO_DATABASE"))
+	if mongoURI == "" || mongoDatabase == "" {
+		log.Fatal("missing required mongo env vars for his_mongo_direct provider")
+	}
+
+	connectTimeout := durationFromEnv("HIS_MONGO_CONNECT_TIMEOUT_MS", 5000*time.Millisecond)
+	queryTimeout := durationFromEnv("HIS_MONGO_QUERY_TIMEOUT_MS", 3000*time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
+	defer cancel()
+
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
+	if err != nil {
+		log.Fatalf("connect mongo his provider: %v", err)
+	}
+
+	if err := client.Ping(ctx, nil); err != nil {
+		log.Fatalf("ping mongo his provider: %v", err)
+	}
+
+	return &MongoPatientIdentitySource{
+		client:         client,
+		collection:     client.Database(mongoDatabase).Collection("paciente"),
+		connectTimeout: connectTimeout,
+		queryTimeout:   queryTimeout,
+	}
 }
 
 func nullTime(value time.Time) any {
@@ -886,13 +1066,74 @@ func validateDocumentNumber(value string) error {
 	return nil
 }
 
-func (a *App) ensurePatientRecord(ctx context.Context, documentNumber string) (PatientSummary, error) {
-	var patient PatientSummary
+func durationFromEnv(name string, fallback time.Duration) time.Duration {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback
+	}
+	parsed, err := time.ParseDuration(raw + "ms")
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
+}
 
+func normalizeMongoDocumento(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case int:
+		return fmt.Sprintf("%d", typed)
+	case int32:
+		return fmt.Sprintf("%d", typed)
+	case int64:
+		return fmt.Sprintf("%d", typed)
+	case float64:
+		if typed == float64(int64(typed)) {
+			return fmt.Sprintf("%d", int64(typed))
+		}
+		return strings.TrimSpace(fmt.Sprintf("%.0f", typed))
+	default:
+		return strings.TrimSpace(fmt.Sprint(typed))
+	}
+}
+
+func mongoDocumentoCandidates(documentNumber string) bson.A {
+	candidates := bson.A{bson.D{{Key: "documento", Value: documentNumber}}}
+	if parsed, err := strconv.ParseInt(documentNumber, 10, 64); err == nil {
+		if parsed >= math.MinInt32 && parsed <= math.MaxInt32 {
+			candidates = append(candidates, bson.D{{Key: "documento", Value: int32(parsed)}})
+		}
+		candidates = append(candidates,
+			bson.D{{Key: "documento", Value: parsed}},
+			bson.D{{Key: "documento", Value: float64(parsed)}},
+		)
+	}
+	return candidates
+}
+
+func writeJSON(w http.ResponseWriter, statusCode int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func (a *App) ensurePatientRecordWithIdentity(ctx context.Context, documentNumber string) (PatientSummary, PatientIdentity, error) {
 	identity, err := a.identitySource.ResolveByDocument(ctx, documentNumber)
 	if err != nil {
-		return PatientSummary{}, fmt.Errorf("resolve patient identity via %s: %w", a.identitySource.ProviderName(), err)
+		return PatientSummary{}, PatientIdentity{}, err
 	}
+
+	patient, err := a.upsertPatientIdentity(ctx, documentNumber, identity)
+	if err != nil {
+		return PatientSummary{}, PatientIdentity{}, err
+	}
+
+	return patient, identity, nil
+}
+
+func (a *App) upsertPatientIdentity(ctx context.Context, documentNumber string, identity PatientIdentity) (PatientSummary, error) {
+	var patient PatientSummary
 
 	documentType := identity.DocumentType
 	if documentType == "" {
@@ -908,7 +1149,7 @@ func (a *App) ensurePatientRecord(ctx context.Context, documentNumber string) (P
 		identity.FullName = "Paciente " + identity.DocumentNumber
 	}
 
-	err = a.db.QueryRowContext(ctx, `
+	err := a.db.QueryRowContext(ctx, `
 		INSERT INTO patients (
 			document_type, document_number, full_name, birth_date, sex, gender_identity, last_his_sync_at, last_login_at, updated_at
 		)
@@ -1015,6 +1256,14 @@ func (a *App) ensurePatientRecord(ctx context.Context, documentNumber string) (P
 		patient.GenderIdentity = identity.GenderIdentity
 	}
 
+	return patient, nil
+}
+
+func (a *App) ensurePatientRecord(ctx context.Context, documentNumber string) (PatientSummary, error) {
+	patient, _, err := a.ensurePatientRecordWithIdentity(ctx, documentNumber)
+	if err != nil {
+		return PatientSummary{}, fmt.Errorf("resolve patient identity via %s: %w", a.identitySource.ProviderName(), err)
+	}
 	return patient, nil
 }
 

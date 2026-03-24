@@ -286,7 +286,8 @@
 - **Milestone 6 (parcialmente bloqueado)**: requiere definir estrategia de identificador paciente (`PatientID == DNI` vs configurable/HIS).
 - **Desbloqueo táctico aceptado**: hasta disponer de la API REST del HIS, se permite un adapter backend-only `his_mongo_direct` para lectura de identidad de paciente, siempre que sea read-only, performante y reemplazable por el provider REST futuro.
 - **Claves candidatas ya acordadas para PACS**: `documento` y string de `_id` provenientes del documento `paciente` de Mongo.
-- **Estado actual del backend**: ya existe una abstracción base `PatientIdentitySource`; el próximo paso es agregar el provider `his_mongo_direct` sin tocar handlers ni contratos externos.
+- **Estado actual del backend**: `PatientIdentitySource` ya soporta `his_mongo_direct`, usa la colección `paciente` y persiste resoluciones exitosas en Postgres.
+- **Estado actual del acceso paciente**: `Enviar código` ya prevalida existencia de paciente y mail activo antes del futuro envío real del correo.
 - **Milestone 8 (parcialmente bloqueado)**: requiere decidir controles mínimos para entornos no-localhost (`X-Portal-Key`, allowlist IP, o similar).
 
 ---

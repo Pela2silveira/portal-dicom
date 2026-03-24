@@ -20,6 +20,8 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 * **Responsive móvil:** la landing pública y las superficies del portal deben ser utilizables en teléfonos y tablets, con layout adaptativo y controles táctiles cómodos.
 * **Integración con HIS:** el sistema debe permitir configurar credenciales, API keys, URLs base y parámetros necesarios para futuras consultas al HIS.
 * **Excepción transitoria para identidad de paciente:** mientras no esté disponible la API REST del HIS, el backend podrá consultar una base MongoDB de forma directa únicamente para lectura de identidad de paciente y resolución de identificadores.
+* **Colección inicial Mongo:** el adapter temporal consulta la colección `paciente` y normaliza `_id`, `documento`, datos demográficos y el primer email activo si existe.
+* **Persistencia local de éxito:** toda resolución exitosa de identidad de paciente desde Mongo debe persistirse en Postgres (`patients` + `patient_identifiers`) para reutilización operativa posterior.
 * **Configuración de PACS remotos:** el sistema debe permitir cargar detalles de conexión para nodos dcm4chee remotos.
 * **Visualización desacoplada:** OHIF debe consumir estudios desde el Orthanc local y no desde los PACS remotos.
 * **Portal assets propios:** el logo, favicon y assets de la landing deben ser servidos por Nginx sin mezclarse con los assets del contenedor OHIF.
@@ -54,6 +56,8 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 * **Restricción obligatoria del adaptador Mongo:** debe ser estrictamente `read-only`; no puede escribir, mutar ni administrar estructuras en MongoDB.
 * **Restricción de performance del adaptador Mongo:** las consultas deben ser performantes, acotadas, con proyecciones mínimas y apoyadas en índices adecuados; no se admiten collection scans como base del flujo normal.
 * **Búsqueda Implícita futura:** al validar correctamente el ingreso de paciente, el portal armará una lista propia de estudios autorizados para ese paciente.
+* **Validación actual al enviar código:** el portal llama al backend para verificar que el paciente exista y que tenga un mail activo antes del envío real del correo.
+* **Mensajes funcionales requeridos:** si el paciente no tiene mail activo, la UI debe indicar que concurra a su centro de salud más cercano para actualizar los datos de contacto; si el paciente no existe, debe informar que el paciente no cuenta con registros.
 * **Restricción funcional futura:** el paciente no debe navegar la base completa del caché local ni la lista nativa de estudios de OHIF.
 
 ---
