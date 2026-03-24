@@ -17,6 +17,7 @@
 - La marca pública del portal es **RedImagenesNQN**.
 - La identidad visual de la landing toma como referencia la app **ANDES**.
 - El flujo visible de paciente en la landing usa `Documento + código por mail` como experiencia UI.
+- El campo `Documento` del flujo paciente debe validarse tanto en frontend como en backend con formato numérico acotado antes de tocar búsquedas, retrieve o futuros pasos de verificación.
 - El flujo visible de profesional en la landing usa `DNI / usuario + contraseña` como experiencia UI.
 - La landing y las superficies propias del portal deben ser **responsive** para dispositivos móviles.
 - La integración futura objetivo para profesionales es **LDAP provincial + MFA**.

@@ -27,6 +27,7 @@ Allow a patient to see only their authorized studies and open one selected study
 ### Entry Surface
 
 - Public landing flow: `Documento + código por mail`
+- The `Documento` field must accept digits only, sanitize non-numeric input in the browser, and reject implausible lengths before calling backend routes.
 - Current implementation already opens the portal-owned patient surface.
 - The visible language of the entry flow should read as product, not as internal demo text.
 - The institutional strapline in the public header should read `Ministerio de Salud - Provincia del Neuquén`.

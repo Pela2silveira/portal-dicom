@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
@@ -576,6 +577,10 @@ func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing required query param: document", http.StatusBadRequest)
 		return
 	}
+	if err := validateDocumentNumber(documentNumber); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	filters := PatientStudiesFilter{
 		DateFrom: strings.TrimSpace(r.URL.Query().Get("date_from")),
@@ -647,6 +652,10 @@ func (a *App) handlePatientRetrieve(w http.ResponseWriter, r *http.Request) {
 	reqBody.StudyInstanceUID = strings.TrimSpace(reqBody.StudyInstanceUID)
 	if reqBody.DocumentNumber == "" || reqBody.StudyInstanceUID == "" {
 		http.Error(w, "document_number and study_instance_uid are required", http.StatusBadRequest)
+		return
+	}
+	if err := validateDocumentNumber(reqBody.DocumentNumber); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -862,6 +871,19 @@ func nullTime(value time.Time) any {
 		return nil
 	}
 	return value
+}
+
+func validateDocumentNumber(value string) error {
+	trimmed := strings.TrimSpace(value)
+	if len(trimmed) < 7 || len(trimmed) > 11 {
+		return fmt.Errorf("document must contain between 7 and 11 digits")
+	}
+	for _, r := range trimmed {
+		if !unicode.IsDigit(r) {
+			return fmt.Errorf("document must contain digits only")
+		}
+	}
+	return nil
 }
 
 func (a *App) ensurePatientRecord(ctx context.Context, documentNumber string) (PatientSummary, error) {

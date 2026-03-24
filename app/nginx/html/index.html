@@ -1008,7 +1008,7 @@
             <section class="flow active" data-flow="patient">
               <div class="field-group">
                 <label for="patient-document">Documento</label>
-                <input id="patient-document" name="patient-document" type="text" inputmode="numeric" placeholder="Ingrese su DNI">
+                <input id="patient-document" name="patient-document" type="text" inputmode="numeric" maxlength="11" autocomplete="off" spellcheck="false" placeholder="Ingrese su DNI">
               </div>
 
               <div class="row">
@@ -1316,6 +1316,10 @@
           .replaceAll(">", "&gt;")
           .replaceAll('"', "&quot;")
           .replaceAll("'", "&#39;");
+      }
+
+      function normalizePatientDocumentInput(value) {
+        return String(value || "").replace(/\D+/g, "").slice(0, 11);
       }
 
       function chipClassForStatus(status) {
@@ -1879,12 +1883,18 @@
       });
 
       mailCodeButton.addEventListener("click", () => {
-        const documentValue = patientDocument.value.trim();
+        const documentValue = normalizePatientDocumentInput(patientDocument.value);
+        patientDocument.value = documentValue;
 
         mailCodeFeedback.classList.remove("hidden", "warning");
 
         if (!documentValue) {
           mailCodeFeedback.textContent = "Ingrese su documento antes de solicitar el codigo por mail.";
+          mailCodeFeedback.classList.add("warning");
+          return;
+        }
+        if (documentValue.length < 7) {
+          mailCodeFeedback.textContent = "Ingrese un documento válido para solicitar el código por mail.";
           mailCodeFeedback.classList.add("warning");
           return;
         }
@@ -1896,13 +1906,19 @@
       });
 
       patientValidateButton.addEventListener("click", () => {
-        const documentValue = patientDocument.value.trim();
+        const documentValue = normalizePatientDocumentInput(patientDocument.value);
+        patientDocument.value = documentValue;
         const mailCodeValue = patientMailCode.value.trim();
 
         mailCodeFeedback.classList.remove("hidden", "warning");
 
         if (!documentValue) {
           mailCodeFeedback.textContent = "Ingrese su documento antes de continuar.";
+          mailCodeFeedback.classList.add("warning");
+          return;
+        }
+        if (documentValue.length < 7) {
+          mailCodeFeedback.textContent = "Ingrese un documento válido para continuar.";
           mailCodeFeedback.classList.add("warning");
           return;
         }
@@ -1967,6 +1983,9 @@
 
       activateRole("patient");
       applyPatientPreset("month");
+      patientDocument.addEventListener("input", () => {
+        patientDocument.value = normalizePatientDocumentInput(patientDocument.value);
+      });
     </script>
   </body>
 </html>
