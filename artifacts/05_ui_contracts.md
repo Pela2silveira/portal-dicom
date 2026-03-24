@@ -36,7 +36,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - The orientation message may use a lighter accent band inside the login panel to separate it from the role selector without becoming a competing primary call to action.
 - The login panel should prefer short labels and should avoid explanatory helper paragraphs unless they change the next action.
 - The login panel should avoid redundant internal banners or badges that restate the access context without changing the next action.
-- Institutional links may appear in the footer as secondary navigation, provided they do not compete visually with the access form.
+- Institutional links may appear in the footer as secondary navigation, provided they do not compete visually with the access form. The current shared footer keeps `Salud Neuquén` and the Android app link available across login, patient, and physician surfaces.
 - Institutional logos such as ANDES and RedTICS may appear in the footer as secondary brand references and do not need to be interactive.
 - Future real implementation validates patient identity before exposing the list.
 
@@ -135,7 +135,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - The orientation message may use a lighter accent band inside the login panel to separate it from the role selector without becoming a competing primary call to action.
 - The login panel should prefer short labels and should avoid explanatory helper paragraphs unless they change the next action.
 - The login panel should avoid redundant internal banners or badges that restate the access context without changing the next action.
-- Institutional links may appear in the footer as secondary navigation, provided they do not compete visually with the access form.
+- Institutional links may appear in the footer as secondary navigation, provided they do not compete visually with the access form. The current shared footer keeps `Salud Neuquén` and the Android app link available across login, patient, and physician surfaces.
 - Institutional logos such as ANDES and RedTICS may appear in the footer as secondary brand references and do not need to be interactive.
 - Future real implementation target: `LDAP provincial + MFA`
 
