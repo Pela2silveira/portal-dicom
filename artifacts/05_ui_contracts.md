@@ -69,6 +69,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - `period`
   values: `today`, `week`, `month`, `year`, `custom`, or empty for all dates
   behavior: the dropdown presets must set the patient date range automatically
+  default: `month`
 - `dateRange`
   behavior: a calendar range picker inside an inline dropdown allows first click = start date and second click = end date, with the selected interval highlighted
 - `modality`

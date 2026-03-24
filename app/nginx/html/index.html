@@ -536,6 +536,27 @@
         gap: 12px;
       }
 
+      .field-group-grouped {
+        display: grid;
+        gap: 10px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+      }
+
+      .field-group-grouped > label {
+        font-size: 0.84rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--accent-dark);
+      }
+
+      .field-group-grouped-body {
+        display: grid;
+        gap: 12px;
+      }
+
       .date-filter-dropdown {
         position: relative;
       }
@@ -1004,47 +1025,50 @@
             <section class="workspace-card">
               <h4>Filtros</h4>
               <div class="filter-grid">
-                <div class="field-group">
+                <div class="field-group-grouped">
                   <label for="patient-filter-period">Fecha</label>
-                  <select id="patient-filter-period">
-                    <option value="">Todo el periodo</option>
-                    <option value="today">Hoy</option>
-                    <option value="week">Esta semana</option>
-                    <option value="month">Este mes</option>
-                    <option value="year">Este año</option>
-                    <option value="custom">Personalizado</option>
-                  </select>
-                </div>
-                <div class="field-group">
-                  <label for="patient-date-dropdown">Rango</label>
-                  <details class="date-filter-dropdown" id="patient-date-dropdown">
-                    <summary>
-                      <span class="date-filter-summary" id="patient-date-summary">Sin rango seleccionado.</span>
-                    </summary>
-                    <div class="date-filter-panel-shell">
-                      <div class="date-filter-panel">
-                        <div class="calendar-shell">
-                          <div class="calendar-toolbar">
-                            <div class="calendar-month-label" id="patient-calendar-month-label">-</div>
-                            <div class="calendar-nav">
-                              <button id="patient-calendar-prev" type="button" aria-label="Mes anterior">‹</button>
-                              <button id="patient-calendar-next" type="button" aria-label="Mes siguiente">›</button>
+                  <div class="field-group-grouped-body">
+                    <div class="field-group">
+                      <select id="patient-filter-period">
+                        <option value="">Todo el periodo</option>
+                        <option value="today">Hoy</option>
+                        <option value="week">Esta semana</option>
+                        <option value="month" selected>Este mes</option>
+                        <option value="year">Este año</option>
+                        <option value="custom">Personalizado</option>
+                      </select>
+                    </div>
+                    <div class="field-group">
+                      <details class="date-filter-dropdown" id="patient-date-dropdown">
+                        <summary>
+                          <span class="date-filter-summary" id="patient-date-summary">Sin rango seleccionado.</span>
+                        </summary>
+                        <div class="date-filter-panel-shell">
+                          <div class="date-filter-panel">
+                            <div class="calendar-shell">
+                              <div class="calendar-toolbar">
+                                <div class="calendar-month-label" id="patient-calendar-month-label">-</div>
+                                <div class="calendar-nav">
+                                  <button id="patient-calendar-prev" type="button" aria-label="Mes anterior">‹</button>
+                                  <button id="patient-calendar-next" type="button" aria-label="Mes siguiente">›</button>
+                                </div>
+                              </div>
+                              <div class="calendar-weekdays">
+                                <span>Lun</span>
+                                <span>Mar</span>
+                                <span>Mie</span>
+                                <span>Jue</span>
+                                <span>Vie</span>
+                                <span>Sab</span>
+                                <span>Dom</span>
+                              </div>
+                              <div class="calendar-grid" id="patient-calendar-grid"></div>
                             </div>
                           </div>
-                          <div class="calendar-weekdays">
-                            <span>Lun</span>
-                            <span>Mar</span>
-                            <span>Mie</span>
-                            <span>Jue</span>
-                            <span>Vie</span>
-                            <span>Sab</span>
-                            <span>Dom</span>
-                          </div>
-                          <div class="calendar-grid" id="patient-calendar-grid"></div>
                         </div>
-                      </div>
+                      </details>
                     </div>
-                  </details>
+                  </div>
                 </div>
                 <div class="field-group">
                   <label for="patient-filter-modality">Modalidad</label>
@@ -1846,7 +1870,7 @@
       });
 
       activateRole("patient");
-      renderPatientCalendar();
+      applyPatientPreset("month");
     </script>
   </body>
 </html>
