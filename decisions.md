@@ -51,6 +51,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The patient surface now exposes a manual `Retrieve` action backed by `POST /api/patient/retrieve`.
 - The current patient retrieve implementation uses Orthanc REST to `PUT /modalities/{id}` and `POST /modalities/{id}/get`, polling Orthanc until the study becomes local.
 - The current viewer handoff must open OHIF with a specific `StudyInstanceUID` instead of `/ohif/` root, so patient access does not land on the general study list after retrieve.
+- OHIF root (`/ohif/`) must not be exposed as a navigable entrypoint; Nginx should redirect it back to the landing and keep only study-specific viewer URLs as supported entrypoints.
 - Physician access must use a portal-owned search and workflow panel.
 - Physician workflow should be asynchronous and must expose remote PACS context, local cache presence, and retrieve state before opening OHIF.
 - The first functional physician panel is now backed by `GET /api/physician/results`, with DB-seeded recent-query rows per username until real federated search is implemented.
@@ -103,8 +104,8 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - For lab or CI integration testing, a simulated remote Orthanc node is preferred over mock-only handlers when feasible.
 - OHIF is pinned to `ohif/app:v3.11.1` instead of using `latest`.
 - OHIF must read the local cache through `/dicom-web/`.
-- OHIF study list must remain enabled in local operation.
-- For final patient and physician flows, the native OHIF study list should be disabled unless explicitly needed for a technical operator surface.
+- OHIF study list must remain disabled in portal operation so cached local studies are never exposed as a general list through the viewer shell.
+- If a technical operator surface ever needs the native OHIF study list, it must use a separate, explicitly scoped entrypoint rather than the patient/professional viewer path.
 
 ## Open Inputs From User
 - HIS base URL, authentication method, API key format, and required query parameters.

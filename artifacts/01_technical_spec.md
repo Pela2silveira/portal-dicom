@@ -29,6 +29,7 @@
 - El visor consume el caché local por la ruta `/dicom-web/`.
 - OHIF debe tratarse como **visor** y no como superficie primaria de búsqueda o control de acceso.
 - El paciente debe navegar una lista propia del portal, no la study list nativa de OHIF.
+- La configuración actual de OHIF mantiene `showStudyList: false` y el root `/ohif/` redirige a la landing pública; el acceso soportado al visor es por URL puntual (`/ohif/viewer?...`).
 - El médico debe trabajar sobre un panel propio del portal con búsqueda federada y retrieve asíncrono.
 - Los contratos explícitos de ambas superficies se documentan en `artifacts/05_ui_contracts.md`.
 - Aun en el mock de la landing, ambos ingresos deben aterrizar primero en superficies del portal y no en la home general del visor.
@@ -523,7 +524,8 @@ Problema: Orthanc puede recibir instancias progresivamente.
 - `docker compose up` levanta `orthanc`, `backend`, `postgres`, `nginx`, `ohif` sin pasos manuales adicionales.
 - Nginx es el único punto de entrada HTTP (backend/orthanc no expuestos directamente por HTTP).
 - `http://localhost:8080/` muestra la landing del portal.
-- `http://localhost:8080/ohif/` carga OHIF.
+- `http://localhost:8080/ohif/` redirige a la landing pública.
+- `http://localhost:8080/ohif/viewer?StudyInstanceUIDs=<uid>` carga OHIF para un estudio puntual.
 
 ### Búsqueda
 - Ejecutar una búsqueda dispara consultas concurrentes a **≥2** nodos configurados (cuando existan).

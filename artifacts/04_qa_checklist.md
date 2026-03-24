@@ -16,6 +16,7 @@
 - [Ready] **Patient list contract**: `GET /api/patient/studies?document=<dni>` returns `200` with `studies: []` if none; “Actualizar lista” semantics defined.
 - [Ready] **Manual retrieve contract**: `POST /api/patient/retrieve`, `POST /api/physician/retrieve`, job persistence and state transitions exist (queued→running→done/failed).
 - [Ready] **Viewer handoff**: portal opens `GET /ohif/viewer?StudyInstanceUIDs=<uid>` in a new tab; Visualizar enabled only when local cache is ready.
+- [Ready] **OHIF root containment**: `GET /ohif/` redirects to landing and patient/professional flows enter OHIF only through study-specific viewer URLs.
 - [Ready] **Retrieve completion heuristic**: Orthanc polling with stable window + global timeout defined.
 - [Missing] **Federated search**: `POST /api/search` + SSE events + dedup by `StudyInstanceUID` across ≥2 nodes not implemented (Milestone 4 pending).
 - [Missing] **Professional async panel backed by real multi-node search**: current “recent queries fallback” is acceptable but not the target behavior.
