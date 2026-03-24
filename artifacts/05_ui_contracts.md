@@ -66,9 +66,10 @@ Allow a patient to see only their authorized studies and open one selected study
 
 ### Allowed Filters
 
-- `date_from`
-- `date_to`
+- `period`
+  values: `today`, `week`, `month`, `year`, or empty for all dates
 - `modality`
+  values: `all` or one enumerated modality at a time
 - free text is out of scope for the first patient surface
 
 ### Allowed Sort
@@ -87,7 +88,7 @@ Allow a patient to see only their authorized studies and open one selected study
 
 - `Recuperar estudio` when `availabilityStatus = pending_retrieve`
 - `Ver estudio` when `availabilityStatus = available_local`
-- `Actualizar lista` to reload studies with the current patient filters
+- `Buscar` to reload studies with the current patient filters
 
 ### Explicitly Forbidden Actions
 
