@@ -21,6 +21,7 @@
 - El flujo visible de paciente en la landing usa `Documento + código por mail` como experiencia UI.
 - El campo `Documento` del flujo paciente debe validarse tanto en frontend como en backend con formato numérico acotado antes de tocar búsquedas, retrieve o futuros pasos de verificación.
 - El paso `Enviar código` debe consultar backend antes del envío real del mail para distinguir tres resultados: `ready_to_send`, `missing_active_email` y `patient_not_found`.
+- Las fechas de estudio que llegan desde DICOM/QIDO deben normalizarse a `YYYY-MM-DD` antes de persistirse o filtrarse en superficies del portal.
 - El flujo visible de profesional en la landing usa `DNI / usuario + contraseña` como experiencia UI.
 - La landing y las superficies propias del portal deben ser **responsive** para dispositivos móviles.
 - La integración futura objetivo para profesionales es **LDAP provincial + MFA**.

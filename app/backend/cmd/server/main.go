@@ -1555,7 +1555,7 @@ func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConf
 
 		study := PatientStudy{
 			StudyInstanceUID:   studyUID,
-			StudyDate:          dicomFirstString(item, "00080020"),
+			StudyDate:          normalizeStudyDate(dicomFirstString(item, "00080020")),
 			StudyDescription:   dicomFirstString(item, "00081030"),
 			ModalitiesInStudy:  dicomStringList(item, "00080061"),
 			AvailabilityStatus: "pending_retrieve",
@@ -2004,6 +2004,16 @@ func dicomFirstPersonName(item qidoResponseItem, tag string) string {
 	return dicomFirstString(item, tag)
 }
 
+func normalizeStudyDate(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if len(trimmed) == 8 && !strings.Contains(trimmed, "-") {
+		if parsed, err := time.Parse("20060102", trimmed); err == nil {
+			return parsed.Format("2006-01-02")
+		}
+	}
+	return trimmed
+}
+
 func dicomStringList(item qidoResponseItem, tag string) []string {
 	attribute, ok := item[tag]
 	if !ok || len(attribute.Value) == 0 {
@@ -2245,7 +2255,7 @@ func (a *App) searchPhysicianResultsFromSingleNode(ctx context.Context, physicia
 			StudyInstanceUID: studyUID,
 			PatientName:      dicomFirstPersonName(item, "00100010"),
 			PatientID:        dicomFirstString(item, "00100020"),
-			StudyDate:        dicomFirstString(item, "00080020"),
+			StudyDate:        normalizeStudyDate(dicomFirstString(item, "00080020")),
 			StudyDescription: dicomFirstString(item, "00081030"),
 			Modalities:       dicomStringList(item, "00080061"),
 			Locations:        []string{node.Name},
@@ -2343,12 +2353,12 @@ func (a *App) listPatientStudies(ctx context.Context, patientID string, filters 
 	position := 2
 
 	if filters.DateFrom != "" {
-		query += fmt.Sprintf(` AND COALESCE(source_json->>'study_date', '') >= $%d`, position)
+		query += fmt.Sprintf(` AND REPLACE(COALESCE(source_json->>'study_date', ''), '-', '') >= REPLACE($%d, '-', '')`, position)
 		args = append(args, filters.DateFrom)
 		position++
 	}
 	if filters.DateTo != "" {
-		query += fmt.Sprintf(` AND COALESCE(source_json->>'study_date', '') <= $%d`, position)
+		query += fmt.Sprintf(` AND REPLACE(COALESCE(source_json->>'study_date', ''), '-', '') <= REPLACE($%d, '-', '')`, position)
 		args = append(args, filters.DateTo)
 		position++
 	}
