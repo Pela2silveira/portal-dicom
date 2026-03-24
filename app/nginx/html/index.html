@@ -1012,18 +1012,18 @@
             </div>
 
             <section class="flow active" data-flow="patient">
-              <div class="field-group">
-                <label for="patient-document">Documento</label>
-                <input id="patient-document" name="patient-document" type="text" inputmode="numeric" maxlength="11" autocomplete="off" spellcheck="false" placeholder="Ingrese su DNI sin puntos">
-              </div>
-
               <div class="row">
                 <div class="field-group">
+                  <label for="patient-document">Documento</label>
+                  <input id="patient-document" name="patient-document" type="text" inputmode="numeric" maxlength="11" autocomplete="off" spellcheck="false" placeholder="Ingrese su DNI sin puntos">
+                </div>
+                <button class="action action-secondary" id="send-mail-code" type="button">Enviar codigo</button>
+              </div>
+
+              <div class="field-group">
                   <label for="patient-mail-code">Codigo por mail</label>
                   <input id="patient-mail-code" name="patient-mail-code" type="text" inputmode="numeric" placeholder="Ingrese el codigo recibido por mail">
-                </div>
-              <button class="action action-secondary" id="send-mail-code" type="button">Enviar codigo</button>
-            </div>
+              </div>
 
               <button class="action action-primary" type="button">Continuar</button>
 

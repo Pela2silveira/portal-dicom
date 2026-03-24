@@ -29,6 +29,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - Public landing flow: `Documento + código por mail`
 - The `Documento` field must accept digits only, sanitize non-numeric input in the browser, and reject implausible lengths before calling backend routes.
 - The `Enviar código` action must call backend prevalidation before any future mail delivery integration.
+- The `Enviar código` button must stay visually associated with the `Documento` input, not with the mail-code input.
 - Required patient outcomes:
   - `ready_to_send`: proceed with mail-code UX
   - `missing_active_email`: show contact-update guidance in a prominent warning style
