@@ -70,6 +70,7 @@ Notes:
 - The expected environment baseline for the temporary adapter is `HIS_MONGO_URI`, `HIS_MONGO_DATABASE`, `HIS_MONGO_CONNECT_TIMEOUT_MS`, and `HIS_MONGO_QUERY_TIMEOUT_MS`.
 - The first collection is intentionally hardcoded as `paciente` inside the adapter so future collections can be added with explicit contracts instead of expanding generic configuration prematurely.
 - Successful Mongo identity resolutions are normalized into `patients` and `patient_identifiers` in Postgres.
+- The `patients` table is the demographic anchor for portal UI; DICOM `PatientName` values observed during study sync must not overwrite normalized identity fields there.
 
 ## Patient Identity And Access Cache
 

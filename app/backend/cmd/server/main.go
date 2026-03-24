@@ -1289,17 +1289,6 @@ func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient Pati
 		return patient, err
 	}
 
-	if fullName != "" && fullName != patient.FullName {
-		if _, err := a.db.ExecContext(ctx, `
-			UPDATE patients
-			SET full_name = $2, updated_at = now()
-			WHERE id = $1::uuid
-		`, patient.ID, fullName); err != nil {
-			return patient, fmt.Errorf("update patient full name: %w", err)
-		}
-		patient.FullName = fullName
-	}
-
 	if _, err := a.db.ExecContext(ctx, `
 		DELETE FROM patient_study_access
 		WHERE patient_id = $1::uuid

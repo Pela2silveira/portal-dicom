@@ -13,6 +13,7 @@
 - Integración HIS **solo configurable** (valores provistos posteriormente).
 - Excepción transitoria permitida: mientras no exista integración REST operativa del HIS, el backend puede consultar MongoDB en forma directa solo para resolver identidad de paciente e identificadores alternativos.
 - Cuando el provider activo es `his_mongo_direct`, el backend consulta la colección Mongo `paciente` en modo read-only y persiste en Postgres los resultados exitosos ya normalizados.
+- Los demográficos visibles del paciente (`full_name`, `birth_date`, `sex`, `gender_identity`) deben priorizar la fuente de identidad HIS/Mongo y no deben ser reemplazados por `PatientName` DICOM durante QIDO.
 - Configuración de PACS remotos (dcm4chee, Orthanc, legacy) **externalizada**.
 - La landing pública forma parte del MVP como experiencia visual, aunque sin autenticación real.
 - La marca pública del portal es **RedImagenesNQN**.
