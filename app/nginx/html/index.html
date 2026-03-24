@@ -1765,7 +1765,8 @@
           return;
         }
 
-        if (patientDateDropdown.contains(event.target)) {
+        const eventPath = typeof event.composedPath === "function" ? event.composedPath() : [];
+        if (eventPath.includes(patientDateDropdown) || patientDateDropdown.contains(event.target)) {
           return;
         }
 
