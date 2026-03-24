@@ -743,6 +743,10 @@
         padding: 11px 14px;
       }
 
+      .summary-item.summary-item-wide {
+        grid-column: span 2;
+      }
+
       .summary-item span,
       .summary-item strong {
         display: block;
@@ -1041,7 +1045,7 @@
             <section class="workspace-card workspace-card-primary">
               <h4>Datos del paciente</h4>
               <div class="summary-grid">
-                <div class="summary-item">
+                <div class="summary-item summary-item-wide">
                   <span>Nombre y apellido</span>
                   <strong id="patient-full-name-value">Sin paciente cargado</strong>
                 </div>

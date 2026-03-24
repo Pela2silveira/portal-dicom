@@ -64,6 +64,10 @@ Allow a patient to see only their authorized studies and open one selected study
 - `sex`
 - `genderIdentity`
 
+### Patient Summary Layout
+
+- `fullName` should occupy twice the horizontal width of each other demographic field whenever the available width allows a multi-column layout
+
 ### Allowed Filters
 
 - `period`
