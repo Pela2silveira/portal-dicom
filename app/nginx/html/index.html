@@ -1264,6 +1264,7 @@
         return {
           from: "",
           to: "",
+          awaitingRangeEnd: false,
           viewYear: now.getFullYear(),
           viewMonth: now.getMonth()
         };
@@ -1371,8 +1372,13 @@
         }
 
         if (patientDateFilter.from) {
-          patientDateSummary.textContent =
-            "Fecha seleccionada: " + formatDateLabel(patientDateFilter.from) + ".";
+          if (patientDateFilter.awaitingRangeEnd) {
+            patientDateSummary.textContent =
+              "Inicio seleccionado: " + formatDateLabel(patientDateFilter.from) + ". Seleccione fecha final o haga click fuera.";
+          } else {
+            patientDateSummary.textContent =
+              "Fecha seleccionada: " + formatDateLabel(patientDateFilter.from) + ".";
+          }
           return;
         }
 
@@ -1420,6 +1426,7 @@
         const range = patientDateRangeForPeriod(period);
         patientDateFilter.from = range.date_from || "";
         patientDateFilter.to = range.date_to || "";
+        patientDateFilter.awaitingRangeEnd = false;
 
         if (patientDateFilter.from) {
           const focusDate = new Date(patientDateFilter.from + "T00:00:00");
@@ -1439,11 +1446,14 @@
         if (!patientDateFilter.from || (patientDateFilter.from && patientDateFilter.to)) {
           patientDateFilter.from = dateISO;
           patientDateFilter.to = "";
+          patientDateFilter.awaitingRangeEnd = true;
         } else if (dateISO < patientDateFilter.from) {
           patientDateFilter.to = patientDateFilter.from;
           patientDateFilter.from = dateISO;
+          patientDateFilter.awaitingRangeEnd = false;
         } else {
           patientDateFilter.to = dateISO;
+          patientDateFilter.awaitingRangeEnd = false;
         }
 
         patientFilterPeriod.value = "custom";
@@ -1757,6 +1767,11 @@
 
         if (patientDateDropdown.contains(event.target)) {
           return;
+        }
+
+        if (patientDateFilter.awaitingRangeEnd && patientDateFilter.from && !patientDateFilter.to) {
+          patientDateFilter.awaitingRangeEnd = false;
+          syncPatientDateSummary();
         }
 
         patientDateDropdown.open = false;

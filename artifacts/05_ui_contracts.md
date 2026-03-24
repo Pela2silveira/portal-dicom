@@ -76,6 +76,7 @@ Allow a patient to see only their authorized studies and open one selected study
   visual: the shared date filter block should use a transparent background with a thin outline, while the calendar popup remains contained relative to the range control
   interaction: the calendar dropdown should close automatically when the user clicks outside the date filter block
   single-day rule: if the user selects only one day, the search should use that same date as both start and end
+  state rule: after the first click the picker enters an intermediate "awaiting end date" state and stays open until the user chooses the end date or clicks outside
 - `modality`
   values: `all` or one enumerated public-facing modality at a time, shown to the patient with plain-language labels in Spanish
   visual: the modality selector should use the same transparent grouped container language as the date filter block
