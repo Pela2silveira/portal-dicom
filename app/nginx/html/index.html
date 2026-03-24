@@ -524,7 +524,7 @@
       .summary-item {
         border: 1px solid var(--line);
         background: var(--surface-soft);
-        padding: 14px 16px;
+        padding: 11px 14px;
       }
 
       .summary-item span,
@@ -534,20 +534,20 @@
 
       .summary-item span {
         color: var(--muted);
-        font-size: 0.82rem;
+        font-size: 0.76rem;
         text-transform: uppercase;
         letter-spacing: 0.08em;
-        margin-bottom: 4px;
+        margin-bottom: 3px;
       }
 
       .summary-item strong {
         color: var(--ink);
-        font-size: 1rem;
+        font-size: 0.95rem;
       }
 
       .workspace-stack {
         display: grid;
-        gap: 20px;
+        gap: 16px;
       }
 
       .workspace-card-primary {
@@ -634,17 +634,12 @@
           grid-template-columns: 0.95fr 1.05fr;
         }
 
-        .workspace-grid.patient-layout {
-          grid-template-columns: 0.8fr 1.2fr;
-          align-items: start;
-        }
-
         .filter-grid {
           grid-template-columns: repeat(4, minmax(0, 1fr));
         }
 
         .summary-grid {
-          grid-template-columns: repeat(3, minmax(0, 1fr));
+          grid-template-columns: repeat(5, minmax(0, 1fr));
         }
 
         .meta-grid {
@@ -857,8 +852,7 @@
               </div>
             </section>
 
-            <div class="workspace-grid patient-layout">
-              <section class="workspace-card">
+            <section class="workspace-card">
               <h4>Filtros</h4>
               <div class="filter-grid">
                 <div class="field-group">
@@ -877,14 +871,14 @@
               <div class="inline-actions">
                 <button class="action action-secondary" id="patient-apply-filters" type="button">Actualizar lista</button>
               </div>
-              </section>
-              <section class="workspace-card">
-                <h4>Estudios</h4>
-                <div class="study-list" id="patient-study-list">
-                  <div class="empty-state">Ingrese por el flujo paciente para cargar estudios desde la API del portal.</div>
-                </div>
-              </section>
-            </div>
+            </section>
+
+            <section class="workspace-card workspace-card-primary">
+              <h4>Resultados</h4>
+              <div class="study-list" id="patient-study-list">
+                <div class="empty-state">Ingrese por el flujo paciente para cargar estudios desde la API del portal.</div>
+              </div>
+            </section>
           </div>
         </section>
       </main>

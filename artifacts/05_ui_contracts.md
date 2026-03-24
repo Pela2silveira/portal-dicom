@@ -42,9 +42,9 @@ Allow a patient to see only their authorized studies and open one selected study
 
 ### Screen Model
 
-- Patient data summary section at the top of the page
-- Simple filters below the patient data block
-- Authorized study list grouped by modality as the primary visual element
+- Compact patient data summary section at the top of the page
+- Simple filters in a dedicated block below the patient data section
+- Authorized study list grouped by modality in a full-width results block as the primary visual element
 - Per-study actions: `Recuperar estudio` or `Ver estudio`
 - Empty state message when the document has no matching studies
 
