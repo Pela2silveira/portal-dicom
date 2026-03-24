@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" width="464" height="152" version="1.1" viewBox="0 0 752 247" xmlns:xlink="http://www.w3.org/1999/xlink">
   <defs>
     <style type="text/css"><![CDATA[
-      .str0 {stroke:white;stroke-width:3.48124;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:3.481243 10.443730}
-      .str1 {stroke:white;stroke-width:3.48124;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:3.481243 10.443730}
-      .str2 {stroke:white;stroke-width:3.82554;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:3.825542 11.476626}
+      .str0 {stroke:#002738;stroke-width:3.48124;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:3.481243 10.443730}
+      .str1 {stroke:#002738;stroke-width:3.48124;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:3.481243 10.443730}
+      .str2 {stroke:#002738;stroke-width:3.82554;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:3.825542 11.476626}
       .fil1 {fill:none}
-      .fil2 {fill:white}
-      .fil0 {fill:white;fill-rule:nonzero}
+      .fil2 {fill:#002738}
+      .fil0 {fill:#002738;fill-rule:nonzero}
     ]]></style>
   </defs>
   <g id="Capa_x0020_1">
