@@ -541,7 +541,8 @@
         gap: 10px;
         padding: 12px;
         border: 1px solid var(--line);
-        background: var(--surface);
+        background: transparent;
+        overflow: visible;
       }
 
       .field-group-grouped > label {
@@ -555,6 +556,10 @@
       .field-group-grouped-body {
         display: grid;
         gap: 12px;
+      }
+
+      .field-group-grouped-body > .field-group {
+        min-width: 0;
       }
 
       @media (min-width: 640px) {
@@ -609,9 +614,9 @@
       .date-filter-panel-shell {
         position: absolute;
         top: calc(100% + 8px);
-        left: 0;
+        right: 0;
         z-index: 5;
-        width: min(420px, 100vw - 64px);
+        width: min(420px, calc(100vw - 64px));
         border: 1px solid var(--line);
         background: var(--surface);
         box-shadow: var(--shadow);
