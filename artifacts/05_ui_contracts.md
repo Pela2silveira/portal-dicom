@@ -42,7 +42,7 @@ Allow a patient to see only their authorized studies and open one selected study
 ### Screen Model
 
 - Patient data summary section
-- Authorized study list
+- Authorized study list grouped by modality
 - Simple filters
 - Per-study actions: `Recuperar estudio` or `Ver estudio`
 - Empty state message when the document has no matching studies
@@ -65,6 +65,7 @@ Allow a patient to see only their authorized studies and open one selected study
 ### Allowed Sort
 
 - default sort: newest `studyDate` first
+- grouping: first by primary modality, then by newest `studyDate` inside each group
 
 ### Availability States
 

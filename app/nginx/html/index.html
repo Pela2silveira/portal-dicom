@@ -533,6 +533,36 @@
         font-size: 1rem;
       }
 
+      .study-groups {
+        display: grid;
+        gap: 18px;
+      }
+
+      .study-group {
+        display: grid;
+        gap: 12px;
+      }
+
+      .study-group-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .study-group-header h5 {
+        margin: 0;
+        font-size: 1rem;
+        letter-spacing: -0.02em;
+      }
+
+      .study-group-header span {
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+
       .info-stack {
         display: grid;
         gap: 12px;
@@ -975,36 +1005,70 @@
           return;
         }
 
-        patientStudyList.innerHTML = payload.studies
-          .map(study => {
-            const modalities = (study.modalities_in_study || [])
-              .map(modality => '<div class="chip info">' + escapeHTML(modality) + "</div>")
-              .join("");
+        const groupedStudies = new Map();
 
-            const action = study.viewer_url
-              ? '<a class="action action-primary" href="' + escapeHTML(study.viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar estudio</a>'
-              : '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '">Recuperar estudio</button>';
+        payload.studies.forEach(study => {
+          const groupKey =
+            Array.isArray(study.modalities_in_study) && study.modalities_in_study.length
+              ? study.modalities_in_study[0]
+              : "OT";
 
-            return (
-              '<article class="study-item">' +
-                '<div class="item-head">' +
-                  '<div>' +
-                    '<strong>' + escapeHTML(study.study_description || "Estudio sin descripción") + '</strong>' +
-                    '<span>' + escapeHTML(study.study_date || "Sin fecha") + '</span>' +
+          if (!groupedStudies.has(groupKey)) {
+            groupedStudies.set(groupKey, []);
+          }
+
+          groupedStudies.get(groupKey).push(study);
+        });
+
+        patientStudyList.innerHTML =
+          '<div class="study-groups">' +
+          Array.from(groupedStudies.entries())
+            .map(([groupKey, studies]) => {
+              const groupLabel = groupKey === "OT" ? "Otros estudios" : "Modalidad " + escapeHTML(groupKey);
+
+              const items = studies
+                .map(study => {
+                  const modalities = (study.modalities_in_study || [])
+                    .map(modality => '<div class="chip info">' + escapeHTML(modality) + "</div>")
+                    .join("");
+
+                  const action = study.viewer_url
+                    ? '<a class="action action-primary" href="' + escapeHTML(study.viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar estudio</a>'
+                    : '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '">Recuperar estudio</button>';
+
+                  return (
+                    '<article class="study-item">' +
+                      '<div class="item-head">' +
+                        '<div>' +
+                          '<strong>' + escapeHTML(study.study_description || "Estudio sin descripción") + '</strong>' +
+                          '<span>' + escapeHTML(study.study_date || "Sin fecha") + '</span>' +
+                        '</div>' +
+                        '<div class="' + chipClassForStatus(study.availability_status) + '">' +
+                          escapeHTML(labelForStatus(study.availability_status)) +
+                        '</div>' +
+                      '</div>' +
+                      '<div class="chip-row">' +
+                        modalities +
+                        '<div class="chip">' + escapeHTML(study.study_instance_uid) + '</div>' +
+                      '</div>' +
+                      '<div class="inline-actions">' + action + '</div>' +
+                    '</article>'
+                  );
+                })
+                .join("");
+
+              return (
+                '<section class="study-group">' +
+                  '<div class="study-group-header">' +
+                    '<h5>' + groupLabel + '</h5>' +
+                    '<span>' + studies.length + ' estudio(s)</span>' +
                   '</div>' +
-                  '<div class="' + chipClassForStatus(study.availability_status) + '">' +
-                    escapeHTML(labelForStatus(study.availability_status)) +
-                  '</div>' +
-                '</div>' +
-                '<div class="chip-row">' +
-                  modalities +
-                  '<div class="chip">' + escapeHTML(study.study_instance_uid) + '</div>' +
-                '</div>' +
-                '<div class="inline-actions">' + action + '</div>' +
-              '</article>'
-            );
-          })
-          .join("");
+                  items +
+                '</section>'
+              );
+            })
+            .join("") +
+          "</div>";
       }
 
       function labelForRetrieveStatus(status) {
