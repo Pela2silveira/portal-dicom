@@ -385,7 +385,7 @@
       }
 
       #mail-code-feedback.warning {
-        font-size: 1.02rem;
+        font-size: 1.08rem;
         font-weight: 800;
         line-height: 1.5;
       }
@@ -1328,6 +1328,15 @@
         return String(value || "").replace(/\D+/g, "").slice(0, 11);
       }
 
+      function setMailCodeFeedback(message, isWarning = false) {
+        mailCodeFeedback.classList.remove("hidden", "warning");
+        mailCodeFeedback.textContent = "";
+        mailCodeFeedback.innerHTML = message;
+        if (isWarning) {
+          mailCodeFeedback.classList.add("warning");
+        }
+      }
+
       function chipClassForStatus(status) {
         if (status === "available_local") return "chip success";
         if (status === "pending_retrieve") return "chip warn";
@@ -1918,13 +1927,11 @@
         mailCodeFeedback.classList.remove("hidden", "warning");
 
         if (!documentValue) {
-          mailCodeFeedback.textContent = "Ingrese su documento antes de solicitar el codigo por mail.";
-          mailCodeFeedback.classList.add("warning");
+          setMailCodeFeedback("Ingrese su documento antes de solicitar el codigo por mail.", true);
           return;
         }
         if (documentValue.length < 7) {
-          mailCodeFeedback.textContent = "Ingrese un documento válido para solicitar el código por mail.";
-          mailCodeFeedback.classList.add("warning");
+          setMailCodeFeedback("Ingrese un documento válido para solicitar el código por mail.", true);
           return;
         }
 
@@ -1933,12 +1940,11 @@
 
         try {
           const payload = await sendPatientMailCode(documentValue);
-          mailCodeFeedback.textContent =
-            payload.message || "Se enviará un código por mail al contacto registrado.";
+          setMailCodeFeedback(payload.message || "Se enviará un código por mail al contacto registrado.");
         } catch (error) {
-          mailCodeFeedback.textContent =
-            error?.payload?.message || "No se pudo validar el contacto del paciente. Concurra a su centro de salud más cercano para actualizar sus datos de contacto.";
-          mailCodeFeedback.classList.add("warning");
+          const fallbackMessage =
+            "No se pudo validar el contacto del paciente.<br>Concurra a su <strong>Centro de Salud</strong> más cercano para actualizar sus datos de contacto.";
+          setMailCodeFeedback(error?.payload?.message || fallbackMessage, true);
         } finally {
           mailCodeButton.disabled = false;
           mailCodeButton.textContent = "Enviar codigo";
@@ -1953,26 +1959,24 @@
         mailCodeFeedback.classList.remove("hidden", "warning");
 
         if (!documentValue) {
-          mailCodeFeedback.textContent = "Ingrese su documento antes de continuar.";
-          mailCodeFeedback.classList.add("warning");
+          setMailCodeFeedback("Ingrese su documento antes de continuar.", true);
           return;
         }
         if (documentValue.length < 7) {
-          mailCodeFeedback.textContent = "Ingrese un documento válido para continuar.";
-          mailCodeFeedback.classList.add("warning");
+          setMailCodeFeedback("Ingrese un documento válido para continuar.", true);
           return;
         }
 
         if (!mailCodeValue) {
-          mailCodeFeedback.textContent = "Ingrese el codigo para continuar.";
-          mailCodeFeedback.classList.add("warning");
+          setMailCodeFeedback("Ingrese el codigo para continuar.", true);
           return;
         }
 
-        mailCodeFeedback.textContent =
+        setMailCodeFeedback(
           "Ingreso confirmado para el documento " +
           documentValue +
-          ". Abriendo su espacio de estudios...";
+          ". Abriendo su espacio de estudios..."
+        );
 
         window.setTimeout(async () => {
           showWorkspace("patient");
