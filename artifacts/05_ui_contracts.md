@@ -67,6 +67,7 @@ Allow a patient to see only their authorized studies and open one selected study
 ### Patient Summary Layout
 
 - `fullName` should occupy twice the horizontal width of each other demographic field whenever the available width allows a multi-column layout
+- the patient summary grid should collapse fluidly as available width shrinks, including browser zoom scenarios
 
 ### Allowed Filters
 
@@ -95,6 +96,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - The patient filter row should align three elements horizontally when space allows:
   `Fecha`, `Tipo de Estudio`, and `Buscar`
 - The search button should stay visually aligned with the filter controls and should not wrap into a competing second row on desktop
+- The filter layout should reflow before controls overlap, including under browser zoom
 
 ### Allowed Sort
 
