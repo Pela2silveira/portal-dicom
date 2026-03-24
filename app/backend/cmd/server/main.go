@@ -62,6 +62,9 @@ type PatientSummary struct {
 	DocumentType   string `json:"document_type"`
 	DocumentNumber string `json:"document_number"`
 	FullName       string `json:"full_name"`
+	BirthDate      string `json:"birth_date"`
+	Sex            string `json:"sex"`
+	GenderIdentity string `json:"gender_identity"`
 }
 
 type PatientStudiesFilter struct {
@@ -709,11 +712,24 @@ func (a *App) ensurePatientRecord(ctx context.Context, documentNumber string) (P
 		ON CONFLICT (document_type, document_number) DO UPDATE SET
 			last_login_at = now(),
 			updated_at = now()
-		RETURNING id::text, document_type, document_number, COALESCE(full_name, '')
+		RETURNING
+			id::text,
+			document_type,
+			document_number,
+			COALESCE(full_name, ''),
+			COALESCE(to_char(birth_date, 'YYYY-MM-DD'), ''),
+			COALESCE(sex, '')
 	`,
 		documentNumber,
 		"Paciente "+documentNumber,
-	).Scan(&patient.ID, &patient.DocumentType, &patient.DocumentNumber, &patient.FullName)
+	).Scan(
+		&patient.ID,
+		&patient.DocumentType,
+		&patient.DocumentNumber,
+		&patient.FullName,
+		&patient.BirthDate,
+		&patient.Sex,
+	)
 	if err != nil {
 		return PatientSummary{}, fmt.Errorf("upsert patient: %w", err)
 	}

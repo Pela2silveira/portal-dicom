@@ -70,6 +70,7 @@ Key fields:
 - `full_name`
 - `birth_date`
 - `sex`
+- `gender_identity` (future extension when sourced from HIS or trusted demographic systems)
 - `last_his_sync_at`
 - `last_login_at`
 

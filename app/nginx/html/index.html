@@ -811,6 +811,18 @@
                   <span>Documento</span>
                   <strong id="patient-document-value">-</strong>
                 </div>
+                <div class="summary-item">
+                  <span>Fecha de nacimiento</span>
+                  <strong id="patient-birth-date-value">-</strong>
+                </div>
+                <div class="summary-item">
+                  <span>Sexo</span>
+                  <strong id="patient-sex-value">-</strong>
+                </div>
+                <div class="summary-item">
+                  <span>Identidad de genero</span>
+                  <strong id="patient-gender-identity-value">-</strong>
+                </div>
               </div>
               <h4>Filtros</h4>
               <div class="filter-grid">
@@ -927,6 +939,9 @@
       const patientStudyList = document.getElementById("patient-study-list");
       const patientNameValue = document.getElementById("patient-name-value");
       const patientDocumentValue = document.getElementById("patient-document-value");
+      const patientBirthDateValue = document.getElementById("patient-birth-date-value");
+      const patientSexValue = document.getElementById("patient-sex-value");
+      const patientGenderIdentityValue = document.getElementById("patient-gender-identity-value");
       const mailCodeFeedback = document.getElementById("mail-code-feedback");
       const patientValidateButton = document.querySelector('[data-flow="patient"] .action-primary');
       const physicianDni = document.getElementById("physician-dni");
@@ -992,6 +1007,9 @@
       function renderPatientStudies(payload) {
         patientNameValue.textContent = payload.patient.full_name;
         patientDocumentValue.textContent = payload.patient.document_number;
+        patientBirthDateValue.textContent = payload.patient.birth_date || "-";
+        patientSexValue.textContent = payload.patient.sex || "-";
+        patientGenderIdentityValue.textContent = payload.patient.gender_identity || "-";
 
         if (!payload.studies.length) {
           const hasFilters =

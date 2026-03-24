@@ -55,6 +55,14 @@ Allow a patient to see only their authorized studies and open one selected study
 - `studyDescription`
 - `availabilityStatus`
 
+### Patient Summary Fields
+
+- `fullName`
+- `documentNumber`
+- `birthDate`
+- `sex`
+- `genderIdentity`
+
 ### Allowed Filters
 
 - `date_from`
