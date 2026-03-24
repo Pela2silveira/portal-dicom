@@ -359,6 +359,17 @@
         background: var(--accent-strong);
       }
 
+      .action:disabled {
+        cursor: not-allowed;
+        transform: none;
+        opacity: 0.55;
+      }
+
+      .action-secondary:disabled {
+        background: rgba(0, 168, 224, 0.45);
+        color: rgba(255, 255, 255, 0.92);
+      }
+
       .note {
         border-radius: 0;
         padding: 14px 16px;
@@ -1025,7 +1036,7 @@
                   <input id="patient-mail-code" name="patient-mail-code" type="text" inputmode="numeric" placeholder="Ingrese el codigo recibido por mail">
               </div>
 
-              <button class="action action-primary" type="button">Continuar</button>
+              <button class="action action-secondary" id="patient-continue" type="button" disabled>Continuar</button>
 
               <div class="note note-accent hidden" id="mail-code-feedback"></div>
             </section>
@@ -1267,7 +1278,7 @@
       const patientSexValue = document.getElementById("patient-sex-value");
       const patientGenderIdentityValue = document.getElementById("patient-gender-identity-value");
       const mailCodeFeedback = document.getElementById("mail-code-feedback");
-      const patientValidateButton = document.querySelector('[data-flow="patient"] .action-primary');
+      const patientValidateButton = document.getElementById("patient-continue");
       const physicianDni = document.getElementById("physician-dni");
       const physicianPassword = document.getElementById("physician-password");
       const physicianSearchPatient = document.getElementById("physician-search-patient");
@@ -1282,6 +1293,7 @@
       const resetButtons = document.querySelectorAll("[data-reset]");
       let activePatientDocument = "";
       let activePhysicianUsername = "";
+      let patientMailCodeReady = false;
       const patientDateFilter = (() => {
         const now = new Date();
         return {
@@ -1335,6 +1347,11 @@
         if (isWarning) {
           mailCodeFeedback.classList.add("warning");
         }
+      }
+
+      function syncPatientContinueState() {
+        const hasCode = patientMailCode.value.trim() !== "";
+        patientValidateButton.disabled = !(patientMailCodeReady && hasCode);
       }
 
       function chipClassForStatus(status) {
@@ -1940,14 +1957,17 @@
 
         try {
           const payload = await sendPatientMailCode(documentValue);
+          patientMailCodeReady = true;
           setMailCodeFeedback(payload.message || "Se enviará un código por mail al contacto registrado.");
         } catch (error) {
+          patientMailCodeReady = false;
           const fallbackMessage =
             "No se pudo validar el contacto del paciente.<br>Concurra a su <strong>Centro de Salud</strong> más cercano para actualizar sus datos de contacto.";
           setMailCodeFeedback(error?.payload?.message || fallbackMessage, true);
         } finally {
           mailCodeButton.disabled = false;
           mailCodeButton.textContent = "Enviar codigo";
+          syncPatientContinueState();
         }
       });
 
@@ -2029,7 +2049,11 @@
       applyPatientPreset("month");
       patientDocument.addEventListener("input", () => {
         patientDocument.value = normalizePatientDocumentInput(patientDocument.value);
+        patientMailCodeReady = false;
+        syncPatientContinueState();
       });
+      patientMailCode.addEventListener("input", syncPatientContinueState);
+      syncPatientContinueState();
     </script>
   </body>
 </html>
