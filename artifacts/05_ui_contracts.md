@@ -74,6 +74,7 @@ Allow a patient to see only their authorized studies and open one selected study
   behavior: a calendar range picker inside an inline dropdown allows first click = start date and second click = end date, with the selected interval highlighted
   layout: the date preset selector and range dropdown should sit horizontally within the shared date filter block when space allows
   visual: the shared date filter block should use a transparent background with a thin outline, while the calendar popup remains contained relative to the range control
+  interaction: the calendar dropdown should close automatically when the user clicks outside the date filter block
 - `modality`
   values: `all` or one enumerated public-facing modality at a time, shown to the patient with plain-language labels in Spanish
   visual: the modality selector should use the same transparent grouped container language as the date filter block
