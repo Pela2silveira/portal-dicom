@@ -41,10 +41,9 @@ Allow a patient to see only their authorized studies and open one selected study
 
 ### Screen Model
 
-- Patient summary header
+- Patient data summary section
 - Authorized study list
 - Simple filters
-- Context panels that explain availability and leave visible room for future patient-facing capabilities
 - Per-study actions: `Recuperar estudio` or `Ver estudio`
 - Empty state message when the document has no matching studies
 

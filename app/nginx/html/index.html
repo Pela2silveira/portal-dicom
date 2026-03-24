@@ -503,6 +503,36 @@
         gap: 12px;
       }
 
+      .summary-grid {
+        display: grid;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+
+      .summary-item {
+        border: 1px solid var(--line);
+        background: var(--surface-soft);
+        padding: 14px 16px;
+      }
+
+      .summary-item span,
+      .summary-item strong {
+        display: block;
+      }
+
+      .summary-item span {
+        color: var(--muted);
+        font-size: 0.82rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 4px;
+      }
+
+      .summary-item strong {
+        color: var(--ink);
+        font-size: 1rem;
+      }
+
       .info-stack {
         display: grid;
         gap: 12px;
@@ -554,6 +584,10 @@
 
         .filter-grid {
           grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
+        .summary-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
         }
 
         .meta-grid {
@@ -726,32 +760,29 @@
         </section>
       </main>
 
-      <footer class="site-footer">
-        <div class="site-footer-copy">
-          <strong>Portal de Imágenes</strong> integra acceso, consulta y visualizacion de estudios por imagen desde un unico portal.
-          <div class="site-footer-links">
-            <a href="https://salud.neuquen.gob.ar/" target="_blank" rel="noopener noreferrer">Salud Neuquen</a>
-            <a href="https://app.andes.gob.ar/auth/login" target="_blank" rel="noopener noreferrer">ANDES</a>
-          </div>
-        </div>
-        <a class="footer-logo" href="/" aria-label="ANDES">
-          <img src="/portal-assets/andes-logo-wide.svg" alt="ANDES">
-        </a>
-      </footer>
-
       <main class="workspace hidden" id="patient-workspace">
         <section class="panel">
           <div class="workspace-header">
             <div>
-              <p class="eyebrow">Superficie Paciente</p>
-              <h3>Sus estudios autorizados</h3>
+              <p class="eyebrow">Paciente</p>
+              <h3>Sus estudios</h3>
             </div>
             <button class="action action-secondary" type="button" data-reset>Salir</button>
           </div>
           <div class="workspace-grid">
             <section class="workspace-card">
-              <h4>Contexto del paciente<span id="patient-summary">Sin paciente cargado</span></h4>
-              <p class="section-copy">Use este panel para revisar el rango de fechas consultado, limitar modalidad y volver a cargar la lista visible.</p>
+              <h4>Datos del paciente</h4>
+              <div class="summary-grid">
+                <div class="summary-item">
+                  <span>Paciente</span>
+                  <strong id="patient-name-value">Sin paciente cargado</strong>
+                </div>
+                <div class="summary-item">
+                  <span>Documento</span>
+                  <strong id="patient-document-value">-</strong>
+                </div>
+              </div>
+              <h4>Filtros</h4>
               <div class="filter-grid">
                 <div class="field-group">
                   <label for="patient-filter-from">Desde</label>
@@ -769,20 +800,9 @@
               <div class="inline-actions">
                 <button class="action action-secondary" id="patient-apply-filters" type="button">Actualizar lista</button>
               </div>
-              <div class="info-stack">
-                <div class="info-panel">
-                  <strong>Lo que ve en esta pantalla</strong>
-                  <span>Solo se muestran estudios asociados al documento ingresado y su estado de disponibilidad local.</span>
-                </div>
-                <div class="info-panel">
-                  <strong>Proximas incorporaciones</strong>
-                  <span>Resumen clinico, estudios destacados, acceso por episodio y avisos de disponibilidad.</span>
-                </div>
-              </div>
             </section>
             <section class="workspace-card">
-              <h4>Lista de estudios</h4>
-              <div class="workspace-note">Cada estudio muestra su disponibilidad actual. Cuando el estudio ya esta en la cache local, el portal habilita la apertura directa en el visor.</div>
+              <h4>Estudios</h4>
               <div class="study-list" id="patient-study-list">
                 <div class="empty-state">Ingrese por el flujo paciente para cargar estudios desde la API del portal.</div>
               </div>
@@ -846,6 +866,19 @@
           </div>
         </section>
       </main>
+
+      <footer class="site-footer">
+        <div class="site-footer-copy">
+          <strong>Portal de Imágenes</strong> integra acceso, consulta y visualizacion de estudios por imagen desde un unico portal.
+          <div class="site-footer-links">
+            <a href="https://salud.neuquen.gob.ar/" target="_blank" rel="noopener noreferrer">Salud Neuquen</a>
+            <a href="https://app.andes.gob.ar/auth/login" target="_blank" rel="noopener noreferrer">ANDES</a>
+          </div>
+        </div>
+        <a class="footer-logo" href="/" aria-label="ANDES">
+          <img src="/portal-assets/andes-logo-wide.svg" alt="ANDES">
+        </a>
+      </footer>
     </div>
 
     <script>
@@ -862,7 +895,8 @@
       const patientFilterModality = document.getElementById("patient-filter-modality");
       const patientApplyFiltersButton = document.getElementById("patient-apply-filters");
       const patientStudyList = document.getElementById("patient-study-list");
-      const patientSummary = document.getElementById("patient-summary");
+      const patientNameValue = document.getElementById("patient-name-value");
+      const patientDocumentValue = document.getElementById("patient-document-value");
       const mailCodeFeedback = document.getElementById("mail-code-feedback");
       const patientValidateButton = document.querySelector('[data-flow="patient"] .action-primary');
       const physicianDni = document.getElementById("physician-dni");
@@ -926,8 +960,8 @@
       }
 
       function renderPatientStudies(payload) {
-        patientSummary.textContent =
-          payload.patient.full_name + " · DNI " + payload.patient.document_number;
+        patientNameValue.textContent = payload.patient.full_name;
+        patientDocumentValue.textContent = payload.patient.document_number;
 
         if (!payload.studies.length) {
           const hasFilters =
