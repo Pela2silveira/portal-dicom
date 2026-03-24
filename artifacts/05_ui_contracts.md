@@ -81,6 +81,12 @@ Allow a patient to see only their authorized studies and open one selected study
   option format: `Nombre descriptivo (SIGLA)`
 - free text is out of scope for the first patient surface
 
+### Patient Filter Layout
+
+- The patient filter row should align three elements horizontally when space allows:
+  `Fecha`, `Tipo de Estudio`, and `Buscar`
+- The search button should stay visually aligned with the filter controls and should not wrap into a competing second row on desktop
+
 ### Allowed Sort
 
 - default sort: newest `studyDate` first
