@@ -1372,7 +1372,7 @@
 
         if (patientDateFilter.from) {
           patientDateSummary.textContent =
-            "Inicio seleccionado: " + formatDateLabel(patientDateFilter.from) + ". Seleccione la fecha de fin.";
+            "Fecha seleccionada: " + formatDateLabel(patientDateFilter.from) + ".";
           return;
         }
 
@@ -1625,7 +1625,11 @@
 
         const params = new URLSearchParams({ document: documentNumber });
         if (patientDateFilter.from) params.set("date_from", patientDateFilter.from);
-        if (patientDateFilter.to) params.set("date_to", patientDateFilter.to);
+        if (patientDateFilter.to) {
+          params.set("date_to", patientDateFilter.to);
+        } else if (patientDateFilter.from) {
+          params.set("date_to", patientDateFilter.from);
+        }
         if (patientFilterModality.value) params.set("modality", patientFilterModality.value);
 
         patientStudyList.innerHTML =
