@@ -1284,7 +1284,7 @@ func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient Pati
 		"node_id":         node.ID,
 	})
 
-	remoteStudies, fullName, err := a.fetchPatientStudiesFromQIDO(ctx, node, documentNumber)
+	remoteStudies, _, err := a.fetchPatientStudiesFromQIDO(ctx, node, documentNumber)
 	if err != nil {
 		return patient, err
 	}
