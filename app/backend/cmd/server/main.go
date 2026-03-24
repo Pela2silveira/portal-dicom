@@ -53,6 +53,7 @@ type PatientIdentity struct {
 	BirthDate          string
 	Sex                string
 	GenderIdentity     string
+	Email              string
 	AlternateIDs       []PatientAlternateIdentifier
 	SourceSystem       string
 	LastSynchronizedAt time.Time
@@ -66,6 +67,7 @@ type PatientAlternateIdentifier struct {
 }
 
 type MongoPacienteDocument struct {
+	ID              string                `bson:"_id"`
 	Documento       string    `bson:"documento"`
 	Nombre          string    `bson:"nombre"`
 	Apellido        string    `bson:"apellido"`
@@ -74,6 +76,13 @@ type MongoPacienteDocument struct {
 	Sexo            string    `bson:"sexo"`
 	Genero          string    `bson:"genero"`
 	FechaNacimiento time.Time `bson:"fechaNacimiento"`
+	Contacto        []MongoPacienteContacto `bson:"contacto"`
+}
+
+type MongoPacienteContacto struct {
+	Activo bool   `bson:"activo"`
+	Tipo   string `bson:"tipo"`
+	Valor  string `bson:"valor"`
 }
 
 type LocalSeedPatientIdentitySource struct{}
@@ -136,11 +145,41 @@ func mongoPacienteToPatientIdentity(documentNumber string, doc MongoPacienteDocu
 		identity.BirthDate = doc.FechaNacimiento.UTC().Format("2006-01-02")
 	}
 
+	for _, contacto := range doc.Contacto {
+		if !contacto.Activo {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(contacto.Tipo), "email") {
+			identity.Email = strings.TrimSpace(contacto.Valor)
+			if identity.Email != "" {
+				break
+			}
+		}
+	}
+
 	if alias := strings.TrimSpace(doc.Alias); alias != "" {
 		identity.AlternateIDs = append(identity.AlternateIDs, PatientAlternateIdentifier{
 			SourceSystem: "his_mongo_direct",
 			Type:         "alias",
 			Value:        alias,
+			IsPrimary:    false,
+		})
+	}
+
+	if mongoID := strings.TrimSpace(doc.ID); mongoID != "" {
+		identity.AlternateIDs = append(identity.AlternateIDs, PatientAlternateIdentifier{
+			SourceSystem: "his_mongo_direct",
+			Type:         "mongo_object_id",
+			Value:        mongoID,
+			IsPrimary:    false,
+		})
+	}
+
+	if identity.Email != "" {
+		identity.AlternateIDs = append(identity.AlternateIDs, PatientAlternateIdentifier{
+			SourceSystem: "his_mongo_direct",
+			Type:         "email",
+			Value:        identity.Email,
 			IsPrimary:    false,
 		})
 	}

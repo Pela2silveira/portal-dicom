@@ -64,7 +64,10 @@ Notes:
 - A temporary backend-only `his_mongo_direct` provider may coexist as a transitional read-only source.
 - Provider selection must stay behind a stable backend abstraction so the future REST provider can replace MongoDB access without changing portal-facing contracts.
 - The current backend baseline already routes patient identity resolution through a provider abstraction before writing normalized values into relational tables.
-- The first Mongo patient document baseline currently maps fields such as `documento`, `apellido`, `nombre`, `alias`, `sexo`, `genero`, and `fechaNacimiento` into the normalized patient identity abstraction.
+- The first Mongo patient document baseline currently maps fields such as `_id`, `documento`, `apellido`, `nombre`, `alias`, `sexo`, `genero`, and `fechaNacimiento` into the normalized patient identity abstraction.
+- From the nested `contacto` array, only active entries with `tipo = email` are currently considered, and only the first active email is mapped.
+- For downstream PACS searches, the candidate patient lookup keys sourced from Mongo are `documento` and the string value of `_id`.
+- The expected environment baseline for the temporary adapter is `HIS_MONGO_URI`, `HIS_MONGO_DATABASE`, `HIS_MONGO_COLLECTION`, `HIS_MONGO_CONNECT_TIMEOUT_MS`, and `HIS_MONGO_QUERY_TIMEOUT_MS`.
 
 ## Patient Identity And Access Cache
 

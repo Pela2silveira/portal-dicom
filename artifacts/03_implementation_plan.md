@@ -285,6 +285,7 @@
 - **Milestone 5 (dependiente del entorno)**: requiere conectividad DIMSE real si se quiere validar `C-MOVE` en vez de `C-GET`.
 - **Milestone 6 (parcialmente bloqueado)**: requiere definir estrategia de identificador paciente (`PatientID == DNI` vs configurable/HIS).
 - **Desbloqueo táctico aceptado**: hasta disponer de la API REST del HIS, se permite un adapter backend-only `his_mongo_direct` para lectura de identidad de paciente, siempre que sea read-only, performante y reemplazable por el provider REST futuro.
+- **Claves candidatas ya acordadas para PACS**: `documento` y string de `_id` provenientes del documento `paciente` de Mongo.
 - **Estado actual del backend**: ya existe una abstracción base `PatientIdentitySource`; el próximo paso es agregar el provider `his_mongo_direct` sin tocar handlers ni contratos externos.
 - **Milestone 8 (parcialmente bloqueado)**: requiere decidir controles mínimos para entornos no-localhost (`X-Portal-Key`, allowlist IP, o similar).
 
