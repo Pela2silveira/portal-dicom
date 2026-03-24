@@ -1374,7 +1374,7 @@
         if (patientDateFilter.from) {
           if (patientDateFilter.awaitingRangeEnd) {
             patientDateSummary.textContent =
-              "Inicio seleccionado: " + formatDateLabel(patientDateFilter.from) + ". Seleccione fecha final o haga click fuera.";
+              "Inicio: " + formatDateLabel(patientDateFilter.from);
           } else {
             patientDateSummary.textContent =
               "Fecha seleccionada: " + formatDateLabel(patientDateFilter.from) + ".";
