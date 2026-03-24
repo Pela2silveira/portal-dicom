@@ -67,7 +67,8 @@ Notes:
 - The first Mongo patient document baseline currently maps fields such as `_id`, `documento`, `apellido`, `nombre`, `alias`, `sexo`, `genero`, and `fechaNacimiento` into the normalized patient identity abstraction.
 - From the nested `contacto` array, only active entries with `tipo = email` are currently considered, and only the first active email is mapped.
 - For downstream PACS searches, the candidate patient lookup keys sourced from Mongo are `documento` and the string value of `_id`.
-- The expected environment baseline for the temporary adapter is `HIS_MONGO_URI`, `HIS_MONGO_DATABASE`, `HIS_MONGO_COLLECTION`, `HIS_MONGO_CONNECT_TIMEOUT_MS`, and `HIS_MONGO_QUERY_TIMEOUT_MS`.
+- The expected environment baseline for the temporary adapter is `HIS_MONGO_URI`, `HIS_MONGO_DATABASE`, `HIS_MONGO_CONNECT_TIMEOUT_MS`, and `HIS_MONGO_QUERY_TIMEOUT_MS`.
+- The first collection is intentionally hardcoded as `paciente` inside the adapter so future collections can be added with explicit contracts instead of expanding generic configuration prematurely.
 
 ## Patient Identity And Access Cache
 
