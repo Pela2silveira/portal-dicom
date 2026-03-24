@@ -69,7 +69,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - `period`
   values: `today`, `week`, `month`, `year`, or empty for all dates
 - `modality`
-  values: `all` or one enumerated modality at a time, shown to the patient with plain-language labels in Spanish
+  values: `all` or one enumerated public-facing modality at a time, shown to the patient with plain-language labels in Spanish
 - free text is out of scope for the first patient surface
 
 ### Allowed Sort
