@@ -15,6 +15,7 @@
 - [Ready] **Landing + portal surfaces**: patient/professional mock flows route to portal-owned pages first; responsive requirement captured.
 - [Ready] **Patient list contract**: `GET /api/patient/studies?document=<dni>` returns `200` with `studies: []` if none; “Actualizar lista” semantics defined.
 - [Ready] **Filtered first patient load**: if patient cache is empty, `GET /api/patient/studies` still performs the first remote sync even when the UI sends date or modality filters by default.
+- [Ready] **Config-driven first patient sync horizon**: the initial remote patient sync is controlled by `patient.initial_sync_period` in `config.json` (default `current_month`).
 - [Ready] **Manual retrieve contract**: `POST /api/patient/retrieve`, `POST /api/physician/retrieve`, job persistence and state transitions exist (queued→running→done/failed).
 - [Ready] **Viewer handoff**: portal opens `GET /ohif/viewer?StudyInstanceUIDs=<uid>` in a new tab; Visualizar enabled only when local cache is ready.
 - [Ready] **OHIF root containment**: `GET /ohif/` redirects to landing and patient/professional flows enter OHIF only through study-specific viewer URLs.

@@ -289,6 +289,7 @@
 - **Estado actual del backend**: `PatientIdentitySource` ya soporta `his_mongo_direct`, usa la colección `paciente` y persiste resoluciones exitosas en Postgres.
 - **Estado actual del acceso paciente**: `Enviar código` ya prevalida existencia de paciente y mail activo antes del futuro envío real del correo.
 - **Compatibilidad de schema dev**: bases creadas con la migración inicial requieren una migración adicional para `patients.gender_identity`.
+- **Sync inicial paciente configurable**: el primer QIDO del flujo paciente usa `patient.initial_sync_period` desde `config.json` y no depende del preset visual del frontend.
 - **Milestone 8 (parcialmente bloqueado)**: requiere decidir controles mínimos para entornos no-localhost (`X-Portal-Key`, allowlist IP, o similar).
 
 ---
