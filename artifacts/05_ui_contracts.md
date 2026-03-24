@@ -78,6 +78,7 @@ Allow a patient to see only their authorized studies and open one selected study
   values: `all` or one enumerated public-facing modality at a time, shown to the patient with plain-language labels in Spanish
   visual: the modality selector should use the same transparent grouped container language as the date filter block
   label: `Tipo de Estudio`
+  option format: `Nombre descriptivo (SIGLA)`
 - free text is out of scope for the first patient surface
 
 ### Allowed Sort
