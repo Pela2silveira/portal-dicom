@@ -68,9 +68,9 @@ Allow a patient to see only their authorized studies and open one selected study
 
 - `fullName`
 - `documentNumber`
-- `birthDate`
+- `birthDate` (label corto visible: `F. nacimiento`)
 - `sex`
-- `genderIdentity`
+- `genderIdentity` (label corto visible: `Genero`)
 
 ### Patient Summary Layout
 
