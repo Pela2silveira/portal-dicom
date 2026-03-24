@@ -47,7 +47,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - OHIF is a viewer surface, not the primary search or access surface.
 - Patient access must use a portal-owned study list filtered to authorized patient studies.
 - Patient access must not rely on the native OHIF study list.
-- The patient surface is now backed by `GET /api/patient/studies`, and its initial load performs `QIDO-RS /studies?PatientID=<dni>` against the single configured PACS node, persisting the synchronized rows in Postgres.
+- The patient surface is now backed by `GET /api/patient/studies`; initial access performs `QIDO-RS /studies?PatientID=<dni>` against the single configured PACS node, and filtered first access must also trigger that sync if the patient cache is still empty.
 - The patient surface now exposes a manual `Retrieve` action backed by `POST /api/patient/retrieve`.
 - The current patient retrieve implementation uses Orthanc REST to `PUT /modalities/{id}` and `POST /modalities/{id}/get`, polling Orthanc until the study becomes local.
 - The current viewer handoff must open OHIF with a specific `StudyInstanceUID` instead of `/ohif/` root, so patient access does not land on the general study list after retrieve.
