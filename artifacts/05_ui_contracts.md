@@ -155,7 +155,8 @@ Allow a patient to see only their authorized studies and open one selected study
 - `POST /api/patient/retrieve`
   - receives `document_number` + `study_instance_uid`
   - enqueues a background retrieve job that triggers PACS-to-PACS retrieve through Orthanc REST
-  - the patient list refreshes while `retrieve_status` stays `queued|running`
+  - returns `job_id` and the UI follows completion through `GET /api/retrieve/jobs/:id/events` (SSE)
+  - the patient list should refresh on retrieve terminal events (`done|failed`), not through unbounded list polling
   - updates local availability before the patient can open OHIF
 - `GET /api/patient/studies/:studyInstanceUID/access`
   - returns whether the session can open the study and the viewer route or token material needed by the final design
@@ -275,7 +276,9 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - `POST /api/physician/retrieve`
   - current first retrieve contract from the physician panel
   - receives `username` + `study_instance_uid`
-  - triggers PACS-to-PACS retrieve through Orthanc REST
+  - triggers PACS-to-PACS retrieve through Orthanc REST and returns `job_id`
+- `GET /api/retrieve/jobs/:id/events`
+  - SSE stream for retrieve lifecycle events (`running`, `done`, `failed`)
 - `POST /api/retrieve/jobs`
   - future generic retrieve job contract for selected `studyInstanceUID`
 - `GET /api/retrieve/jobs/:id`

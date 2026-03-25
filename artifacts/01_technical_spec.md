@@ -372,6 +372,7 @@ Problema: Orthanc puede recibir instancias progresivamente.
 ### 9.1.1 Contratos ya materializados en el portal
 - `GET /api/patient/studies?document=<dni>`
 - `POST /api/patient/retrieve`
+- `GET /api/retrieve/jobs/:id/events` (SSE)
 - `GET /api/physician/results?username=<dni>&...filters`
 - `POST /api/physician/retrieve`
 - `GET /api/config`

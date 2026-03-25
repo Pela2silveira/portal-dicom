@@ -1371,8 +1371,8 @@
       let activePatientSearchRequestID = "";
       let patientMailCodeReady = false;
       let patientSyncPollHandle = null;
-      let patientRetrievePollHandle = null;
-      let physicianRetrievePollHandle = null;
+      let patientRetrieveEventSource = null;
+      let physicianRetrieveEventSource = null;
       const patientDateFilter = (() => {
         const now = new Date();
         return {
@@ -1447,16 +1447,16 @@
       }
 
       function clearPatientRetrievePoll() {
-        if (patientRetrievePollHandle) {
-          window.clearTimeout(patientRetrievePollHandle);
-          patientRetrievePollHandle = null;
+        if (patientRetrieveEventSource) {
+          patientRetrieveEventSource.close();
+          patientRetrieveEventSource = null;
         }
       }
 
       function clearPhysicianRetrievePoll() {
-        if (physicianRetrievePollHandle) {
-          window.clearTimeout(physicianRetrievePollHandle);
-          physicianRetrievePollHandle = null;
+        if (physicianRetrieveEventSource) {
+          physicianRetrieveEventSource.close();
+          physicianRetrieveEventSource = null;
         }
       }
 
@@ -1658,14 +1658,6 @@
         patientSexValue.textContent = payload.patient.sex || "-";
         patientGenderIdentityValue.textContent = payload.patient.gender_identity || "-";
 
-        const activeRetrieves = payload.studies.some(study => study.retrieve_status === "running" || study.retrieve_status === "queued");
-        clearPatientRetrievePoll();
-        if (activeRetrieves && activePatientDocument) {
-          patientRetrievePollHandle = window.setTimeout(() => {
-            loadPatientStudies(activePatientDocument).catch(() => {});
-          }, 2000);
-        }
-
         if (!payload.studies.length) {
           const hasFilters =
             Boolean(payload.filters?.date_from) ||
@@ -1779,14 +1771,6 @@
       function renderPhysicianResults(payload) {
         physicianSummary.textContent =
           payload.physician.full_name + " · DNI " + payload.physician.dni;
-
-        const activeRetrieves = payload.results.some(result => result.retrieve_status === "running" || result.retrieve_status === "queued");
-        clearPhysicianRetrievePoll();
-        if (activeRetrieves && activePhysicianUsername) {
-          physicianRetrievePollHandle = window.setTimeout(() => {
-            loadPhysicianResults(activePhysicianUsername).catch(() => {});
-          }, 2000);
-        }
 
         if (!payload.results.length) {
           physicianResultList.innerHTML =
@@ -2003,6 +1987,46 @@
         return response.json();
       }
 
+      function watchPatientRetrieveJob(jobID) {
+        clearPatientRetrievePoll();
+        patientRetrieveEventSource = new EventSource("/api/retrieve/jobs/" + encodeURIComponent(jobID) + "/events");
+        patientRetrieveEventSource.addEventListener("status", async event => {
+          const payload = JSON.parse(event.data);
+          if (payload.status === "done" || payload.status === "failed") {
+            clearPatientRetrievePoll();
+            if (activePatientDocument) {
+              await loadPatientStudies(activePatientDocument);
+            }
+          }
+        });
+        patientRetrieveEventSource.onerror = async () => {
+          clearPatientRetrievePoll();
+          if (activePatientDocument) {
+            await loadPatientStudies(activePatientDocument);
+          }
+        };
+      }
+
+      function watchPhysicianRetrieveJob(jobID) {
+        clearPhysicianRetrievePoll();
+        physicianRetrieveEventSource = new EventSource("/api/retrieve/jobs/" + encodeURIComponent(jobID) + "/events");
+        physicianRetrieveEventSource.addEventListener("status", async event => {
+          const payload = JSON.parse(event.data);
+          if (payload.status === "done" || payload.status === "failed") {
+            clearPhysicianRetrievePoll();
+            if (activePhysicianUsername) {
+              await loadPhysicianResults(activePhysicianUsername);
+            }
+          }
+        });
+        physicianRetrieveEventSource.onerror = async () => {
+          clearPhysicianRetrievePoll();
+          if (activePhysicianUsername) {
+            await loadPhysicianResults(activePhysicianUsername);
+          }
+        };
+      }
+
       roleButtons.forEach(button => {
         button.addEventListener("click", () => activateRole(button.dataset.role));
       });
@@ -2098,8 +2122,11 @@
         button.textContent = "Recuperando...";
 
         try {
-          await triggerPatientRetrieve(studyInstanceUID);
+          const payload = await triggerPatientRetrieve(studyInstanceUID);
           await loadPatientStudies(activePatientDocument);
+          if (payload?.job_id) {
+            watchPatientRetrieveJob(payload.job_id);
+          }
         } catch (error) {
           button.disabled = false;
           button.textContent = "Recuperar";
@@ -2121,8 +2148,11 @@
         button.textContent = "Recuperando...";
 
         try {
-          await triggerPhysicianRetrieve(studyInstanceUID);
+          const payload = await triggerPhysicianRetrieve(studyInstanceUID);
           await loadPhysicianResults(activePhysicianUsername);
+          if (payload?.job_id) {
+            watchPhysicianRetrieveJob(payload.job_id);
+          }
         } catch (error) {
           button.disabled = false;
           button.textContent = "Recuperar";

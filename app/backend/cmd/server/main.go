@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -48,6 +49,15 @@ type App struct {
 	identitySource PatientIdentitySource
 	patientSearchQueue chan string
 	retrieveQueue chan string
+	retrieveEventMu sync.Mutex
+	retrieveEventSubscribers map[string]map[chan RetrieveJobEvent]struct{}
+}
+
+type RetrieveJobEvent struct {
+	JobID            string `json:"job_id"`
+	StudyInstanceUID string `json:"study_instance_uid"`
+	Status           string `json:"status"`
+	Error            string `json:"error,omitempty"`
 }
 
 var ErrPatientIdentityNotFound = errors.New("patient identity not found")
@@ -527,6 +537,7 @@ func main() {
 		identitySource: buildPatientIdentitySource(*externalConfig),
 		patientSearchQueue: make(chan string, 32),
 		retrieveQueue:      make(chan string, 32),
+		retrieveEventSubscribers: make(map[string]map[chan RetrieveJobEvent]struct{}),
 	}
 
 	app.startPatientSearchWorker()
@@ -539,6 +550,7 @@ func main() {
 	mux.HandleFunc("/api/patient/search", app.handlePatientSearch)
 	mux.HandleFunc("/api/patient/studies", app.handlePatientStudies)
 	mux.HandleFunc("/api/patient/retrieve", app.handlePatientRetrieve)
+	mux.HandleFunc("/api/retrieve/jobs/", app.handleRetrieveJobEvents)
 	mux.HandleFunc("/api/physician/results", app.handlePhysicianResults)
 	mux.HandleFunc("/api/physician/retrieve", app.handlePhysicianRetrieve)
 
@@ -1082,6 +1094,73 @@ func patientSyncMessage(status string) string {
 		return "No se pudo completar la búsqueda remota."
 	default:
 		return ""
+	}
+}
+
+func (a *App) handleRetrieveJobEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	const prefix = "/api/retrieve/jobs/"
+	if !strings.HasPrefix(r.URL.Path, prefix) || !strings.HasSuffix(r.URL.Path, "/events") {
+		http.NotFound(w, r)
+		return
+	}
+
+	jobID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, prefix), "/events")
+	jobID = strings.Trim(jobID, "/")
+	if jobID == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	initialEvent, err := a.getRetrieveJobEvent(r.Context(), jobID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, "failed to load retrieve job", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	if err := writeRetrieveSSEEvent(w, "status", initialEvent); err != nil {
+		return
+	}
+	flusher.Flush()
+	if initialEvent.Status == "done" || initialEvent.Status == "failed" {
+		return
+	}
+
+	subscriber := a.subscribeRetrieveJob(jobID)
+	defer a.unsubscribeRetrieveJob(jobID, subscriber)
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case event := <-subscriber:
+			if err := writeRetrieveSSEEvent(w, "status", event); err != nil {
+				return
+			}
+			flusher.Flush()
+			if event.Status == "done" || event.Status == "failed" {
+				return
+			}
+		}
 	}
 }
 
@@ -1959,6 +2038,70 @@ func (a *App) queuePhysicianRetrieve(ctx context.Context, physician PhysicianSum
 	}, nil
 }
 
+func (a *App) getRetrieveJobEvent(ctx context.Context, jobID string) (RetrieveJobEvent, error) {
+	var event RetrieveJobEvent
+	err := a.db.QueryRowContext(ctx, `
+		SELECT id::text, study_instance_uid, status, COALESCE(error, '')
+		FROM retrieve_jobs
+		WHERE id = $1::uuid
+	`, jobID).Scan(&event.JobID, &event.StudyInstanceUID, &event.Status, &event.Error)
+	return event, err
+}
+
+func (a *App) subscribeRetrieveJob(jobID string) chan RetrieveJobEvent {
+	a.retrieveEventMu.Lock()
+	defer a.retrieveEventMu.Unlock()
+
+	ch := make(chan RetrieveJobEvent, 4)
+	if a.retrieveEventSubscribers[jobID] == nil {
+		a.retrieveEventSubscribers[jobID] = make(map[chan RetrieveJobEvent]struct{})
+	}
+	a.retrieveEventSubscribers[jobID][ch] = struct{}{}
+	return ch
+}
+
+func (a *App) unsubscribeRetrieveJob(jobID string, ch chan RetrieveJobEvent) {
+	a.retrieveEventMu.Lock()
+	defer a.retrieveEventMu.Unlock()
+
+	subscribers := a.retrieveEventSubscribers[jobID]
+	if subscribers == nil {
+		close(ch)
+		return
+	}
+	delete(subscribers, ch)
+	if len(subscribers) == 0 {
+		delete(a.retrieveEventSubscribers, jobID)
+	}
+	close(ch)
+}
+
+func (a *App) publishRetrieveJobEvent(event RetrieveJobEvent) {
+	a.retrieveEventMu.Lock()
+	defer a.retrieveEventMu.Unlock()
+
+	for subscriber := range a.retrieveEventSubscribers[event.JobID] {
+		select {
+		case subscriber <- event:
+		default:
+		}
+	}
+}
+
+func writeRetrieveSSEEvent(w io.Writer, eventName string, event RetrieveJobEvent) error {
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "event: %s\n", eventName); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "data: %s\n\n", payload); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConfig, documentNumber string, filters PatientStudiesFilter) ([]PatientStudy, string, error) {
 	qidoStartedAt := time.Now()
 	token, err := a.fetchPACSBearerToken(ctx, node)
@@ -2350,8 +2493,15 @@ func (a *App) updateRetrieveJobStatus(ctx context.Context, jobID, status, errMsg
 		query += `, started_at = now()`
 	}
 	query += ` WHERE id = $1::uuid`
-	_, err := a.db.ExecContext(ctx, query, args...)
-	return err
+	if _, err := a.db.ExecContext(ctx, query, args...); err != nil {
+		return err
+	}
+
+	event, err := a.getRetrieveJobEvent(ctx, jobID)
+	if err == nil {
+		a.publishRetrieveJobEvent(event)
+	}
+	return nil
 }
 
 func (a *App) ensureOrthancModality(ctx context.Context, node PACSNodeConfig) error {
