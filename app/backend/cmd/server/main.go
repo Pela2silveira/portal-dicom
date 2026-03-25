@@ -917,6 +917,7 @@ type PhysicianResult struct {
 	StudyDescription string   `json:"study_description"`
 	Modalities       []string `json:"modalities"`
 	Locations        []string `json:"locations"`
+	SourceNodeID     string   `json:"source_node_id,omitempty"`
 	CacheStatus      string   `json:"cache_status"`
 	RetrieveStatus   string   `json:"retrieve_status"`
 	PartialFilter    bool     `json:"partial_filter"`
@@ -3997,7 +3998,7 @@ func (a *App) queuePhysicianRetrieve(ctx context.Context, physician PhysicianSum
 		}, nil
 	}
 
-	_, sourceNodeID, err := a.getPhysicianSourceNode(ctx, studyInstanceUID)
+	_, sourceNodeID, err := a.getPhysicianSourceNode(ctx, physician.ID, studyInstanceUID)
 	if err != nil {
 		return PhysicianRetrieveResponse{}, err
 	}
@@ -4619,9 +4620,45 @@ func (a *App) getPatientSourceNode(ctx context.Context, patientID, studyInstance
 	return PACSNodeConfig{}, "", fmt.Errorf("unknown source node id %q", source.SourceNodeID)
 }
 
-func (a *App) getPhysicianSourceNode(ctx context.Context, studyInstanceUID string) (PACSNodeConfig, string, error) {
-	var locationsJSONRaw []byte
+func (a *App) getPhysicianSourceNodeFromRecentQueries(ctx context.Context, physicianID, studyInstanceUID string) (PACSNodeConfig, string, error) {
+	var sourceNodeID string
 	err := a.db.QueryRowContext(ctx, `
+		SELECT COALESCE(result->>'source_node_id', '')
+		FROM physician_recent_queries prq
+		CROSS JOIN LATERAL jsonb_array_elements(COALESCE(prq.query_json->'results', '[]'::jsonb)) AS result
+		WHERE prq.physician_id = $1::uuid
+		  AND result->>'study_instance_uid' = $2
+		ORDER BY prq.searched_at DESC, prq.id DESC
+		LIMIT 1
+	`, physicianID, studyInstanceUID).Scan(&sourceNodeID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return PACSNodeConfig{}, "", sql.ErrNoRows
+		}
+		return PACSNodeConfig{}, "", fmt.Errorf("resolve physician source from recent queries: %w", err)
+	}
+	if strings.TrimSpace(sourceNodeID) == "" {
+		return PACSNodeConfig{}, "", sql.ErrNoRows
+	}
+
+	node, err := a.getConfiguredNode(sourceNodeID)
+	if err != nil {
+		return PACSNodeConfig{}, "", err
+	}
+	return node, sourceNodeID, nil
+}
+
+func (a *App) getPhysicianSourceNode(ctx context.Context, physicianID, studyInstanceUID string) (PACSNodeConfig, string, error) {
+	node, sourceNodeID, err := a.getPhysicianSourceNodeFromRecentQueries(ctx, physicianID, studyInstanceUID)
+	if err == nil {
+		return node, sourceNodeID, nil
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return PACSNodeConfig{}, "", err
+	}
+
+	var locationsJSONRaw []byte
+	err = a.db.QueryRowContext(ctx, `
 		SELECT locations_json
 		FROM cached_studies
 		WHERE study_instance_uid = $1
@@ -5088,6 +5125,7 @@ func (a *App) searchPhysicianResultsFromNode(ctx context.Context, physician Phys
 			StudyDescription: dicomFirstString(item, "00081030"),
 			Modalities:       dicomStringList(item, "00080061"),
 			Locations:        []string{node.Name},
+			SourceNodeID:     node.ID,
 			CacheStatus:      "not_local",
 			RetrieveStatus:   "idle",
 			PartialFilter:    false,

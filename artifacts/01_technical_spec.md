@@ -276,7 +276,8 @@ Proveer un portal operativo mínimo capaz de:
 11. El panel profesional debe exponer un selector `Origen de búsqueda` con `Cache local` y los PACS remotos actualmente online; el origen remoto elegido debe viajar como `source=<node_id>` en `GET /api/physician/results`.
 12. Cuando el profesional aplica filtros con `source=local_cache`, `GET /api/physician/results` debe filtrar sobre Orthanc local; con `source=<node_id>`, debe ejecutar QIDO-RS únicamente contra ese nodo remoto y persistir el resultado como búsqueda reciente.
 13. El backend debe rechazar las búsquedas profesionales remotas vacías sin filtros adicionales para evitar consultas amplias innecesarias.
-14. El filtro `patient_name` del profesional debe resolverse como búsqueda fuzzy por términos normalizados; no debe requerir coincidencia literal exacta.
+14. El retrieve profesional sobre resultados remotos debe resolver el `source_node_id` a partir del snapshot persistido de la búsqueda reciente para reinyectar el estudio desde el mismo PACS que devolvió el resultado.
+15. El filtro `patient_name` del profesional debe resolverse como búsqueda fuzzy por términos normalizados; no debe requerir coincidencia literal exacta.
 
 ### 5.4 Landing pública y acceso futuro
 1. El usuario accede a `/` y visualiza la landing institucional.
