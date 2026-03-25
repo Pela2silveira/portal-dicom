@@ -33,6 +33,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - QIDO result persistence must be modeled as a shared cache keyed by `study_instance_uid + source_node_id`; this entity is independent of patient/professional flows and can be reused by both.
 - The same shared cache must persist resolved ANDES enrichment fields when available so future searches can reuse them without re-querying Mongo `prestaciones`.
 - The invalidation policy for removing cache rows when studies disappear from a PACS, or when ANDES enrichment should be refreshed, remains an explicit TO-DO and is not solved in this iteration.
+- A future professional multiselect search should keep the physical cache keyed by `study_instance_uid + source_node_id`, but the logical API contract should aggregate by `StudyInstanceUID` and expose `source_node_ids[]` (plus `locations[]`) instead of relying on a single origin.
 - The patient `Enviar código` step is a backend prevalidation step: patient must exist and have an active email before the future mail delivery integration is attempted.
 - Patient auth mode must be switchable at runtime through `patient.fake_auth` in `config.json`, defaulting to `true` for current MVP/demo compatibility.
 - With `patient.fake_auth = true`, the backend still requires the patient to exist but skips real email validation/sending so demos can proceed without the mail dependency.

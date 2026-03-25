@@ -286,6 +286,7 @@ Proveer un portal operativo mínimo capaz de:
 21. Los resultados QIDO remotos deben persistirse en PostgreSQL en una cache compartida `qido_study_cache`, clave primaria `study_instance_uid + source_node_id`, con metadatos reutilizables del estudio y timestamps `first_seen_at/last_seen_at`.
 22. Paciente y profesional deben reutilizar esa cache compartida antes de volver a consultar datos ya resueltos de enriquecimiento ANDES para el mismo `StudyInstanceUID + nodo`.
 23. La invalidación o purga de entradas de `qido_study_cache` cuando un estudio deje de existir en un PACS, o cuando el enriquecimiento ANDES deba refrescarse, queda explícitamente fuera de alcance en esta iteración y documentada como TO-DO.
+24. TO-DO: cuando el panel profesional habilite multiselect de orígenes, el contrato de resultados debe agregar un array `source_node_ids[]` por `StudyInstanceUID`; `source_node_id` podrá mantenerse solo como hint de retrieve prioritario o compatibilidad transitoria.
 
 ### 5.4 Landing pública y acceso futuro
 1. El usuario accede a `/` y visualiza la landing institucional.
