@@ -21,6 +21,7 @@
 - [Ready] **Retrieve completion heuristic**: Orthanc polling with stable window + global timeout defined.
 - [Ready] **Hospital/source labeling in results**: patient and professional result cards show the configured PACS node display name (`pacs_nodes.name`) as the hospital/sede label instead of exposing only technical node identifiers.
 - [Ready] **Professional PACS health legend**: the physician results card shows `PACS en línea X/Y` from remote PACS health checks and exposes online/offline node names on hover/focus.
+- [Ready] **Professional source selector and bounded remote search**: the physician panel exposes `Cache local` plus currently online remote PACS as explicit origins; local searches run against Orthanc cache, remote searches hit only the selected PACS, and empty remote searches are rejected before broad fan-out.
 - [Ready] **Professional access exceptions by config**: `professional.license_exceptions` can authorize a bounded list of DNI/username entries bypassing both active matrícula and `habilitado == true`.
 - [Ready] **First LDAP professional login slice**: when `professional.fake_auth = false`, `POST /api/physician/login` authenticates against LDAP using `LDAP_HOST`, `LDAP_PORT`, `LDAP_OU` and direct `uid=<dni>,<LDAP_OU>` bind before applying Mongo-based authorization.
 - [Ready] **AccessionNumber diagnostic probe**: remote and local QIDO parsing now requests `AccessionNumber (00080050)`, attempts Base64 decode when plausible, and logs raw/decoded values to confirm the upstream encoding contract.

@@ -271,10 +271,12 @@ Proveer un portal operativo mínimo capaz de:
 6. La primera implementación funcional expone `GET /api/physician/results?username=<dni>` como contrato inicial del panel del profesional.
 7. El primer avance operativo expone `POST /api/physician/retrieve` para disparar `C-GET` vía Orthanc REST desde la misma grilla.
 8. La grilla del profesional debe recalcular `cacheStatus`, `retrieveStatus` y `viewer_url` a partir de `cached_studies`, `retrieve_jobs` y verificación real en Orthanc.
-9. Sin filtros, `GET /api/physician/results` debe consultar Orthanc local en vivo y devolver todos los estudios en cache para la ventana relativa configurada en `professional.initial_cache_period`.
+9. Sin filtros, `GET /api/physician/results` con `source=local_cache` debe consultar Orthanc local en vivo y devolver los estudios en cache para la ventana relativa configurada en `professional.initial_cache_period`.
 10. El card de resultados del panel profesional debe mostrar un resumen `PACS en línea X/Y` basado en los componentes `remote_pacs:*` de `/api/health`, con tooltip/hover que detalle nodos online y offline usando el nombre visible del PACS.
-11. Cuando el profesional aplica filtros, `GET /api/physician/results` debe ejecutar QIDO-RS contra el nodo remoto configurado y persistir el resultado como búsqueda reciente.
-12. El filtro `patient_name` del profesional debe resolverse como búsqueda fuzzy por términos normalizados; no debe requerir coincidencia literal exacta.
+11. El panel profesional debe exponer un selector `Origen de búsqueda` con `Cache local` y los PACS remotos actualmente online; el origen remoto elegido debe viajar como `source=<node_id>` en `GET /api/physician/results`.
+12. Cuando el profesional aplica filtros con `source=local_cache`, `GET /api/physician/results` debe filtrar sobre Orthanc local; con `source=<node_id>`, debe ejecutar QIDO-RS únicamente contra ese nodo remoto y persistir el resultado como búsqueda reciente.
+13. El backend debe rechazar las búsquedas profesionales remotas vacías sin filtros adicionales para evitar consultas amplias innecesarias.
+14. El filtro `patient_name` del profesional debe resolverse como búsqueda fuzzy por términos normalizados; no debe requerir coincidencia literal exacta.
 
 ### 5.4 Landing pública y acceso futuro
 1. El usuario accede a `/` y visualiza la landing institucional.

@@ -1528,6 +1528,14 @@
                     </select>
                   </div>
                 </div>
+                <div class="field-group-grouped field-group-grouped-single professional-filter-block-modality">
+                  <label for="physician-search-source">Origen de busqueda</label>
+                  <div class="field-group">
+                    <select id="physician-search-source">
+                      <option value="local_cache">Cache local</option>
+                    </select>
+                  </div>
+                </div>
               </div>
               <div class="filter-action professional-filter-action">
                 <button class="action action-secondary" id="physician-apply-filters" type="button">Buscar</button>
@@ -1617,6 +1625,7 @@
       const physicianCalendarPrev = document.getElementById("physician-calendar-prev");
       const physicianCalendarNext = document.getElementById("physician-calendar-next");
       const physicianSearchModality = document.getElementById("physician-search-modality");
+      const physicianSearchSource = document.getElementById("physician-search-source");
       const physicianApplyFiltersButton = document.getElementById("physician-apply-filters");
       const physicianResultList = document.getElementById("physician-result-list");
       const physicianFullNameValue = document.getElementById("physician-full-name-value");
@@ -1629,6 +1638,7 @@
       const physicianLoginButton = document.querySelector('[data-flow="physician"] .action-primary');
       const physicianNote = document.querySelector('[data-flow="physician"] .note');
       const resetButtons = document.querySelectorAll("[data-reset]");
+      const physicianLocalCacheSourceValue = "local_cache";
       let activePatientDocument = "";
       let activePhysicianUsername = "";
       let activePatientSearchRequestID = "";
@@ -1718,7 +1728,8 @@
             patient_name: physicianSearchPatient.value.trim(),
             date_from: physicianDateFilter.from || "",
             date_to: physicianDateFilter.to || "",
-            modality: physicianSearchModality.value.trim()
+            modality: physicianSearchModality.value.trim(),
+            source: physicianSearchSource.value || physicianLocalCacheSourceValue
           };
         }
 
@@ -1787,6 +1798,7 @@
             renderPhysicianCalendar();
           }
           physicianSearchModality.value = state.physician.modality || "";
+          physicianSearchSource.value = state.physician.source || physicianLocalCacheSourceValue;
           showWorkspace("physician");
           try {
             await loadPhysicianResults(state.physician.username);
@@ -2296,6 +2308,39 @@
         return items.join("\n");
       }
 
+      function upsertPhysicianSourceOptions(onlineComponents) {
+        const selectedValue = physicianSearchSource.value || physicianLocalCacheSourceValue;
+        const options = [
+          { value: physicianLocalCacheSourceValue, label: "Cache local" }
+        ];
+
+        (onlineComponents || []).forEach(component => {
+          const nodeID = String(component.name || "").replace(/^remote_pacs:/, "").trim();
+          if (!nodeID) {
+            return;
+          }
+          options.push({
+            value: nodeID,
+            label: component.display_name || nodeID
+          });
+        });
+
+        physicianSearchSource.innerHTML = options
+          .map(option => '<option value="' + escapeHTML(option.value) + '">' + escapeHTML(option.label) + '</option>')
+          .join("");
+
+        const availableValues = new Set(options.map(option => option.value));
+        physicianSearchSource.value = availableValues.has(selectedValue) ? selectedValue : physicianLocalCacheSourceValue;
+      }
+
+      function hasPhysicianQueryFilters(filters) {
+        return Boolean(filters?.patient_id) ||
+          Boolean(filters?.patient_name) ||
+          Boolean(filters?.date_from) ||
+          Boolean(filters?.date_to) ||
+          Boolean(filters?.modality);
+      }
+
       function renderPhysicianPACSHealth(components) {
         const remoteComponents = (components || []).filter(component => component.name && component.name.startsWith("remote_pacs:"));
         const total = remoteComponents.length;
@@ -2305,10 +2350,12 @@
         const offline = remoteComponents
           .filter(component => component.status !== "healthy")
           .map(component => component.display_name || component.name.replace("remote_pacs:", ""));
+        const onlineComponents = remoteComponents.filter(component => component.status === "healthy");
 
         physicianPacsHealthText.textContent = "PACS en linea " + online.length + "/" + total;
         physicianPacsOnlineList.textContent = formatPACSList(online);
         physicianPacsOfflineList.textContent = formatPACSList(offline);
+        upsertPhysicianSourceOptions(onlineComponents);
 
         let status = "ok";
         if (total === 0) {
@@ -2353,7 +2400,7 @@
 
         if (!payload.results.length) {
           physicianResultList.innerHTML =
-            hasPhysicianFilters(payload.filters)
+            hasPhysicianQueryFilters(payload.filters)
               ? '<div class="empty-state">No hay resultados para los filtros seleccionados.</div>'
               : '<div class="empty-state">No hay estudios locales en cache para el rango temporal configurado.</div>';
           return;
@@ -2504,6 +2551,7 @@
           params.set("date_to", physicianDateFilter.from);
         }
         if (physicianSearchModality.value.trim()) params.set("modality", physicianSearchModality.value.trim());
+        params.set("source", physicianSearchSource.value || physicianLocalCacheSourceValue);
 
         physicianResultList.innerHTML =
           '<div class="empty-state">Actualizando resultados del profesional...</div>';
@@ -2516,11 +2564,18 @@
         ]);
 
         if (!resultsResponse.ok) {
-          throw new Error("physician results request failed");
+          const errorPayload = await resultsResponse.json().catch(() => ({}));
+          const error = new Error(errorPayload.message || "physician results request failed");
+          error.status = resultsResponse.status;
+          error.payload = errorPayload;
+          throw error;
         }
 
         const payload = await resultsResponse.json();
         renderPhysicianPACSHealth(healthPayload.components || []);
+        if ((payload.filters?.source || physicianLocalCacheSourceValue) !== physicianSearchSource.value) {
+          physicianSearchSource.value = payload.filters?.source || physicianLocalCacheSourceValue;
+        }
         renderPhysicianResults(payload);
         savePortalWorkspaceState("physician");
       }
@@ -2875,12 +2930,24 @@
             '<div class="empty-state">Ingrese primero por el flujo profesional para aplicar filtros.</div>';
           return;
         }
+        if ((physicianSearchSource.value || physicianLocalCacheSourceValue) !== physicianLocalCacheSourceValue &&
+            !hasPhysicianQueryFilters({
+              patient_id: physicianSearchPatientID.value.trim(),
+              patient_name: physicianSearchPatient.value.trim(),
+              date_from: physicianDateFilter.from,
+              date_to: physicianDateFilter.to || physicianDateFilter.from,
+              modality: physicianSearchModality.value.trim()
+            })) {
+          physicianResultList.innerHTML =
+            '<div class="empty-state">Seleccione al menos un filtro adicional antes de consultar un PACS remoto.</div>';
+          return;
+        }
 
         try {
           await loadPhysicianResults(activePhysicianUsername);
         } catch (error) {
           physicianResultList.innerHTML =
-            '<div class="empty-state">No se pudieron cargar los resultados del profesional.</div>';
+            '<div class="empty-state">' + escapeHTML(error?.payload?.message || "No se pudieron cargar los resultados del profesional.") + '</div>';
         }
       });
 
@@ -3027,6 +3094,7 @@
       patientFilterModality.addEventListener("change", () => savePortalWorkspaceState());
       physicianSearchPatient.addEventListener("input", () => savePortalWorkspaceState());
       physicianSearchModality.addEventListener("change", () => savePortalWorkspaceState());
+      physicianSearchSource.addEventListener("change", () => savePortalWorkspaceState());
       syncPatientContinueState();
       syncPhysicianContinueState();
       renderPhysicianCalendar();

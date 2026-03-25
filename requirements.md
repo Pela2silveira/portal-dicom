@@ -64,6 +64,7 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 * **Objetivo de integración posterior:** autenticación contra **LDAP provincial** y segundo factor **MFA** para médicos.
 * **Alcance funcional futuro:** acceso a una consola propia del portal con búsqueda manual mediante filtros, estado federado por PACS remoto, disponibilidad local, estado de retrieve y apertura puntual en el visor.
 * **Resumen de salud PACS en panel profesional:** el panel profesional debe mostrar una leyenda `PACS en línea X/Y` calculada sobre los health checks remotos configurados, con detalle por hover/focus de nodos online y offline usando el nombre visible del nodo.
+* **Selector de origen en búsqueda profesional:** el panel profesional debe ofrecer un selector de origen con `Cache local` y los PACS remotos actualmente online para que la búsqueda remota consulte solo un nodo explícitamente elegido y no dispare consultas federadas innecesarias.
 * **Feature flag operativa de auth profesional:** el backend debe permitir alternar rápidamente entre el modo transitorio actual y el modo institucional futuro mediante `professional.fake_auth` en `config.json`, con default `true`.
 * **Ventana inicial del panel profesional:** el backend debe permitir definir en `config.json` el período relativo usado para la carga inicial del profesional sin filtros mediante `professional.initial_cache_period`.
 * **Rate limit de descarga profesional:** el backend debe permitir definir en `config.json` un máximo semanal de descargas completas `ZIP DICOM` por profesional mediante `professional.weekly_download_limit`, con valor operativo inicial de `100`.
@@ -73,6 +74,7 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 * **Restricción funcional actual:** salvo los DNI/username incluidos en `professional.license_exceptions`, sólo se permite el ingreso si el profesional existe, `habilitado == true`, `profesionalMatriculado == true` y tiene una matrícula profesional en Mongo.
 * **Criterio de matrícula profesional:** el backend debe leer `formacionGrado[].matriculacion[]` y tomar la primera entrada con `baja.fecha == null`, usando `matriculaNumero` como número visible.
 * **Demográficos visibles del profesional:** `nombre y apellido`, `DNI` y `número de matrícula`.
+* **Semántica de búsqueda profesional actual:** sin filtros adicionales, `source=local_cache` debe consultar Orthanc local en vivo dentro de la ventana configurada; con filtros, `source=local_cache` debe filtrar sobre la cache local y `source=<node_id>` debe consultar únicamente ese PACS remoto. El flujo paciente sigue siendo multi-PACS porque ya acota por identidad del paciente.
 * **Reconexión del provider Mongo:** cuando `his.provider = his_mongo_direct` y la conexión inicial falle, el backend debe reintentar la conexión al menos cada 1 minuto sin requerir reinicio del contenedor.
 * **Salud continua del provider Mongo:** si la conexión Mongo se pierde después de un arranque exitoso, `/api/health` debe degradarse también durante la caída y recuperarse cuando el provider vuelva a responder.
 

@@ -868,6 +868,10 @@ type PhysicianLoginResponse struct {
 	Physician PhysicianSummary `json:"physician,omitempty"`
 }
 
+type PhysicianResultsErrorResponse struct {
+	Message string `json:"message"`
+}
+
 type PhysicianRetrieveRequest struct {
 	Username         string `json:"username"`
 	StudyInstanceUID string `json:"study_instance_uid"`
@@ -902,6 +906,7 @@ type PhysicianSearchFilters struct {
 	DateFrom    string `json:"date_from,omitempty"`
 	DateTo      string `json:"date_to,omitempty"`
 	Modality    string `json:"modality,omitempty"`
+	Source      string `json:"source,omitempty"`
 }
 
 type PhysicianResult struct {
@@ -2081,7 +2086,7 @@ func (a *App) handlePhysicianResults(w http.ResponseWriter, r *http.Request) {
 
 	username := normalizeProfessionalDocumentInput(r.URL.Query().Get("username"))
 	if username == "" {
-		http.Error(w, "missing required query param: username", http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, PhysicianResultsErrorResponse{Message: "Falta el parámetro requerido username."})
 		return
 	}
 
@@ -2091,6 +2096,11 @@ func (a *App) handlePhysicianResults(w http.ResponseWriter, r *http.Request) {
 		DateFrom:    strings.TrimSpace(r.URL.Query().Get("date_from")),
 		DateTo:      strings.TrimSpace(r.URL.Query().Get("date_to")),
 		Modality:    strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("modality"))),
+		Source:      normalizePhysicianSearchSource(r.URL.Query().Get("source")),
+	}
+	if filters.Source != physicianSearchSourceLocalCache && !hasPhysicianQueryFilters(filters) {
+		writeJSON(w, http.StatusBadRequest, PhysicianResultsErrorResponse{Message: "Seleccione al menos un filtro adicional antes de consultar un PACS remoto."})
+		return
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -2099,18 +2109,18 @@ func (a *App) handlePhysicianResults(w http.ResponseWriter, r *http.Request) {
 	physician, err := a.ensurePhysicianRecord(ctx, username)
 	if err != nil {
 		if errors.Is(err, ErrProfessionalIdentityNotFound) {
-			http.Error(w, "professional not found", http.StatusNotFound)
+			writeJSON(w, http.StatusNotFound, PhysicianResultsErrorResponse{Message: "Profesional no encontrado."})
 			return
 		}
 		if errors.Is(err, ErrProfessionalNotLicensed) {
-			http.Error(w, "professional not licensed", http.StatusForbidden)
+			writeJSON(w, http.StatusForbidden, PhysicianResultsErrorResponse{Message: "Profesional no matriculado."})
 			return
 		}
 		a.log("error", "physician_seed_failed", map[string]any{
 			"username": username,
 			"error":    err.Error(),
 		})
-		http.Error(w, "failed to prepare physician results", http.StatusInternalServerError)
+		writeJSON(w, http.StatusInternalServerError, PhysicianResultsErrorResponse{Message: "No se pudo preparar la consulta del profesional."})
 		return
 	}
 
@@ -2121,7 +2131,7 @@ func (a *App) handlePhysicianResults(w http.ResponseWriter, r *http.Request) {
 			"physician_id": physician.ID,
 			"error":        err.Error(),
 		})
-		http.Error(w, "failed to query physician results", http.StatusInternalServerError)
+		writeJSON(w, http.StatusInternalServerError, PhysicianResultsErrorResponse{Message: "No se pudieron consultar los resultados del profesional."})
 		return
 	}
 
@@ -2275,7 +2285,17 @@ func (a *App) handlePhysicianLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func hasPhysicianFilters(filters PhysicianSearchFilters) bool {
+const physicianSearchSourceLocalCache = "local_cache"
+
+func normalizePhysicianSearchSource(value string) string {
+	source := strings.ToLower(strings.TrimSpace(value))
+	if source == "" {
+		return physicianSearchSourceLocalCache
+	}
+	return source
+}
+
+func hasPhysicianQueryFilters(filters PhysicianSearchFilters) bool {
 	return strings.TrimSpace(filters.PatientID) != "" ||
 		strings.TrimSpace(filters.PatientName) != "" ||
 		strings.TrimSpace(filters.DateFrom) != "" ||
@@ -4957,12 +4977,16 @@ func (a *App) ensurePhysicianRecord(ctx context.Context, username string) (Physi
 	return physician, nil
 }
 
-func (a *App) searchPhysicianResultsFromSingleNode(ctx context.Context, physician PhysicianSummary, filters PhysicianSearchFilters) ([]PhysicianResult, error) {
-	if len(a.externalConfig.PACSNodes) != 1 {
-		return nil, fmt.Errorf("physician qido flow requires exactly one pacs node, found %d", len(a.externalConfig.PACSNodes))
+func (a *App) configuredPACSNodeByID(nodeID string) (PACSNodeConfig, bool) {
+	for _, node := range a.externalConfig.PACSNodes {
+		if strings.EqualFold(strings.TrimSpace(node.ID), strings.TrimSpace(nodeID)) {
+			return node, true
+		}
 	}
+	return PACSNodeConfig{}, false
+}
 
-	node := a.externalConfig.PACSNodes[0]
+func (a *App) searchPhysicianResultsFromNode(ctx context.Context, physician PhysicianSummary, node PACSNodeConfig, filters PhysicianSearchFilters) ([]PhysicianResult, error) {
 	resolved := node.Resolved()
 	if strings.ToLower(resolved.SearchMode) != "qido_rs" {
 		return nil, fmt.Errorf("physician qido flow requires qido_rs search mode, found %s", resolved.SearchMode)
@@ -5159,6 +5183,7 @@ func (a *App) persistPhysicianRecentQuery(ctx context.Context, physicianID strin
 		"patient_name": filters.PatientName,
 		"date_from":    filters.DateFrom,
 		"date_to":      filters.DateTo,
+		"source":       normalizePhysicianSearchSource(filters.Source),
 		"modalities":   []string{},
 		"results":      results,
 	}
@@ -5181,21 +5206,24 @@ func (a *App) persistPhysicianRecentQuery(ctx context.Context, physicianID strin
 	return err
 }
 
-func (a *App) listPhysicianCachedResultsForInitialPeriod(ctx context.Context, username string) ([]PhysicianResult, error) {
-	period := "current_week"
-	if a.externalConfig != nil && strings.TrimSpace(a.externalConfig.Professional.InitialCachePeriod) != "" {
-		period = a.externalConfig.Professional.InitialCachePeriod
-	}
-	dateFrom, dateTo := configuredDateRange(period, time.Now())
-
+func (a *App) searchPhysicianResultsFromLocalCache(ctx context.Context, username string, filters PhysicianSearchFilters) ([]PhysicianResult, error) {
 	endpoint, err := url.Parse(strings.TrimRight(a.cfg.OrthancURL, "/") + "/dicom-web/studies")
 	if err != nil {
 		return nil, fmt.Errorf("build orthanc physician cache url: %w", err)
 	}
 
+	dateFrom := strings.TrimSpace(filters.DateFrom)
+	dateTo := strings.TrimSpace(filters.DateTo)
+	if !hasPhysicianQueryFilters(filters) {
+		period := "current_week"
+		if a.externalConfig != nil && strings.TrimSpace(a.externalConfig.Professional.InitialCachePeriod) != "" {
+			period = a.externalConfig.Professional.InitialCachePeriod
+		}
+		dateFrom, dateTo = configuredDateRange(period, time.Now())
+	}
+
 	query := endpoint.Query()
 	query.Set("limit", "200")
-	query.Set("StudyDate", buildQIDODateRange(dateFrom, dateTo))
 	query.Add("includefield", "StudyInstanceUID")
 	query.Add("includefield", "StudyDate")
 	query.Add("includefield", "StudyDescription")
@@ -5203,6 +5231,18 @@ func (a *App) listPhysicianCachedResultsForInitialPeriod(ctx context.Context, us
 	query.Add("includefield", "PatientName")
 	query.Add("includefield", "PatientID")
 	query.Add("includefield", "AccessionNumber")
+	if strings.TrimSpace(filters.PatientID) != "" {
+		query.Set("PatientID", strings.TrimSpace(filters.PatientID))
+	}
+	if strings.TrimSpace(filters.PatientName) != "" {
+		query.Set("PatientName", buildPatientNameFuzzyQuery(filters.PatientName))
+	}
+	if strings.TrimSpace(filters.Modality) != "" {
+		query.Set("ModalitiesInStudy", strings.TrimSpace(filters.Modality))
+	}
+	if dateFrom != "" || dateTo != "" {
+		query.Set("StudyDate", buildQIDODateRange(dateFrom, dateTo))
+	}
 	endpoint.RawQuery = query.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
@@ -5460,11 +5500,17 @@ func (a *App) listPhysicianResults(ctx context.Context, physicianID string, filt
 		return nil, fmt.Errorf("load physician summary: %w", err)
 	}
 
-	if hasPhysicianFilters(filters) {
-		return a.searchPhysicianResultsFromSingleNode(ctx, physician, filters)
+	filters.Source = normalizePhysicianSearchSource(filters.Source)
+	if filters.Source == physicianSearchSourceLocalCache {
+		return a.searchPhysicianResultsFromLocalCache(ctx, physician.Username, filters)
 	}
 
-	return a.listPhysicianCachedResultsForInitialPeriod(ctx, physician.Username)
+	node, ok := a.configuredPACSNodeByID(filters.Source)
+	if !ok {
+		return nil, fmt.Errorf("unknown physician search source %q", filters.Source)
+	}
+
+	return a.searchPhysicianResultsFromNode(ctx, physician, node, filters)
 }
 
 func digitsOnly(value string) string {
