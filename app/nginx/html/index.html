@@ -1487,7 +1487,6 @@
       }
 
       function applyPatientPreset(period) {
-        patientFilterPeriod.value = period;
         const range = patientDateRangeForPeriod(period);
         patientDateFilter.from = range.date_from || "";
         patientDateFilter.to = range.date_to || "";
