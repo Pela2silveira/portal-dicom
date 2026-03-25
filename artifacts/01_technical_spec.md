@@ -1,6 +1,6 @@
-# Especificación Técnica de Implementación (MVP) — Portal DICOM Agregador + Caché + OHIF
+# Especificación Técnica de Implementación (MVP) — Portal DICOM Agregador + Caché + Viewers
 
-> **Objetivo del MVP:** entregar un portal web operativo mínimo que agregue búsquedas sobre PACS remotos, coordine **retrieve** hacia un **Orthanc local (caché)** y visualice **exclusivamente desde la caché** en **OHIF**, todo levantable con **Docker Compose** y expuesto por **Nginx** en `http://localhost:8080`.
+> **Objetivo del MVP:** entregar un portal web operativo mínimo que agregue búsquedas sobre PACS remotos, coordine **retrieve** hacia un **Orthanc local (caché)** y visualice **exclusivamente desde la caché** en **Stone Web Viewer** y **OHIF**, todo levantable con **Docker Compose** y expuesto por **Nginx** en `http://localhost:8080`.
 
 ## 0) Estado, decisiones confirmadas y supuestos
 

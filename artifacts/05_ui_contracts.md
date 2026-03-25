@@ -7,7 +7,7 @@ This artifact defines the explicit UI contracts for the two future portal-owned 
 - patient study list
 - physician search and workflow panel
 
-These contracts are intentionally separate from OHIF. OHIF remains a viewer surface only.
+These contracts are intentionally separate from the viewers. Stone Web Viewer and OHIF remain viewer surfaces only.
 
 ## Global Rules
 
@@ -23,7 +23,7 @@ These contracts are intentionally separate from OHIF. OHIF remains a viewer surf
 
 ### Purpose
 
-Allow a patient to see only their authorized studies and open one selected study in OHIF.
+Allow a patient to see only their authorized studies and open one selected study in a portal-selected viewer.
 
 ### Entry Surface
 
@@ -58,8 +58,8 @@ Allow a patient to see only their authorized studies and open one selected study
 - Compact patient data summary section at the top of the page
 - Simple filters in a dedicated block below the patient data section
 - Authorized study list grouped by modality in a full-width results block as the primary visual element
-- Per-study actions: `Recuperar estudio`, `Ver estudio`, and `Descargar DICOM` when local
-- When both `Ver estudio` and `Descargar DICOM` are available for the same study, both actions should use the same primary visual treatment so they read as peer actions instead of primary vs secondary emphasis
+- Per-study actions: `Recuperar estudio`, `Visualizar estudio`, `Visualizar con OHIF Viewer`, and `Descargar DICOM` when local
+- When local viewing is available, `Visualizar estudio` is the preferred emphasized action and should appear before `Visualizar con OHIF Viewer`, which in turn should appear before `Descargar DICOM`
 - Empty state message when the document has no matching studies
 
 ### Allowed Fields In The List
@@ -141,9 +141,10 @@ Allow a patient to see only their authorized studies and open one selected study
 - visibility of remote PACS nodes
 - direct navigation through the native OHIF study list
 
-### OHIF Handoff
+### Viewer Handoff
 
-- Portal opens OHIF for a specific `studyInstanceUID`
+- Portal opens Stone Web Viewer for a specific `studyInstanceUID` as the preferred patient viewer
+- Portal also exposes OHIF for the same `studyInstanceUID` as an explicit alternative viewer
 - The current portal UX opens the viewer in a new browser tab
 - OHIF should not expose a global study list in the final patient flow
 
@@ -176,7 +177,7 @@ Allow a patient to see only their authorized studies and open one selected study
 
 ### Purpose
 
-Allow a physician to search, inspect, and retrieve studies from remote PACS nodes, then open a selected study in OHIF.
+Allow a physician to search, inspect, and retrieve studies from remote PACS nodes, then open a selected study in a portal-selected viewer.
 
 ### Entry Surface
 
@@ -257,13 +258,14 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - `Recuperar estudio`
 - `Reintentar recuperacion` when the latest retrieve status is `failed`
 - while `retrieve_status` is `queued|running`, the action must stay disabled and the backend should reuse the active job instead of enqueuing duplicates
-- `Visualizar` only when the study is available in local Orthanc
+- `Visualizar estudio` only when the study is available in local Orthanc
+- `Visualizar con OHIF Viewer` only when the study is available in local Orthanc
 - `Descargar DICOM` only when the study is available in local Orthanc
-- When both `Visualizar` and `Descargar DICOM` are available for the same physician result, both actions should use the same primary visual treatment so they remain visually coherent
+- When local viewing is available, `Visualizar estudio` is the preferred emphasized action and should appear before `Visualizar con OHIF Viewer`, which in turn should appear before `Descargar DICOM`
 
 ### Visualizar Enablement Rule
 
-- `Visualizar` is enabled only after local availability is confirmed
+- `Visualizar estudio` and `Visualizar con OHIF Viewer` are enabled only after local availability is confirmed
 - In the current design baseline this aligns with retrieve state `done` plus cache confirmation
 
 ### Explicitly Required Context
@@ -274,9 +276,10 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - partial-filter warning when a node could not apply all requested filters
 - retrieve progress must be readable directly in the result row and action state
 
-### OHIF Handoff
+### Viewer Handoff
 
-- Portal opens OHIF for a selected `studyInstanceUID`
+- Portal opens Stone Web Viewer for a selected `studyInstanceUID` as the preferred physician viewer
+- Portal also exposes OHIF for the same `studyInstanceUID` as an explicit alternative viewer
 - The current portal UX opens the viewer in a new browser tab
 - OHIF is not the primary search or workflow surface
 

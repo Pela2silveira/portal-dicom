@@ -119,15 +119,16 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 
 ---
 
-## 6. Visualización (OHIF Viewer)
+## 6. Visualización (Stone + OHIF)
 
-* **Integración:** Una vez que el estudio está en el PACS local, el botón "Visualizar" abre OHIF.
-* **Configuración del Visor:** OHIF consume datos únicamente del PACS local mediante protocolos DICOMweb (`WADO-RS`).
-* **Aislamiento:** El visor no conoce la existencia de los PACS remotos, solo interactúa con el caché.
-* **Ruta de publicación:** OHIF se publica bajo `/ohif/` y consume el DICOMweb local bajo `/dicom-web/`.
-* **Rol del visor:** OHIF debe comportarse como visor puntual de estudios/series autorizados, no como superficie principal de búsqueda o navegación.
-* **Handoff actual al visor:** el portal debe abrir OHIF con `StudyInstanceUID` explícito para evitar que el paciente caiga en la study list general.
-* **Listado de estudios:** la study list nativa de OHIF es una decisión de UX y no debe considerarse un mecanismo de restricción de acceso.
+* **Integración:** Una vez que el estudio está en el PACS local, el portal debe ofrecer dos acciones de visualización: `Visualizar estudio` (preferida, usando Stone Web Viewer de Orthanc) y `Visualizar con OHIF Viewer` (alternativa).
+* **Preferencia de visor:** Stone es el visor preferido en la grilla por su UX liviana y por habilitar futuras descargas derivadas (`PDF/JPG`) más cercanas al caché local.
+* **Configuración del Visor:** tanto Stone como OHIF consumen estudios únicamente desde el PACS local Orthanc; ningún visor debe consultar PACS remotos en forma directa.
+* **Aislamiento:** los visores no conocen la existencia de los PACS remotos, solo interactúan con el caché.
+* **Ruta de publicación:** OHIF se publica bajo `/ohif/`, Stone bajo `/stone-webviewer/`, y ambos operan sobre el Orthanc local.
+* **Rol del visor:** los visores deben comportarse como superficies puntuales de visualización de estudios/series autorizados, no como superficies principales de búsqueda o navegación.
+* **Handoff actual al visor:** el portal debe abrir Stone u OHIF con `StudyInstanceUID` explícito para evitar que el paciente caiga en una study list general.
+* **Listado de estudios:** la study list nativa de OHIF y cualquier navegación general de visor son decisiones de UX y no deben considerarse mecanismos de restricción de acceso.
 * **Pacientes:** no deben usar la study list nativa de OHIF. Deben ver una lista propia del portal con sus estudios autorizados.
 * **Descarga de estudio:** tanto paciente como profesional deben poder descargar el estudio completo local en formato `ZIP DICOM` desde Orthanc cuando ya esté disponible en caché local.
 * **Médicos:** no deben depender de la study list nativa de OHIF como workflow principal. Deben usar un panel propio del portal con búsqueda, estado federado y retrieve.
@@ -141,7 +142,7 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
   * modalidad;
   * descripción resumida;
   * estado de disponibilidad.
-* Acción principal: abrir un estudio puntual en OHIF.
+* Acción principal: abrir un estudio puntual en Stone Web Viewer, manteniendo OHIF como alternativa explícita.
 * La experiencia debe ser responsive y usable en móvil.
 * El contrato explícito de esta superficie queda definido en `artifacts/05_ui_contracts.md`.
 * En el mock actual del portal, el ingreso de paciente debe aterrizar primero en esta superficie y no redirigir directamente a la home general de OHIF.
@@ -158,12 +159,13 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
   * disponibilidad local en caché;
   * estado de retrieve;
   * acción de retrieve;
-  * acción de visualización puntual en OHIF.
+  * acción de visualización puntual en Stone Web Viewer;
+  * acción alternativa explícita `Visualizar con OHIF Viewer`.
 * La experiencia debe ser responsive y usable en móvil, al menos para consulta y validación rápida.
 * El contrato explícito de esta superficie queda definido en `artifacts/05_ui_contracts.md`.
 * En el mock actual del portal, el ingreso profesional debe aterrizar primero en esta superficie y no redirigir directamente a la home general de OHIF.
 * La primera implementación funcional de esta superficie consume `GET /api/physician/results?username=<dni>` y, sin filtros, debe mostrar siempre los estudios locales en cache consultando Orthanc local en vivo para la ventana relativa definida por `professional.initial_cache_period`.
-* El primer avance operativo de esta superficie expone `POST /api/physician/retrieve`, reutiliza Orthanc REST para `C-GET` y recalcula `cache_status` / `retrieve_status` desde Postgres y Orthanc local antes de habilitar `Visualizar`.
+* El primer avance operativo de esta superficie expone `POST /api/physician/retrieve`, reutiliza Orthanc REST para `C-GET` y recalcula `cache_status` / `retrieve_status` desde Postgres y Orthanc local antes de habilitar las acciones de visualización.
 * Con filtros cargados, `GET /api/physician/results` debe consultar QIDO-RS del nodo remoto configurado y persistir esa búsqueda como reciente para reutilización posterior.
 * El filtro `patient_name` del profesional debe comportarse como búsqueda fuzzy por términos normalizados, no como coincidencia literal exacta.
 

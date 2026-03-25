@@ -780,6 +780,7 @@ type PatientStudy struct {
 	RetrieveStatus     string   `json:"retrieve_status"`
 	AuthorizationBasis string   `json:"authorization_basis"`
 	ViewerURL          string   `json:"viewer_url,omitempty"`
+	OHIFViewerURL      string   `json:"ohif_viewer_url,omitempty"`
 	DownloadURL        string   `json:"download_url,omitempty"`
 }
 
@@ -793,6 +794,7 @@ type PatientRetrieveResponse struct {
 	StudyInstanceUID string `json:"study_instance_uid"`
 	Status           string `json:"status"`
 	ViewerURL        string `json:"viewer_url,omitempty"`
+	OHIFViewerURL    string `json:"ohif_viewer_url,omitempty"`
 }
 
 type PatientSendCodeRequest struct {
@@ -837,6 +839,7 @@ type PhysicianRetrieveResponse struct {
 	StudyInstanceUID string `json:"study_instance_uid"`
 	Status           string `json:"status"`
 	ViewerURL        string `json:"viewer_url,omitempty"`
+	OHIFViewerURL    string `json:"ohif_viewer_url,omitempty"`
 }
 
 type retrieveJobSnapshot struct {
@@ -874,6 +877,7 @@ type PhysicianResult struct {
 	RetrieveStatus   string   `json:"retrieve_status"`
 	PartialFilter    bool     `json:"partial_filter"`
 	ViewerURL        string   `json:"viewer_url,omitempty"`
+	OHIFViewerURL    string   `json:"ohif_viewer_url,omitempty"`
 	DownloadURL      string   `json:"download_url,omitempty"`
 }
 
@@ -3903,7 +3907,8 @@ func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConf
 		}
 		if cached {
 			study.AvailabilityStatus = "available_local"
-			study.ViewerURL = buildOHIFViewerURL(studyUID)
+			study.ViewerURL = buildStoneViewerURL(studyUID)
+			study.OHIFViewerURL = buildOHIFViewerURL(studyUID)
 			study.DownloadURL = buildPatientDownloadURL(documentNumber, studyUID)
 		}
 
@@ -4186,10 +4191,11 @@ func (a *App) getConfiguredNode(nodeID string) (PACSNodeConfig, error) {
 	return PACSNodeConfig{}, fmt.Errorf("configured PACS node %q not found", nodeID)
 }
 
-func (a *App) getStudyOperationalState(ctx context.Context, studyUID string, fallbackCacheStatus, fallbackRetrieveStatus string) (string, string, string, error) {
+func (a *App) getStudyOperationalState(ctx context.Context, studyUID string, fallbackCacheStatus, fallbackRetrieveStatus string) (string, string, string, string, error) {
 	cacheStatus := fallbackCacheStatus
 	retrieveStatus := fallbackRetrieveStatus
 	viewerURL := ""
+	ohifViewerURL := ""
 
 	var cachedOrthancStudyID string
 	err := a.db.QueryRowContext(ctx, `
@@ -4198,7 +4204,7 @@ func (a *App) getStudyOperationalState(ctx context.Context, studyUID string, fal
 		WHERE study_instance_uid = $1
 	`, studyUID).Scan(&cacheStatus, &cachedOrthancStudyID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return "", "", "", err
+		return "", "", "", "", err
 	}
 	if cacheStatus == "" {
 		cacheStatus = fallbackCacheStatus
@@ -4218,7 +4224,7 @@ func (a *App) getStudyOperationalState(ctx context.Context, studyUID string, fal
 		LIMIT 1
 	`, studyUID).Scan(&latestRetrieveStatus, &retrieveCreatedAt, &retrieveStartedAt, &retrieveFinishedAt)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return "", "", "", err
+		return "", "", "", "", err
 	}
 	if latestRetrieveStatus != "" {
 		retrieveStatus = latestRetrieveStatus
@@ -4235,15 +4241,16 @@ func (a *App) getStudyOperationalState(ctx context.Context, studyUID string, fal
 
 	isLocal, _, err := a.findOrthancStudy(ctx, studyUID)
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", "", err
 	}
 	if isLocal {
 		cacheStatus = "local_complete"
 		retrieveStatus = "done"
-		viewerURL = buildOHIFViewerURL(studyUID)
+		viewerURL = buildStoneViewerURL(studyUID)
+		ohifViewerURL = buildOHIFViewerURL(studyUID)
 	}
 
-	return cacheStatus, retrieveStatus, viewerURL, nil
+	return cacheStatus, retrieveStatus, viewerURL, ohifViewerURL, nil
 }
 
 func (a *App) insertRetrieveJob(ctx context.Context, studyUID, sourceNodeID, actorType, actorID string) (string, error) {
@@ -4618,13 +4625,14 @@ func (a *App) searchPhysicianResultsFromSingleNode(ctx context.Context, physicia
 			PartialFilter:    false,
 		}
 
-		cacheStatus, retrieveStatus, viewerURL, err := a.getStudyOperationalState(ctx, studyUID, result.CacheStatus, result.RetrieveStatus)
+		cacheStatus, retrieveStatus, viewerURL, ohifViewerURL, err := a.getStudyOperationalState(ctx, studyUID, result.CacheStatus, result.RetrieveStatus)
 		if err != nil {
 			return nil, fmt.Errorf("resolve physician qido state for %s: %w", studyUID, err)
 		}
 		result.CacheStatus = cacheStatus
 		result.RetrieveStatus = retrieveStatus
 		result.ViewerURL = viewerURL
+		result.OHIFViewerURL = ohifViewerURL
 		if viewerURL != "" {
 			result.DownloadURL = buildPhysicianDownloadURL(physician.Username, studyUID)
 		}
@@ -4787,7 +4795,7 @@ func (a *App) listPhysicianCachedResultsForInitialPeriod(ctx context.Context, us
 			continue
 		}
 
-		cacheStatus, retrieveStatus, viewerURL, err := a.getStudyOperationalState(ctx, studyUID, "local_complete", "done")
+		cacheStatus, retrieveStatus, viewerURL, ohifViewerURL, err := a.getStudyOperationalState(ctx, studyUID, "local_complete", "done")
 		if err != nil {
 			return nil, fmt.Errorf("resolve physician cached study state for %s: %w", studyUID, err)
 		}
@@ -4811,6 +4819,7 @@ func (a *App) listPhysicianCachedResultsForInitialPeriod(ctx context.Context, us
 			RetrieveStatus:   retrieveStatus,
 			PartialFilter:    false,
 			ViewerURL:        viewerURL,
+			OHIFViewerURL:    ohifViewerURL,
 			DownloadURL: func() string {
 				if viewerURL == "" {
 					return ""
@@ -4933,12 +4942,13 @@ func (a *App) listPatientStudies(ctx context.Context, patientID, documentNumber 
 		if availabilityStatus == "available_local" {
 			cacheStatus = "local_complete"
 		}
-		_, retrieveStatus, viewerURL, err := a.getStudyOperationalState(ctx, studyUID, cacheStatus, study.RetrieveStatus)
+		_, retrieveStatus, viewerURL, ohifViewerURL, err := a.getStudyOperationalState(ctx, studyUID, cacheStatus, study.RetrieveStatus)
 		if err != nil {
 			return nil, fmt.Errorf("resolve patient study operational state for %s: %w", studyUID, err)
 		}
 		study.RetrieveStatus = retrieveStatus
 		study.ViewerURL = viewerURL
+		study.OHIFViewerURL = ohifViewerURL
 		if viewerURL != "" {
 			study.DownloadURL = buildPatientDownloadURL(documentNumber, studyUID)
 		}
@@ -4978,6 +4988,10 @@ func digitsOnly(value string) string {
 		}
 	}
 	return out.String()
+}
+
+func buildStoneViewerURL(studyInstanceUID string) string {
+	return "/stone-webviewer/index.html?study=" + url.QueryEscape(strings.TrimSpace(studyInstanceUID))
 }
 
 func buildOHIFViewerURL(studyInstanceUID string) string {

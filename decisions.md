@@ -36,13 +36,13 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Nginx is exposed only on `http://localhost:8080` for the MVP.
 - Nginx is the only public HTTP entrypoint.
 - If backend dependencies are unavailable, Nginx must serve a static maintenance page for the landing instead of exposing upstream failures.
-- Nginx must proxy only the Orthanc DICOMweb paths needed by OHIF and must not expose Orthanc admin REST endpoints.
+- Nginx must proxy the Orthanc DICOMweb paths needed by OHIF and the minimum Orthanc routes required by Stone Web Viewer; broader Orthanc admin navigation must remain blocked.
 - The public landing page is part of the MVP and is served directly by Nginx.
 - The landing page brand is `Portal de Imágenes`.
 - The landing page should use visual identity inspired by the `andes/app` application.
 - The landing page includes a visible patient flow with `Documento + código por mail` as a UI-only flow in the MVP.
 - The landing page includes a visible physician flow with `DNI + contraseña`.
-- The current landing must route patient and physician flows to portal-owned surfaces before any direct OHIF navigation.
+- The current landing must route patient and physician flows to portal-owned surfaces before any direct Stone or OHIF navigation.
 - The public UI should communicate product-ready workflows and avoid demo/mock wording in visible copy, even while some validation steps still use placeholder-backed behavior.
 - The public landing page must not expose direct links to OHIF root, backend health endpoints, or raw DICOMweb endpoints.
 - The public landing page should visually center the access form and keep surrounding explanatory content brief and secondary.
@@ -50,20 +50,20 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Physician authentication is still out of MVP implementation scope, but the target future integration is `LDAP provincial + MFA`.
 - Patient email-code validation is still out of MVP implementation scope, but the target future integration remains `DNI + código por mail`.
 - Portal-specific static assets such as logo and favicon must be served independently from OHIF assets.
-- OHIF is a viewer surface, not the primary search or access surface.
+- Stone and OHIF are viewer surfaces, not the primary search or access surfaces.
 - Patient access must use a portal-owned study list filtered to authorized patient studies.
 - Patient access must not rely on the native OHIF study list.
 - The patient surface now separates search orchestration from result reads: `POST /api/patient/search` enqueues background QIDO work, `GET /api/patient/search?request_id=...` reports worker state, and `GET /api/patient/studies` remains a read contract over cached rows plus current sync state.
 - The patient surface now exposes a manual `Retrieve` action backed by `POST /api/patient/retrieve`.
 - The current patient retrieve implementation enqueues a background retrieve job, then a Go worker uses Orthanc REST to `PUT /modalities/{id}` and `POST /modalities/{id}/get`, polling Orthanc until the study becomes local.
 - Retrieve completion feedback in the browser should follow a per-job SSE stream (`GET /api/retrieve/jobs/:id/events`) instead of unbounded full-list polling.
-- The current viewer handoff must open OHIF with a specific `StudyInstanceUID` instead of `/ohif/` root, so patient access does not land on the general study list after retrieve.
+- The current preferred viewer handoff must open Stone with a specific `StudyInstanceUID`, and the alternative handoff must open OHIF with the same explicit study scoping.
 - OHIF root (`/ohif/`) must not be exposed as a navigable entrypoint; Nginx should redirect it back to the landing and keep only study-specific viewer URLs as supported entrypoints.
 - Physician access must use a portal-owned search and workflow panel.
 - Professional identity may be resolved temporarily from Mongo collection `profesional` when `his.provider = his_mongo_direct`.
 - Professional access is allowed only if the Mongo document exists, `habilitado == true`, `profesionalMatriculado == true`, and it exposes a professional registration under `formacionGrado[].matriculacion[]` with `baja.fecha == null`.
 - The professional summary shown in the portal must expose `nombre y apellido`, `DNI`, and `matrícula`.
-- Physician workflow should be asynchronous and must expose remote PACS context, local cache presence, and retrieve state before opening OHIF.
+- Physician workflow should be asynchronous and must expose remote PACS context, local cache presence, and retrieve state before opening Stone or OHIF.
 - When a study is already local in Orthanc, both patient and physician surfaces must expose a `Descargar DICOM` action that streams the full study archive ZIP through the backend.
 - The first load of the physician panel must come from Orthanc local cache for the configured initial relative period, queried live at login without requiring prior recent-query seed data.
 - The physician panel now exposes a first real `Retrieve` action backed by `POST /api/physician/retrieve`, which enqueues a background job reusing Orthanc `C-GET` and recalculates local state from `cached_studies`, `retrieve_jobs`, and Orthanc.
@@ -97,7 +97,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Committed configuration files must contain placeholders or env references only; local runtime values belong in ignored files such as `app/config/config.json`.
 - The Andes MPI patient lookup candidate endpoint is `GET /api/core-v2/mpi/pacientes?documento=<dni>`.
 - If Andes MPI returns multiple matches, the backend should refine using `fechaNacimiento`, `sexo`, `apellido`, or `nombre`.
-- The MVP includes a minimal web UI served by Nginx: search form, streaming results, Retrieve action, and Visualizar link.
+- The MVP includes a minimal web UI served by Nginx: search form, streaming results, Retrieve action, preferred Stone viewer link, alternative OHIF viewer link, and download action.
 - Search result streaming uses SSE, not WebSocket.
 - The minimum MVP search fields are `patient_id`, `patient_name`, `date_from`, `date_to`, and `modalities`.
 - The physician `patient_name` filter must behave as a fuzzy normalized term search, not as an exact literal match.
@@ -105,6 +105,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The operator result list must show `PatientName`, `PatientID`, `StudyDate`, `StudyTime`, `ModalitiesInStudy`, `StudyDescription`, `source nodes`, and `cache status`.
 - Deduplicated study metadata should prefer the highest-priority remote node; cache state is shown separately from study metadata.
 - The Visualizar action is enabled only after the retrieve job reaches `done`.
+- When local availability exists, the primary emphasized viewer action is `Visualizar estudio` (Stone), followed by `Visualizar con OHIF Viewer` as an explicit alternative.
 - Retrieve is manual-only in the MVP.
 - The MVP must support both `C-MOVE` and `C-GET`.
 - `C-MOVE` is initiated against the remote PACS, targeting local Orthanc as the destination AE.

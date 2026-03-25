@@ -350,6 +350,16 @@
         background: #eefbff;
       }
 
+      .action-viewer-preferred {
+        background: var(--accent);
+        color: #ffffff;
+        box-shadow: inset 0 0 0 1px var(--accent-strong);
+      }
+
+      .action-viewer-preferred:hover {
+        background: var(--accent-strong);
+      }
+
       .action-secondary {
         background: var(--accent);
         color: #ffffff;
@@ -2120,7 +2130,7 @@
                     .join("");
 
                   const action = study.viewer_url
-                    ? '<a class="action action-primary" href="' + escapeHTML(study.viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar estudio</a>'
+                    ? '<a class="action action-viewer-preferred" href="' + escapeHTML(study.viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar estudio</a>'
                     : (study.retrieve_status === "running" || study.retrieve_status === "queued")
                       ? '<button class="action action-secondary" type="button" disabled>Recuperando</button>'
                       : study.retrieve_status === "done"
@@ -2128,6 +2138,9 @@
                         : study.retrieve_status === "failed"
                           ? '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '">Reintentar recuperacion</button>'
                           : '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '">Recuperar estudio</button>';
+                  const ohifAction = study.ohif_viewer_url
+                    ? '<a class="action action-primary" href="' + escapeHTML(study.ohif_viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar con OHIF Viewer</a>'
+                    : "";
                   const downloadAction = study.download_url
                     ? '<a class="action action-primary" href="' + escapeHTML(study.download_url) + '" rel="noopener noreferrer">Descargar DICOM</a>'
                     : "";
@@ -2157,7 +2170,7 @@
                         modalities +
                         '<div class="chip">' + escapeHTML(study.study_instance_uid) + '</div>' +
                       '</div>' +
-                      '<div class="inline-actions">' + action + downloadAction + '</div>' +
+                      '<div class="inline-actions">' + action + ohifAction + downloadAction + '</div>' +
                     '</article>'
                   );
                 })
@@ -2219,8 +2232,11 @@
               .join("");
 
             const action = result.viewer_url
-              ? '<a class="action action-primary" href="' + escapeHTML(result.viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar</a>'
+              ? '<a class="action action-viewer-preferred" href="' + escapeHTML(result.viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar estudio</a>'
               : '<button class="action ghost" type="button">Visualizar cuando esté listo</button>';
+            const ohifAction = result.ohif_viewer_url
+              ? '<a class="action action-primary" href="' + escapeHTML(result.ohif_viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar con OHIF Viewer</a>'
+              : "";
             const downloadAction = result.download_url
               ? '<a class="action action-primary" href="' + escapeHTML(result.download_url) + '" rel="noopener noreferrer">Descargar DICOM</a>'
               : "";
@@ -2261,6 +2277,7 @@
                 '<div class="inline-actions">' +
                   retrieveAction +
                   action +
+                  ohifAction +
                   downloadAction +
                 '</div>' +
               '</article>'
