@@ -83,7 +83,7 @@ Proveer un portal operativo mínimo capaz de:
   - Con `professional.fake_auth = false`, usar un primer slice de autenticación LDAP directa por bind inseguro `ldap://` con DN `uid=<dni>,<LDAP_OU>`.
   - Validar el ingreso profesional contra la colección Mongo `profesional` cuando el provider operativo sea `his_mongo_direct`.
   - Aun con LDAP habilitado, Mongo `profesional` sigue resolviendo `habilitado`, matrícula y datos visibles del profesional.
-  - Permitir el acceso sólo si el documento existe y `habilitado == true`; la matrícula profesional sigue siendo obligatoria salvo para DNI/username explícitamente incluidos en `professional.license_exceptions`.
+  - Permitir el acceso sólo si el documento existe y cumple `habilitado == true` más matrícula activa; los DNI/username incluidos en `professional.license_exceptions` saltean ambos checks.
   - La matrícula profesional debe resolverse desde `formacionGrado[].matriculacion[]`, tomando la primera entrada con `baja.fecha == null` y usando `matriculaNumero` como valor visible.
   - Enlazar a OHIF y a verificaciones operativas.
 - **UI Operativa (MVP)**: página simple servida por Nginx o frontend mínimo para:

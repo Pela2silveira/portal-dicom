@@ -605,11 +605,11 @@ func (s *MongoProfessionalIdentitySource) ResolveByUsername(ctx context.Context,
 		fullName = strings.TrimSpace(doc.Apellido)
 	}
 	licenseNumber := activeProfessionalLicenseNumber(doc)
-	licenseRequired := true
+	exceptionAllowed := false
 	if _, ok := s.licenseExceptions[resolvedDocument]; ok {
-		licenseRequired = false
+		exceptionAllowed = true
 	}
-	licensed := doc.Habilitado && ((!licenseRequired) || (doc.ProfesionalMatriculado && strings.TrimSpace(licenseNumber) != ""))
+	licensed := exceptionAllowed || (doc.Habilitado && doc.ProfesionalMatriculado && strings.TrimSpace(licenseNumber) != "")
 
 	return ProfessionalIdentity{
 		Username:           username,
