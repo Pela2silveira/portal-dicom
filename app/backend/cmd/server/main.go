@@ -4729,7 +4729,7 @@ func (a *App) persistPhysicianRecentQuery(ctx context.Context, physicianID strin
 	return err
 }
 
-func (a *App) listPhysicianCachedResultsForInitialPeriod(ctx context.Context) ([]PhysicianResult, error) {
+func (a *App) listPhysicianCachedResultsForInitialPeriod(ctx context.Context, username string) ([]PhysicianResult, error) {
 	period := "current_week"
 	if a.externalConfig != nil && strings.TrimSpace(a.externalConfig.Professional.InitialCachePeriod) != "" {
 		period = a.externalConfig.Professional.InitialCachePeriod
@@ -4815,7 +4815,7 @@ func (a *App) listPhysicianCachedResultsForInitialPeriod(ctx context.Context) ([
 				if viewerURL == "" {
 					return ""
 				}
-				return buildPhysicianDownloadURL(physician.Username, studyUID)
+				return buildPhysicianDownloadURL(username, studyUID)
 			}(),
 		})
 	}
@@ -4954,19 +4954,20 @@ func (a *App) listPatientStudies(ctx context.Context, patientID, documentNumber 
 }
 
 func (a *App) listPhysicianResults(ctx context.Context, physicianID string, filters PhysicianSearchFilters) ([]PhysicianResult, error) {
+	physician := PhysicianSummary{ID: physicianID}
+	if err := a.db.QueryRowContext(ctx, `
+		SELECT username, COALESCE(dni, ''), COALESCE(full_name, '')
+		FROM physicians
+		WHERE id = $1::uuid
+	`, physicianID).Scan(&physician.Username, &physician.DNI, &physician.FullName); err != nil {
+		return nil, fmt.Errorf("load physician summary: %w", err)
+	}
+
 	if hasPhysicianFilters(filters) {
-		physician := PhysicianSummary{ID: physicianID}
-		if err := a.db.QueryRowContext(ctx, `
-			SELECT username, COALESCE(dni, ''), COALESCE(full_name, '')
-			FROM physicians
-			WHERE id = $1::uuid
-		`, physicianID).Scan(&physician.Username, &physician.DNI, &physician.FullName); err != nil {
-			return nil, fmt.Errorf("load physician summary: %w", err)
-		}
 		return a.searchPhysicianResultsFromSingleNode(ctx, physician, filters)
 	}
 
-	return a.listPhysicianCachedResultsForInitialPeriod(ctx)
+	return a.listPhysicianCachedResultsForInitialPeriod(ctx, physician.Username)
 }
 
 func digitsOnly(value string) string {
