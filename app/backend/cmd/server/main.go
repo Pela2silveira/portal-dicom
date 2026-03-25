@@ -17,7 +17,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -129,7 +128,8 @@ type RetryingPatientIdentitySource struct {
 	logger       *log.Logger
 	retryEvery   time.Duration
 	build        func() (PatientIdentitySource, error)
-	current      atomic.Value
+	current      PatientIdentitySource
+	currentMu    sync.RWMutex
 	stopCh       chan struct{}
 	stopOnce     sync.Once
 	refreshMu    sync.Mutex
@@ -143,10 +143,10 @@ func NewRetryingPatientIdentitySource(provider string, logger *log.Logger, retry
 		build:      build,
 		stopCh:     make(chan struct{}),
 	}
-	s.current.Store(PatientIdentitySource(&UnavailablePatientIdentitySource{
+	s.current = &UnavailablePatientIdentitySource{
 		provider: provider,
 		err:      errors.New("provider not initialized"),
-	}))
+	}
 	s.refresh()
 	go s.retryLoop()
 	return s
@@ -157,11 +157,17 @@ func (s *RetryingPatientIdentitySource) ProviderName() string {
 }
 
 func (s *RetryingPatientIdentitySource) ResolveByDocument(ctx context.Context, documentNumber string) (PatientIdentity, error) {
-	return s.current.Load().(PatientIdentitySource).ResolveByDocument(ctx, documentNumber)
+	s.currentMu.RLock()
+	current := s.current
+	s.currentMu.RUnlock()
+	return current.ResolveByDocument(ctx, documentNumber)
 }
 
 func (s *RetryingPatientIdentitySource) Healthy() bool {
-	if reporter, ok := s.current.Load().(PatientIdentitySource).(dependencyHealthReporter); ok {
+	s.currentMu.RLock()
+	current := s.current
+	s.currentMu.RUnlock()
+	if reporter, ok := current.(dependencyHealthReporter); ok {
 		return reporter.Healthy()
 	}
 	return true
@@ -171,7 +177,9 @@ func (s *RetryingPatientIdentitySource) Close(ctx context.Context) error {
 	s.stopOnce.Do(func() {
 		close(s.stopCh)
 	})
-	current := s.current.Load().(PatientIdentitySource)
+	s.currentMu.RLock()
+	current := s.current
+	s.currentMu.RUnlock()
 	if closer, ok := current.(patientIdentitySourceCloser); ok {
 		return closer.Close(ctx)
 	}
@@ -197,16 +205,20 @@ func (s *RetryingPatientIdentitySource) refresh() {
 
 	next, err := s.build()
 	if err != nil {
-		s.current.Store(PatientIdentitySource(&UnavailablePatientIdentitySource{
+		s.currentMu.Lock()
+		s.current = &UnavailablePatientIdentitySource{
 			provider: s.provider,
 			err:      err,
-		}))
+		}
+		s.currentMu.Unlock()
 		s.logger.Printf(`{"level":"error","msg":"patient_identity_source_retry_failed","provider":%q,"error":%q}`, s.provider, err.Error())
 		return
 	}
 
-	prev := s.current.Load().(PatientIdentitySource)
-	s.current.Store(next)
+	s.currentMu.Lock()
+	prev := s.current
+	s.current = next
+	s.currentMu.Unlock()
 	if closer, ok := prev.(patientIdentitySourceCloser); ok {
 		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -220,7 +232,8 @@ type RetryingProfessionalIdentitySource struct {
 	logger     *log.Logger
 	retryEvery time.Duration
 	build      func() (ProfessionalIdentitySource, error)
-	current    atomic.Value
+	current    ProfessionalIdentitySource
+	currentMu  sync.RWMutex
 	stopCh     chan struct{}
 	stopOnce   sync.Once
 	refreshMu  sync.Mutex
@@ -234,10 +247,10 @@ func NewRetryingProfessionalIdentitySource(provider string, logger *log.Logger, 
 		build:      build,
 		stopCh:     make(chan struct{}),
 	}
-	s.current.Store(ProfessionalIdentitySource(&UnavailableProfessionalIdentitySource{
+	s.current = &UnavailableProfessionalIdentitySource{
 		provider: provider,
 		err:      errors.New("provider not initialized"),
-	}))
+	}
 	s.refresh()
 	go s.retryLoop()
 	return s
@@ -248,11 +261,17 @@ func (s *RetryingProfessionalIdentitySource) ProviderName() string {
 }
 
 func (s *RetryingProfessionalIdentitySource) ResolveByUsername(ctx context.Context, username string) (ProfessionalIdentity, error) {
-	return s.current.Load().(ProfessionalIdentitySource).ResolveByUsername(ctx, username)
+	s.currentMu.RLock()
+	current := s.current
+	s.currentMu.RUnlock()
+	return current.ResolveByUsername(ctx, username)
 }
 
 func (s *RetryingProfessionalIdentitySource) Healthy() bool {
-	if reporter, ok := s.current.Load().(ProfessionalIdentitySource).(dependencyHealthReporter); ok {
+	s.currentMu.RLock()
+	current := s.current
+	s.currentMu.RUnlock()
+	if reporter, ok := current.(dependencyHealthReporter); ok {
 		return reporter.Healthy()
 	}
 	return true
@@ -262,7 +281,9 @@ func (s *RetryingProfessionalIdentitySource) Close(ctx context.Context) error {
 	s.stopOnce.Do(func() {
 		close(s.stopCh)
 	})
-	current := s.current.Load().(ProfessionalIdentitySource)
+	s.currentMu.RLock()
+	current := s.current
+	s.currentMu.RUnlock()
 	if closer, ok := current.(patientIdentitySourceCloser); ok {
 		return closer.Close(ctx)
 	}
@@ -288,16 +309,20 @@ func (s *RetryingProfessionalIdentitySource) refresh() {
 
 	next, err := s.build()
 	if err != nil {
-		s.current.Store(ProfessionalIdentitySource(&UnavailableProfessionalIdentitySource{
+		s.currentMu.Lock()
+		s.current = &UnavailableProfessionalIdentitySource{
 			provider: s.provider,
 			err:      err,
-		}))
+		}
+		s.currentMu.Unlock()
 		s.logger.Printf(`{"level":"error","msg":"professional_identity_source_retry_failed","provider":%q,"error":%q}`, s.provider, err.Error())
 		return
 	}
 
-	prev := s.current.Load().(ProfessionalIdentitySource)
-	s.current.Store(next)
+	s.currentMu.Lock()
+	prev := s.current
+	s.current = next
+	s.currentMu.Unlock()
 	if closer, ok := prev.(patientIdentitySourceCloser); ok {
 		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
