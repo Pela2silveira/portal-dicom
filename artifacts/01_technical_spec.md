@@ -283,6 +283,9 @@ Proveer un portal operativo mínimo capaz de:
 18. Para paciente, el enriquecimiento ANDES debe resolver por `metadata.pacs-uid == StudyInstanceUID` y por el identificador ANDES/Mongo del paciente persistido en `patient_identifiers` como `mongo_object_id`.
 19. Para profesional, el enriquecimiento ANDES debe resolver por `metadata.pacs-uid == StudyInstanceUID`, por rango diario de `StudyDate` y por `solicitud.organizacion.id == pacs_nodes[].andes_organization_id`.
 20. Cuando exista match en Mongo `prestaciones`, el portal también debe persistir el `_id` de la prestación ANDES como `andes_prestacion_id` dentro de los payloads persistidos de estudios/resultados para reutilización posterior.
+21. Los resultados QIDO remotos deben persistirse en PostgreSQL en una cache compartida `qido_study_cache`, clave primaria `study_instance_uid + source_node_id`, con metadatos reutilizables del estudio y timestamps `first_seen_at/last_seen_at`.
+22. Paciente y profesional deben reutilizar esa cache compartida antes de volver a consultar datos ya resueltos de enriquecimiento ANDES para el mismo `StudyInstanceUID + nodo`.
+23. La invalidación o purga de entradas de `qido_study_cache` cuando un estudio deje de existir en un PACS, o cuando el enriquecimiento ANDES deba refrescarse, queda explícitamente fuera de alcance en esta iteración y documentada como TO-DO.
 
 ### 5.4 Landing pública y acceso futuro
 1. El usuario accede a `/` y visualiza la landing institucional.

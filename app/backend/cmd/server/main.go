@@ -419,6 +419,20 @@ type AndesPrestacionSummary struct {
 	Professional   string `json:"professional,omitempty"`
 }
 
+type PersistedQIDOStudy struct {
+	StudyInstanceUID  string
+	SourceNodeID      string
+	StudyDate         string
+	PatientName       string
+	PatientID         string
+	StudyDescription  string
+	Modalities        []string
+	Locations         []string
+	AndesPrestacionID string
+	AndesPrestacion   string
+	AndesProfessional string
+}
+
 type MongoPacienteDocument struct {
 	ID              primitive.ObjectID    `bson:"_id"`
 	Documento       any                   `bson:"documento"`
@@ -3737,6 +3751,7 @@ func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient Pati
 	successfulNodeCount := 0
 	failedNodeCount := 0
 	var lastErr error
+	cacheCandidates := make([]PatientStudy, 0)
 
 	for _, node := range nodes {
 		remoteStudies, _, err := a.fetchPatientStudiesFromQIDO(ctx, node, patient, filters)
@@ -3751,6 +3766,7 @@ func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient Pati
 			})
 			continue
 		}
+		cacheCandidates = append(cacheCandidates, remoteStudies...)
 		successfulNodeCount++
 		for _, study := range remoteStudies {
 			existing, ok := studyByUID[study.StudyInstanceUID]
@@ -3806,6 +3822,12 @@ func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient Pati
 		a.log("error", "patient_andes_enrichment_failed", map[string]any{
 			"patient_id": patient.ID,
 			"error":     err.Error(),
+		})
+	}
+	if err := a.persistPatientStudiesToQIDOCache(ctx, cacheCandidates, remoteStudies); err != nil {
+		a.log("error", "patient_qido_cache_persist_failed", map[string]any{
+			"patient_id": patient.ID,
+			"error":      err.Error(),
 		})
 	}
 
@@ -5409,6 +5431,13 @@ func (a *App) searchPhysicianResultsFromNode(ctx context.Context, physician Phys
 			"error":        err.Error(),
 		})
 	}
+	if err := a.persistPhysicianResultsToQIDOCache(ctx, results); err != nil {
+		a.log("error", "physician_qido_cache_persist_failed", map[string]any{
+			"physician_id": physician.ID,
+			"node_id":      node.ID,
+			"error":        err.Error(),
+		})
+	}
 
 	if err := a.persistPhysicianRecentQuery(ctx, physician.ID, filters, results); err != nil {
 		return nil, fmt.Errorf("persist physician recent query: %w", err)
@@ -5743,6 +5772,21 @@ func (a *App) enrichPatientStudiesWithAndes(ctx context.Context, patientID strin
 	if len(studies) == 0 {
 		return nil
 	}
+	if err := a.applyPersistedQIDOCacheToPatientStudies(ctx, studies); err != nil {
+		return err
+	}
+
+	missingStudyUIDs := make([]string, 0, len(studies))
+	for _, study := range studies {
+		if strings.TrimSpace(study.AndesPrestacionID) != "" || strings.TrimSpace(study.AndesPrestacion) != "" || strings.TrimSpace(study.AndesProfessional) != "" {
+			continue
+		}
+		missingStudyUIDs = append(missingStudyUIDs, study.StudyInstanceUID)
+	}
+	if len(missingStudyUIDs) == 0 {
+		return nil
+	}
+
 	patientMongoID, err := a.loadPatientMongoObjectID(ctx, patientID)
 	if err != nil {
 		return err
@@ -5751,7 +5795,7 @@ func (a *App) enrichPatientStudiesWithAndes(ctx context.Context, patientID strin
 		return nil
 	}
 
-	summaries, err := a.prestacionLookup.FindByPatientAndStudyUIDs(ctx, patientMongoID, uniqueStudyUIDsFromPatientStudies(studies))
+	summaries, err := a.prestacionLookup.FindByPatientAndStudyUIDs(ctx, patientMongoID, missingStudyUIDs)
 	if err != nil {
 		return err
 	}
@@ -5783,6 +5827,9 @@ func (a *App) enrichPhysicianResultsWithAndes(ctx context.Context, results []Phy
 	if len(results) == 0 {
 		return nil
 	}
+	if err := a.applyPersistedQIDOCacheToPhysicianResults(ctx, results); err != nil {
+		return err
+	}
 
 	type groupKey struct {
 		organizationID string
@@ -5792,6 +5839,9 @@ func (a *App) enrichPhysicianResultsWithAndes(ctx context.Context, results []Phy
 	indexByUID := make(map[string]int)
 
 	for i := range results {
+		if strings.TrimSpace(results[i].AndesPrestacionID) != "" || strings.TrimSpace(results[i].AndesPrestacion) != "" || strings.TrimSpace(results[i].AndesProfessional) != "" {
+			continue
+		}
 		indexByUID[results[i].StudyInstanceUID] = i
 		nodeID := a.resolveConfiguredNodeIDForStudy(results[i].SourceNodeID, results[i].Locations)
 		if nodeID == "" {
@@ -5827,6 +5877,266 @@ func (a *App) enrichPhysicianResultsWithAndes(ctx context.Context, results []Phy
 	}
 
 	return nil
+}
+
+func (a *App) loadPersistedQIDOStudies(ctx context.Context, sourceNodeID string, studyUIDs []string) (map[string]PersistedQIDOStudy, error) {
+	sourceNodeID = strings.TrimSpace(sourceNodeID)
+	if sourceNodeID == "" || len(studyUIDs) == 0 {
+		return map[string]PersistedQIDOStudy{}, nil
+	}
+
+	rows, err := a.db.QueryContext(ctx, `
+		SELECT
+			study_instance_uid,
+			COALESCE(study_date, ''),
+			COALESCE(patient_name, ''),
+			COALESCE(patient_id, ''),
+			COALESCE(study_description, ''),
+			modalities_json,
+			locations_json,
+			COALESCE(andes_prestacion_id, ''),
+			COALESCE(andes_prestacion, ''),
+			COALESCE(andes_professional, '')
+		FROM qido_study_cache
+		WHERE source_node_id = $1
+		  AND study_instance_uid = ANY($2)
+	`, sourceNodeID, studyUIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := make(map[string]PersistedQIDOStudy, len(studyUIDs))
+	for rows.Next() {
+		var (
+			study         PersistedQIDOStudy
+			modalitiesRaw []byte
+			locationsRaw  []byte
+		)
+		if err := rows.Scan(
+			&study.StudyInstanceUID,
+			&study.StudyDate,
+			&study.PatientName,
+			&study.PatientID,
+			&study.StudyDescription,
+			&modalitiesRaw,
+			&locationsRaw,
+			&study.AndesPrestacionID,
+			&study.AndesPrestacion,
+			&study.AndesProfessional,
+		); err != nil {
+			return nil, err
+		}
+		study.SourceNodeID = sourceNodeID
+		if len(modalitiesRaw) > 0 {
+			_ = json.Unmarshal(modalitiesRaw, &study.Modalities)
+		}
+		if len(locationsRaw) > 0 {
+			_ = json.Unmarshal(locationsRaw, &study.Locations)
+		}
+		results[study.StudyInstanceUID] = study
+	}
+
+	return results, rows.Err()
+}
+
+func (a *App) applyPersistedQIDOCacheToPatientStudies(ctx context.Context, studies []PatientStudy) error {
+	grouped := make(map[string][]string)
+	for _, study := range studies {
+		sourceNodeID := strings.TrimSpace(study.SourceNodeID)
+		if sourceNodeID == "" {
+			continue
+		}
+		grouped[sourceNodeID] = append(grouped[sourceNodeID], study.StudyInstanceUID)
+	}
+
+	cacheByNode := make(map[string]map[string]PersistedQIDOStudy, len(grouped))
+	for sourceNodeID, studyUIDs := range grouped {
+		cache, err := a.loadPersistedQIDOStudies(ctx, sourceNodeID, studyUIDs)
+		if err != nil {
+			return err
+		}
+		cacheByNode[sourceNodeID] = cache
+	}
+
+	for i := range studies {
+		cache := cacheByNode[strings.TrimSpace(studies[i].SourceNodeID)]
+		persisted, ok := cache[studies[i].StudyInstanceUID]
+		if !ok {
+			continue
+		}
+		if studies[i].AndesPrestacionID == "" {
+			studies[i].AndesPrestacionID = persisted.AndesPrestacionID
+		}
+		if studies[i].AndesPrestacion == "" {
+			studies[i].AndesPrestacion = persisted.AndesPrestacion
+		}
+		if studies[i].AndesProfessional == "" {
+			studies[i].AndesProfessional = persisted.AndesProfessional
+		}
+	}
+
+	return nil
+}
+
+func (a *App) applyPersistedQIDOCacheToPhysicianResults(ctx context.Context, results []PhysicianResult) error {
+	grouped := make(map[string][]string)
+	for _, result := range results {
+		sourceNodeID := a.resolveConfiguredNodeIDForStudy(result.SourceNodeID, result.Locations)
+		if sourceNodeID == "" {
+			continue
+		}
+		grouped[sourceNodeID] = append(grouped[sourceNodeID], result.StudyInstanceUID)
+	}
+
+	cacheByNode := make(map[string]map[string]PersistedQIDOStudy, len(grouped))
+	for sourceNodeID, studyUIDs := range grouped {
+		cache, err := a.loadPersistedQIDOStudies(ctx, sourceNodeID, studyUIDs)
+		if err != nil {
+			return err
+		}
+		cacheByNode[sourceNodeID] = cache
+	}
+
+	for i := range results {
+		sourceNodeID := a.resolveConfiguredNodeIDForStudy(results[i].SourceNodeID, results[i].Locations)
+		persisted, ok := cacheByNode[sourceNodeID][results[i].StudyInstanceUID]
+		if !ok {
+			continue
+		}
+		if results[i].AndesPrestacionID == "" {
+			results[i].AndesPrestacionID = persisted.AndesPrestacionID
+		}
+		if results[i].AndesPrestacion == "" {
+			results[i].AndesPrestacion = persisted.AndesPrestacion
+		}
+		if results[i].AndesProfessional == "" {
+			results[i].AndesProfessional = persisted.AndesProfessional
+		}
+	}
+
+	return nil
+}
+
+func (a *App) persistQIDOStudies(ctx context.Context, studies []PersistedQIDOStudy) error {
+	for _, study := range studies {
+		if strings.TrimSpace(study.StudyInstanceUID) == "" || strings.TrimSpace(study.SourceNodeID) == "" {
+			continue
+		}
+
+		modalitiesJSON, err := json.Marshal(study.Modalities)
+		if err != nil {
+			return fmt.Errorf("marshal qido study modalities: %w", err)
+		}
+		locationsJSON, err := json.Marshal(study.Locations)
+		if err != nil {
+			return fmt.Errorf("marshal qido study locations: %w", err)
+		}
+
+		if _, err := a.db.ExecContext(ctx, `
+			INSERT INTO qido_study_cache (
+				study_instance_uid, source_node_id, study_date, patient_name, patient_id,
+				study_description, modalities_json, locations_json,
+				andes_prestacion_id, andes_prestacion, andes_professional,
+				first_seen_at, last_seen_at, last_andes_enriched_at
+			) VALUES (
+				$1, $2, NULLIF($3, ''), NULLIF($4, ''), NULLIF($5, ''),
+				NULLIF($6, ''), $7::jsonb, $8::jsonb,
+				NULLIF($9, ''), NULLIF($10, ''), NULLIF($11, ''),
+				now(), now(),
+				CASE
+					WHEN NULLIF($9, '') IS NOT NULL OR NULLIF($10, '') IS NOT NULL OR NULLIF($11, '') IS NOT NULL THEN now()
+					ELSE NULL
+				END
+			)
+			ON CONFLICT (study_instance_uid, source_node_id) DO UPDATE SET
+				study_date = EXCLUDED.study_date,
+				patient_name = EXCLUDED.patient_name,
+				patient_id = EXCLUDED.patient_id,
+				study_description = EXCLUDED.study_description,
+				modalities_json = EXCLUDED.modalities_json,
+				locations_json = EXCLUDED.locations_json,
+				andes_prestacion_id = COALESCE(EXCLUDED.andes_prestacion_id, qido_study_cache.andes_prestacion_id),
+				andes_prestacion = COALESCE(EXCLUDED.andes_prestacion, qido_study_cache.andes_prestacion),
+				andes_professional = COALESCE(EXCLUDED.andes_professional, qido_study_cache.andes_professional),
+				last_seen_at = now(),
+				last_andes_enriched_at = CASE
+					WHEN EXCLUDED.andes_prestacion_id IS NOT NULL OR EXCLUDED.andes_prestacion IS NOT NULL OR EXCLUDED.andes_professional IS NOT NULL
+						THEN now()
+					ELSE qido_study_cache.last_andes_enriched_at
+				END
+		`,
+			study.StudyInstanceUID,
+			study.SourceNodeID,
+			study.StudyDate,
+			study.PatientName,
+			study.PatientID,
+			study.StudyDescription,
+			string(modalitiesJSON),
+			string(locationsJSON),
+			nullIfBlank(study.AndesPrestacionID),
+			nullIfBlank(study.AndesPrestacion),
+			nullIfBlank(study.AndesProfessional),
+		); err != nil {
+			return fmt.Errorf("upsert qido study cache %s/%s: %w", study.SourceNodeID, study.StudyInstanceUID, err)
+		}
+	}
+
+	return nil
+}
+
+func (a *App) persistPatientStudiesToQIDOCache(ctx context.Context, rawStudies []PatientStudy, mergedStudies []PatientStudy) error {
+	if len(rawStudies) == 0 {
+		return nil
+	}
+
+	enrichmentByUID := make(map[string]PatientStudy, len(mergedStudies))
+	for _, study := range mergedStudies {
+		enrichmentByUID[study.StudyInstanceUID] = study
+	}
+
+	cacheEntries := make([]PersistedQIDOStudy, 0, len(rawStudies))
+	for _, study := range rawStudies {
+		enriched := enrichmentByUID[study.StudyInstanceUID]
+		cacheEntries = append(cacheEntries, PersistedQIDOStudy{
+			StudyInstanceUID:  study.StudyInstanceUID,
+			SourceNodeID:      study.SourceNodeID,
+			StudyDate:         study.StudyDate,
+			StudyDescription:  study.StudyDescription,
+			Modalities:        study.ModalitiesInStudy,
+			Locations:         study.Locations,
+			AndesPrestacionID: enriched.AndesPrestacionID,
+			AndesPrestacion:   enriched.AndesPrestacion,
+			AndesProfessional: enriched.AndesProfessional,
+		})
+	}
+
+	return a.persistQIDOStudies(ctx, cacheEntries)
+}
+
+func (a *App) persistPhysicianResultsToQIDOCache(ctx context.Context, results []PhysicianResult) error {
+	cacheEntries := make([]PersistedQIDOStudy, 0, len(results))
+	for _, result := range results {
+		sourceNodeID := a.resolveConfiguredNodeIDForStudy(result.SourceNodeID, result.Locations)
+		if sourceNodeID == "" {
+			continue
+		}
+		cacheEntries = append(cacheEntries, PersistedQIDOStudy{
+			StudyInstanceUID:  result.StudyInstanceUID,
+			SourceNodeID:      sourceNodeID,
+			StudyDate:         result.StudyDate,
+			PatientName:       result.PatientName,
+			PatientID:         result.PatientID,
+			StudyDescription:  result.StudyDescription,
+			Modalities:        result.Modalities,
+			Locations:         result.Locations,
+			AndesPrestacionID: result.AndesPrestacionID,
+			AndesPrestacion:   result.AndesPrestacion,
+			AndesProfessional: result.AndesProfessional,
+		})
+	}
+
+	return a.persistQIDOStudies(ctx, cacheEntries)
 }
 
 func (a *App) listPatientStudies(ctx context.Context, patientID, documentNumber string, filters PatientStudiesFilter) ([]PatientStudy, error) {
@@ -5973,6 +6283,14 @@ func digitsOnly(value string) string {
 		}
 	}
 	return out.String()
+}
+
+func nullIfBlank(value string) any {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	return trimmed
 }
 
 func buildStoneViewerURL(studyInstanceUID string) string {
