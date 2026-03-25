@@ -20,6 +20,7 @@
 - [Ready] **OHIF root containment**: `GET /ohif/` redirects to landing and patient/professional flows enter OHIF only through study-specific viewer URLs.
 - [Ready] **Retrieve completion heuristic**: Orthanc polling with stable window + global timeout defined.
 - [Ready] **Hospital/source labeling in results**: patient and professional result cards show the configured PACS node display name (`pacs_nodes.name`) as the hospital/sede label instead of exposing only technical node identifiers.
+- [Ready] **Professional PACS health legend**: the physician results card shows `PACS en línea X/Y` from remote PACS health checks and exposes online/offline node names on hover/focus.
 - [Missing] **Federated search**: `POST /api/search` + SSE events + dedup by `StudyInstanceUID` across ≥2 nodes not implemented (Milestone 4 pending).
 - [Missing] **Professional async panel backed by real multi-node search**: current “recent queries fallback” is acceptable but not the target behavior.
 - [Needs Decision] **Patient identifier strategy**: reliance on `PatientID == DNI` vs configurable mapping / HIS resolution (to avoid hard coupling).

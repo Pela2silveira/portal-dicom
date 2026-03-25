@@ -75,6 +75,7 @@ const (
 
 type ComponentHealth struct {
 	Name     string            `json:"name"`
+	DisplayName string         `json:"display_name,omitempty"`
 	Category string            `json:"category"`
 	Severity ComponentSeverity `json:"severity"`
 	Status   ComponentStatus   `json:"status"`
@@ -2455,11 +2456,12 @@ func (a *App) remotePACSComponents(ctx context.Context) []ComponentHealth {
 		}
 
 		components = append(components, ComponentHealth{
-			Name:     "remote_pacs:" + node.ID,
-			Category: "optional",
-			Severity: ComponentSeverityOptional,
-			Status:   status,
-			Message:  message,
+			Name:        "remote_pacs:" + node.ID,
+			DisplayName: strings.TrimSpace(resolved.Name),
+			Category:    "optional",
+			Severity:    ComponentSeverityOptional,
+			Status:      status,
+			Message:     message,
 		})
 	}
 

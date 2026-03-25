@@ -1006,6 +1006,90 @@
         box-shadow: 0 0 0 0 rgba(198, 106, 0, 0.28);
       }
 
+      .section-header-inline {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .section-header-inline h4 {
+        margin: 0;
+      }
+
+      .pacs-health-summary {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border: 1px solid rgba(0, 39, 56, 0.16);
+        background: rgba(255, 255, 255, 0.84);
+        color: var(--ink);
+        font-size: 0.86rem;
+        line-height: 1.2;
+        cursor: default;
+      }
+
+      .pacs-health-summary::before {
+        content: "";
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--accent);
+        flex-shrink: 0;
+      }
+
+      .pacs-health-summary[data-status="warn"]::before {
+        background: #c66a00;
+      }
+
+      .pacs-health-summary[data-status="error"]::before {
+        background: var(--danger);
+      }
+
+      .pacs-health-summary[data-status="unknown"]::before {
+        background: var(--muted);
+      }
+
+      .pacs-health-summary-tooltip {
+        position: absolute;
+        top: calc(100% + 8px);
+        right: 0;
+        z-index: 20;
+        min-width: 260px;
+        max-width: min(360px, 80vw);
+        display: none;
+        gap: 10px;
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        background: #ffffff;
+        box-shadow: 0 14px 30px rgba(0, 0, 0, 0.14);
+      }
+
+      .pacs-health-summary:hover .pacs-health-summary-tooltip,
+      .pacs-health-summary:focus-within .pacs-health-summary-tooltip {
+        display: grid;
+      }
+
+      .pacs-health-summary-tooltip strong,
+      .pacs-health-summary-tooltip span {
+        display: block;
+      }
+
+      .pacs-health-summary-tooltip strong {
+        font-size: 0.82rem;
+        margin-bottom: 4px;
+      }
+
+      .pacs-health-summary-tooltip span {
+        color: var(--muted);
+        font-size: 0.82rem;
+        line-height: 1.35;
+        white-space: pre-line;
+      }
+
       @keyframes syncPulse {
         0% { box-shadow: 0 0 0 0 rgba(0, 168, 224, 0.45); }
         70% { box-shadow: 0 0 0 10px rgba(0, 168, 224, 0); }
@@ -1451,7 +1535,22 @@
             </section>
 
             <section class="workspace-card workspace-card-primary">
-              <h4>Resultados</h4>
+              <div class="section-header-inline">
+                <h4>Resultados</h4>
+                <div class="pacs-health-summary" id="physician-pacs-health-summary" data-status="unknown" tabindex="0" aria-live="polite">
+                  <span id="physician-pacs-health-text">PACS en linea -/-</span>
+                  <div class="pacs-health-summary-tooltip" id="physician-pacs-health-tooltip">
+                    <div>
+                      <strong>En linea</strong>
+                      <span id="physician-pacs-online-list">Sin datos.</span>
+                    </div>
+                    <div>
+                      <strong>Fuera de linea</strong>
+                      <span id="physician-pacs-offline-list">Sin datos.</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
               <div class="result-list" id="physician-result-list">
                 <div class="empty-state">Ingrese por el flujo profesional para cargar resultados desde la API del portal.</div>
               </div>
@@ -1523,6 +1622,10 @@
       const physicianFullNameValue = document.getElementById("physician-full-name-value");
       const physicianDniValue = document.getElementById("physician-dni-value");
       const physicianLicenseValue = document.getElementById("physician-license-value");
+      const physicianPacsHealthSummary = document.getElementById("physician-pacs-health-summary");
+      const physicianPacsHealthText = document.getElementById("physician-pacs-health-text");
+      const physicianPacsOnlineList = document.getElementById("physician-pacs-online-list");
+      const physicianPacsOfflineList = document.getElementById("physician-pacs-offline-list");
       const physicianLoginButton = document.querySelector('[data-flow="physician"] .action-primary');
       const physicianNote = document.querySelector('[data-flow="physician"] .note');
       const resetButtons = document.querySelectorAll("[data-reset]");
@@ -1570,6 +1673,9 @@
         hero.classList.add("hidden");
         patientWorkspace.classList.toggle("hidden", kind !== "patient");
         physicianWorkspace.classList.toggle("hidden", kind !== "physician");
+        if (kind === "physician") {
+          refreshPhysicianPACSHealth();
+        }
         savePortalWorkspaceState(kind);
       }
 
@@ -2183,6 +2289,63 @@
         return status || "Desconocido";
       }
 
+      function formatPACSList(items) {
+        if (!items.length) {
+          return "Ninguno.";
+        }
+        return items.join("\n");
+      }
+
+      function renderPhysicianPACSHealth(components) {
+        const remoteComponents = (components || []).filter(component => component.name && component.name.startsWith("remote_pacs:"));
+        const total = remoteComponents.length;
+        const online = remoteComponents
+          .filter(component => component.status === "healthy")
+          .map(component => component.display_name || component.name.replace("remote_pacs:", ""));
+        const offline = remoteComponents
+          .filter(component => component.status !== "healthy")
+          .map(component => component.display_name || component.name.replace("remote_pacs:", ""));
+
+        physicianPacsHealthText.textContent = "PACS en linea " + online.length + "/" + total;
+        physicianPacsOnlineList.textContent = formatPACSList(online);
+        physicianPacsOfflineList.textContent = formatPACSList(offline);
+
+        let status = "ok";
+        if (total === 0) {
+          status = "unknown";
+        } else if (online.length === 0) {
+          status = "error";
+        } else if (online.length < total) {
+          status = "warn";
+        }
+        physicianPacsHealthSummary.dataset.status = status;
+      }
+
+      async function fetchDetailedHealth() {
+        const response = await fetch("/api/health", {
+          cache: "no-store",
+          headers: {
+            Accept: "application/json",
+            "X-Portal-Internal-Health": "1"
+          }
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok && response.status !== 503) {
+          throw new Error("health request failed");
+        }
+        return payload;
+      }
+
+      async function refreshPhysicianPACSHealth() {
+        try {
+          const payload = await fetchDetailedHealth();
+          renderPhysicianPACSHealth(payload.components || []);
+        } catch (error) {
+          renderPhysicianPACSHealth([]);
+        }
+      }
+
       function renderPhysicianResults(payload) {
         physicianFullNameValue.textContent = payload.physician.full_name || "-";
         physicianDniValue.textContent = payload.physician.dni || "-";
@@ -2345,15 +2508,19 @@
         physicianResultList.innerHTML =
           '<div class="empty-state">Actualizando resultados del profesional...</div>';
 
-        const response = await fetch("/api/physician/results?" + params.toString(), {
-          headers: { Accept: "application/json" }
-        });
+        const [resultsResponse, healthPayload] = await Promise.all([
+          fetch("/api/physician/results?" + params.toString(), {
+            headers: { Accept: "application/json" }
+          }),
+          fetchDetailedHealth().catch(() => ({ components: [] }))
+        ]);
 
-        if (!response.ok) {
+        if (!resultsResponse.ok) {
           throw new Error("physician results request failed");
         }
 
-        const payload = await response.json();
+        const payload = await resultsResponse.json();
+        renderPhysicianPACSHealth(healthPayload.components || []);
         renderPhysicianResults(payload);
         savePortalWorkspaceState("physician");
       }
@@ -2495,6 +2662,10 @@
           const payload = JSON.parse(event.data);
           if (payload.status === "unavailable") {
             window.location.href = "/";
+            return;
+          }
+          if (!physicianWorkspace.classList.contains("hidden")) {
+            refreshPhysicianPACSHealth();
           }
         });
         systemHealthEventSource.onerror = async () => {
