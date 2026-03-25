@@ -59,6 +59,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - Simple filters in a dedicated block below the patient data section
 - Authorized study list grouped by modality in a full-width results block as the primary visual element
 - Per-study actions: `Recuperar estudio`, `Ver estudio`, and `Descargar DICOM` when local
+- When both `Ver estudio` and `Descargar DICOM` are available for the same study, both actions should use the same primary visual treatment so they read as peer actions instead of primary vs secondary emphasis
 - Empty state message when the document has no matching studies
 
 ### Allowed Fields In The List
@@ -258,6 +259,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - while `retrieve_status` is `queued|running`, the action must stay disabled and the backend should reuse the active job instead of enqueuing duplicates
 - `Visualizar` only when the study is available in local Orthanc
 - `Descargar DICOM` only when the study is available in local Orthanc
+- When both `Visualizar` and `Descargar DICOM` are available for the same physician result, both actions should use the same primary visual treatment so they remain visually coherent
 
 ### Visualizar Enablement Rule
 
