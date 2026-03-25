@@ -90,6 +90,11 @@
           window.location.href = "/";
         }
       });
+      systemHealthEventSource.onerror = () => {
+        window.setTimeout(() => {
+          window.location.href = "/";
+        }, 3000);
+      };
     </script>
   </body>
 </html>

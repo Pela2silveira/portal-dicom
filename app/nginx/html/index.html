@@ -2463,6 +2463,16 @@
             window.location.href = "/";
           }
         });
+        systemHealthEventSource.onerror = async () => {
+          try {
+            const response = await fetch("/api/health", { cache: "no-store" });
+            if (response.status === 503) {
+              window.location.href = "/";
+            }
+          } catch (error) {
+            window.location.href = "/";
+          }
+        };
       }
 
       roleButtons.forEach(button => {

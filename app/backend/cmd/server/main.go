@@ -1228,12 +1228,20 @@ func (a *App) handleSystemEvents(w http.ResponseWriter, r *http.Request) {
 	subscriber := a.subscribeSystemHealth()
 	defer a.unsubscribeSystemHealth(subscriber)
 
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
+
 	for {
 		select {
 		case <-r.Context().Done():
 			return
 		case event := <-subscriber:
 			if err := writeSystemHealthSSEEvent(w, "health_status_changed", event); err != nil {
+				return
+			}
+			flusher.Flush()
+		case <-heartbeat.C:
+			if _, err := fmt.Fprint(w, ": keep-alive\n\n"); err != nil {
 				return
 			}
 			flusher.Flush()
@@ -2302,6 +2310,11 @@ func (a *App) updateSystemHealthState() {
 		return
 	}
 
+	a.log("info", "system_health_state_changed", map[string]any{
+		"previous_status": prev.Status,
+		"status":          event.Status,
+	})
+
 	a.publishSystemHealth(event)
 }
 
@@ -3263,6 +3276,11 @@ func (a *App) publishRetrieveJobEvent(event RetrieveJobEvent) {
 func (a *App) publishSystemHealth(event SystemHealthEvent) {
 	a.systemEventMu.Lock()
 	defer a.systemEventMu.Unlock()
+
+	a.log("info", "system_health_event_published", map[string]any{
+		"status":            event.Status,
+		"subscriber_count":  len(a.systemEventSubscribers),
+	})
 
 	for subscriber := range a.systemEventSubscribers {
 		select {
