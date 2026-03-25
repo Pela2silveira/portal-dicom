@@ -71,6 +71,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Docker Compose backend healthcheck must use a dedicated liveness endpoint and not `/api/health`, so the container stays healthy while the app is degraded behind maintenance mode.
 - `/api/health` must evaluate components by severity: required components (`backend`, `config`, `postgres`, `orthanc`, `mongo_identity`) can make the app unavailable; optional components such as remote PACS only degrade capability.
 - Remote PACS health is informative and must not trigger maintenance mode by itself.
+- The portal must use an SSE system-health stream to react to backend state changes in real time instead of periodic polling.
 - The database must cache patient identity anchors, alternate identifiers from HIS, known authorized study UIDs, physician recent searches, and future session state.
 - Physician credentials must not be stored in clear text; only session state, auth events, and encrypted provider-issued auth material are allowed.
 - Observability metrics should not be persisted in PostgreSQL for now; use structured logs and optional in-memory stats instead.

@@ -52,6 +52,10 @@ type App struct {
 	retrieveQueue              chan string
 	retrieveEventMu            sync.Mutex
 	retrieveEventSubscribers map[string]map[chan RetrieveJobEvent]struct{}
+	systemEventMu             sync.Mutex
+	systemEventSubscribers    map[chan SystemHealthEvent]struct{}
+	systemHealthState         SystemHealthEvent
+	systemHealthStateMu       sync.RWMutex
 }
 
 type ComponentSeverity string
@@ -75,6 +79,12 @@ type ComponentHealth struct {
 	Severity ComponentSeverity `json:"severity"`
 	Status   ComponentStatus   `json:"status"`
 	Message  string            `json:"message,omitempty"`
+}
+
+type SystemHealthEvent struct {
+	Status     string            `json:"status"`
+	Components []ComponentHealth `json:"components"`
+	TS         string            `json:"ts"`
 }
 
 type RetrieveJobEvent struct {
@@ -1067,14 +1077,17 @@ func main() {
 		patientSearchQueue:         make(chan string, 32),
 		retrieveQueue:              make(chan string, 32),
 		retrieveEventSubscribers: make(map[string]map[chan RetrieveJobEvent]struct{}),
+		systemEventSubscribers:   make(map[chan SystemHealthEvent]struct{}),
 	}
 
 	app.startPatientSearchWorker()
 	app.startRetrieveWorker()
+	app.startSystemHealthWatcher()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/livez", app.handleLivez)
 	mux.HandleFunc("/api/health", app.handleHealth)
+	mux.HandleFunc("/api/system/events", app.handleSystemEvents)
 	mux.HandleFunc("/api/config", app.handleConfig(appliedMigrations))
 	mux.HandleFunc("/api/patient/send-code", app.handlePatientSendCode)
 	mux.HandleFunc("/api/patient/search", app.handlePatientSearch)
@@ -1187,6 +1200,45 @@ func (a *App) handleLivez(w http.ResponseWriter, r *http.Request) {
 		"status": "alive",
 		"ts":     time.Now().UTC().Format(time.RFC3339),
 	})
+}
+
+func (a *App) handleSystemEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	initialEvent := a.currentSystemHealthEvent()
+	if err := writeSystemHealthSSEEvent(w, "health_status_changed", initialEvent); err != nil {
+		return
+	}
+	flusher.Flush()
+
+	subscriber := a.subscribeSystemHealth()
+	defer a.unsubscribeSystemHealth(subscriber)
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case event := <-subscriber:
+			if err := writeSystemHealthSSEEvent(w, "health_status_changed", event); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
 }
 
 func (a *App) handleConfig(appliedMigrations []string) http.HandlerFunc {
@@ -2218,6 +2270,67 @@ func boolToComponentStatus(ok bool) ComponentStatus {
 	return ComponentStatusUnavailable
 }
 
+func (a *App) startSystemHealthWatcher() {
+	a.updateSystemHealthState()
+
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			a.updateSystemHealthState()
+		}
+	}()
+}
+
+func (a *App) updateSystemHealthState() {
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+
+	components := a.collectComponentHealth(ctx)
+	event := SystemHealthEvent{
+		Status:     overallHealthStatus(components),
+		Components: components,
+		TS:         time.Now().UTC().Format(time.RFC3339),
+	}
+
+	a.systemHealthStateMu.Lock()
+	prev := a.systemHealthState
+	a.systemHealthState = event
+	a.systemHealthStateMu.Unlock()
+
+	if systemHealthSignature(prev) == systemHealthSignature(event) {
+		return
+	}
+
+	a.publishSystemHealth(event)
+}
+
+func (a *App) currentSystemHealthEvent() SystemHealthEvent {
+	a.systemHealthStateMu.RLock()
+	state := a.systemHealthState
+	a.systemHealthStateMu.RUnlock()
+	if state.Status == "" {
+		return SystemHealthEvent{
+			Status:     "unknown",
+			Components: nil,
+			TS:         time.Now().UTC().Format(time.RFC3339),
+		}
+	}
+	return state
+}
+
+func systemHealthSignature(event SystemHealthEvent) string {
+	type signature struct {
+		Status     string            `json:"status"`
+		Components []ComponentHealth `json:"components"`
+	}
+	payload, _ := json.Marshal(signature{
+		Status:     event.Status,
+		Components: event.Components,
+	})
+	return string(payload)
+}
+
 func loadExternalConfig(path string) (*ExternalConfig, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -3102,6 +3215,15 @@ func (a *App) subscribeRetrieveJob(jobID string) chan RetrieveJobEvent {
 	return ch
 }
 
+func (a *App) subscribeSystemHealth() chan SystemHealthEvent {
+	a.systemEventMu.Lock()
+	defer a.systemEventMu.Unlock()
+
+	ch := make(chan SystemHealthEvent, 4)
+	a.systemEventSubscribers[ch] = struct{}{}
+	return ch
+}
+
 func (a *App) unsubscribeRetrieveJob(jobID string, ch chan RetrieveJobEvent) {
 	a.retrieveEventMu.Lock()
 	defer a.retrieveEventMu.Unlock()
@@ -3118,6 +3240,14 @@ func (a *App) unsubscribeRetrieveJob(jobID string, ch chan RetrieveJobEvent) {
 	close(ch)
 }
 
+func (a *App) unsubscribeSystemHealth(ch chan SystemHealthEvent) {
+	a.systemEventMu.Lock()
+	defer a.systemEventMu.Unlock()
+
+	delete(a.systemEventSubscribers, ch)
+	close(ch)
+}
+
 func (a *App) publishRetrieveJobEvent(event RetrieveJobEvent) {
 	a.retrieveEventMu.Lock()
 	defer a.retrieveEventMu.Unlock()
@@ -3130,7 +3260,33 @@ func (a *App) publishRetrieveJobEvent(event RetrieveJobEvent) {
 	}
 }
 
+func (a *App) publishSystemHealth(event SystemHealthEvent) {
+	a.systemEventMu.Lock()
+	defer a.systemEventMu.Unlock()
+
+	for subscriber := range a.systemEventSubscribers {
+		select {
+		case subscriber <- event:
+		default:
+		}
+	}
+}
+
 func writeRetrieveSSEEvent(w io.Writer, eventName string, event RetrieveJobEvent) error {
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "event: %s\n", eventName); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "data: %s\n\n", payload); err != nil {
+		return err
+	}
+	return nil
+}
+
+func writeSystemHealthSSEEvent(w io.Writer, eventName string, event SystemHealthEvent) error {
 	payload, err := json.Marshal(event)
 	if err != nil {
 		return err

@@ -1523,6 +1523,7 @@
       let patientSyncPollHandle = null;
       let patientRetrieveEventSource = null;
       let physicianRetrieveEventSource = null;
+      let systemHealthEventSource = null;
       const portalWorkspaceStorageKey = "portalWorkspaceState";
       const patientDateFilter = (() => {
         const now = new Date();
@@ -2450,6 +2451,20 @@
         };
       }
 
+      function connectSystemHealthEvents() {
+        if (systemHealthEventSource) {
+          systemHealthEventSource.close();
+        }
+
+        systemHealthEventSource = new EventSource("/api/system/events");
+        systemHealthEventSource.addEventListener("health_status_changed", event => {
+          const payload = JSON.parse(event.data);
+          if (payload.status === "unavailable") {
+            window.location.href = "/";
+          }
+        });
+      }
+
       roleButtons.forEach(button => {
         button.addEventListener("click", () => activateRole(button.dataset.role));
       });
@@ -2800,6 +2815,7 @@
       syncPatientContinueState();
       syncPhysicianContinueState();
       renderPhysicianCalendar();
+      connectSystemHealthEvents();
       restorePortalWorkspaceState().catch(() => {});
     </script>
   </body>

@@ -82,5 +82,14 @@
       <p>Sepan disculpar las molestias.</p>
       <p class="contact">Contacto: <a href="mailto:info@andes.gob.ar">info@andes.gob.ar</a></p>
     </main>
+    <script>
+      const systemHealthEventSource = new EventSource("/api/system/events");
+      systemHealthEventSource.addEventListener("health_status_changed", event => {
+        const payload = JSON.parse(event.data);
+        if (payload.status !== "unavailable") {
+          window.location.href = "/";
+        }
+      });
+    </script>
   </body>
 </html>
