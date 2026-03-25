@@ -3344,7 +3344,7 @@ func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient Pati
 		"sync_filters":    filters,
 	})
 
-	remoteStudies, _, err := a.fetchPatientStudiesFromQIDO(ctx, node, documentNumber, filters)
+	remoteStudies, _, err := a.fetchPatientStudiesFromQIDO(ctx, node, patient, filters)
 	if err != nil {
 		return patient, err
 	}
@@ -3370,6 +3370,66 @@ func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient Pati
 	})
 
 	return patient, nil
+}
+
+func (a *App) loadPatientSearchIdentifiers(ctx context.Context, patient PatientSummary) ([]PatientAlternateIdentifier, error) {
+	identifiers := make([]PatientAlternateIdentifier, 0, 2)
+	seen := make(map[string]struct{})
+
+	addIdentifier := func(identifierType, identifierValue string, isPrimary bool) {
+		identifierType = strings.TrimSpace(identifierType)
+		identifierValue = strings.TrimSpace(identifierValue)
+		if identifierType == "" || identifierValue == "" {
+			return
+		}
+		key := strings.ToLower(identifierType) + "\x00" + identifierValue
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		identifiers = append(identifiers, PatientAlternateIdentifier{
+			Type:      identifierType,
+			Value:     identifierValue,
+			IsPrimary: isPrimary,
+		})
+	}
+
+	addIdentifier("document_number", patient.DocumentNumber, true)
+
+	rows, err := a.db.QueryContext(ctx, `
+		SELECT identifier_type, identifier_value, is_primary
+		FROM patient_identifiers
+		WHERE patient_id = $1::uuid
+		  AND identifier_type IN ('document_number', 'mongo_object_id')
+		ORDER BY
+			CASE identifier_type
+				WHEN 'document_number' THEN 0
+				WHEN 'mongo_object_id' THEN 1
+				ELSE 9
+			END,
+			identifier_value ASC
+	`, patient.ID)
+	if err != nil {
+		return nil, fmt.Errorf("load patient search identifiers: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			identifierType  string
+			identifierValue string
+			isPrimary       bool
+		)
+		if err := rows.Scan(&identifierType, &identifierValue, &isPrimary); err != nil {
+			return nil, fmt.Errorf("scan patient search identifier: %w", err)
+		}
+		addIdentifier(identifierType, identifierValue, isPrimary)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate patient search identifiers: %w", err)
+	}
+
+	return identifiers, nil
 }
 
 func (a *App) processPatientSearchRequest(requestID string) {
@@ -3618,7 +3678,7 @@ func (a *App) replacePatientStudyAccessSlice(ctx context.Context, patientID, sou
 				patient_id, study_instance_uid, authorization_basis, availability_status,
 				local_orthanc_study_id, first_seen_at, last_seen_at, last_authorized_at, source_json
 			) VALUES (
-				$1::uuid, $2, 'patient_document_qido_match', $3, NULL, now(), now(), now(), $4::jsonb
+				$1::uuid, $2, $3, $4, NULL, now(), now(), now(), $5::jsonb
 			)
 			ON CONFLICT (patient_id, study_instance_uid) DO UPDATE SET
 				authorization_basis = EXCLUDED.authorization_basis,
@@ -3629,6 +3689,7 @@ func (a *App) replacePatientStudyAccessSlice(ctx context.Context, patientID, sou
 		`,
 			patientID,
 			study.StudyInstanceUID,
+			study.AuthorizationBasis,
 			availabilityStatus,
 			string(sourceJSON),
 		); err != nil {
@@ -3878,7 +3939,7 @@ func writeSystemHealthSSEEvent(w io.Writer, eventName string, event any) error {
 	return nil
 }
 
-func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConfig, documentNumber string, filters PatientStudiesFilter) ([]PatientStudy, string, error) {
+func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConfig, patient PatientSummary, filters PatientStudiesFilter) ([]PatientStudy, string, error) {
 	resolved := node.Resolved()
 	qidoStartedAt := time.Now()
 	token, err := a.fetchPACSBearerToken(ctx, node)
@@ -3886,13 +3947,84 @@ func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConf
 		return nil, "", fmt.Errorf("fetch pacs token for %s: %w", node.ID, err)
 	}
 
+	identifiers, err := a.loadPatientSearchIdentifiers(ctx, patient)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(identifiers) == 0 {
+		identifiers = []PatientAlternateIdentifier{{
+			Type:      "document_number",
+			Value:     patient.DocumentNumber,
+			IsPrimary: true,
+		}}
+	}
+
+	patientName := ""
+	studyByUID := make(map[string]PatientStudy)
+	for _, identifier := range identifiers {
+		identifierStudies, identifierPatientName, err := a.fetchPatientStudiesFromQIDOIdentifier(ctx, node, resolved, token, patient.DocumentNumber, identifier, filters)
+		if err != nil {
+			return nil, "", err
+		}
+		if patientName == "" && identifierPatientName != "" {
+			patientName = identifierPatientName
+		}
+		for _, study := range identifierStudies {
+			existing, ok := studyByUID[study.StudyInstanceUID]
+			if !ok {
+				studyByUID[study.StudyInstanceUID] = study
+				continue
+			}
+			if existing.StudyDate == "" && study.StudyDate != "" {
+				existing.StudyDate = study.StudyDate
+			}
+			if existing.StudyDescription == "" && study.StudyDescription != "" {
+				existing.StudyDescription = study.StudyDescription
+			}
+			if len(existing.ModalitiesInStudy) == 0 && len(study.ModalitiesInStudy) > 0 {
+				existing.ModalitiesInStudy = study.ModalitiesInStudy
+			}
+			if existing.AvailabilityStatus != "available_local" && study.AvailabilityStatus == "available_local" {
+				existing.AvailabilityStatus = study.AvailabilityStatus
+				existing.ViewerURL = study.ViewerURL
+				existing.OHIFViewerURL = study.OHIFViewerURL
+				existing.DownloadURL = study.DownloadURL
+			}
+			studyByUID[study.StudyInstanceUID] = existing
+		}
+	}
+
+	studies := make([]PatientStudy, 0, len(studyByUID))
+	for _, study := range studyByUID {
+		studies = append(studies, study)
+	}
+
+	sort.Slice(studies, func(i, j int) bool {
+		if studies[i].StudyDate == studies[j].StudyDate {
+			return studies[i].StudyInstanceUID < studies[j].StudyInstanceUID
+		}
+		return studies[i].StudyDate > studies[j].StudyDate
+	})
+
+	a.log("info", "patient_qido_request_completed", map[string]any{
+		"document_number":  patient.DocumentNumber,
+		"node_id":          node.ID,
+		"study_count":      len(studies),
+		"identifier_count": len(identifiers),
+		"duration_ms":      time.Since(qidoStartedAt).Milliseconds(),
+	})
+
+	return studies, patientName, nil
+}
+
+func (a *App) fetchPatientStudiesFromQIDOIdentifier(ctx context.Context, node PACSNodeConfig, resolved ResolvedPACSNodeConfig, token, documentNumber string, identifier PatientAlternateIdentifier, filters PatientStudiesFilter) ([]PatientStudy, string, error) {
 	endpoint, err := url.Parse(strings.TrimRight(resolved.DICOMwebBaseURL, "/") + "/studies")
 	if err != nil {
 		return nil, "", fmt.Errorf("build qido url: %w", err)
 	}
 
 	query := endpoint.Query()
-	query.Set("PatientID", documentNumber)
+	query.Set("PatientID", strings.TrimSpace(identifier.Value))
 	if filters.DateFrom != "" || filters.DateTo != "" {
 		query.Set("StudyDate", buildQIDODateRange(filters.DateFrom, filters.DateTo))
 	}
@@ -3906,6 +4038,8 @@ func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConf
 
 	a.log("info", "patient_qido_request_started", map[string]any{
 		"document_number": documentNumber,
+		"patient_id_type": identifier.Type,
+		"patient_id_value": identifier.Value,
 		"node_id":         node.ID,
 		"url":             endpoint.String(),
 	})
@@ -3935,12 +4069,17 @@ func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConf
 		if errors.Is(err, io.EOF) {
 			payload = []qidoResponseItem{}
 		} else {
-		return nil, "", fmt.Errorf("decode qido response: %w", err)
+			return nil, "", fmt.Errorf("decode qido response: %w", err)
 		}
 	}
 
 	studies := make([]PatientStudy, 0, len(payload))
 	patientName := ""
+	authorizationBasis := "patient_identifier_qido_match"
+	if identifier.Type == "document_number" {
+		authorizationBasis = "patient_document_qido_match"
+	}
+
 	for _, item := range payload {
 		studyUID := dicomFirstString(item, "0020000D")
 		if studyUID == "" {
@@ -3953,7 +4092,7 @@ func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConf
 			StudyDescription:   dicomFirstString(item, "00081030"),
 			ModalitiesInStudy:  dicomStringList(item, "00080061"),
 			AvailabilityStatus: "pending_retrieve",
-			AuthorizationBasis: "patient_document_qido_match",
+			AuthorizationBasis: authorizationBasis,
 		}
 
 		cached, err := a.isStudyAvailableLocal(ctx, studyUID)
@@ -3973,20 +4112,6 @@ func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConf
 
 		studies = append(studies, study)
 	}
-
-	sort.Slice(studies, func(i, j int) bool {
-		if studies[i].StudyDate == studies[j].StudyDate {
-			return studies[i].StudyInstanceUID < studies[j].StudyInstanceUID
-		}
-		return studies[i].StudyDate > studies[j].StudyDate
-	})
-
-	a.log("info", "patient_qido_request_completed", map[string]any{
-		"document_number": documentNumber,
-		"node_id":         node.ID,
-		"study_count":     len(studies),
-		"duration_ms":     time.Since(qidoStartedAt).Milliseconds(),
-	})
 
 	return studies, patientName, nil
 }

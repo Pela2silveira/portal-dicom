@@ -482,6 +482,7 @@ Problema: Orthanc puede recibir instancias progresivamente.
   - cache de identidad básica y timestamps de sincronización/login
 - `patient_identifiers`
   - identificadores alternativos resueltos desde HIS u otros dominios
+  - el flujo paciente reutiliza al menos `document_number` y `mongo_object_id` para búsquedas remotas QIDO
 - `patient_sessions`
   - estado de sesión y verificación futura de código por mail
 - `patient_study_access`
