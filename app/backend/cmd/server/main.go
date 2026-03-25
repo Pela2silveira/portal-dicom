@@ -471,6 +471,18 @@ func (s *MongoProfessionalIdentitySource) ProviderName() string {
 	return "his_mongo_direct"
 }
 
+func (s *MongoPatientIdentitySource) Healthy() bool {
+	ctx, cancel := context.WithTimeout(context.Background(), s.connectTimeout)
+	defer cancel()
+	return s.client.Ping(ctx, nil) == nil
+}
+
+func (s *MongoProfessionalIdentitySource) Healthy() bool {
+	ctx, cancel := context.WithTimeout(context.Background(), s.connectTimeout)
+	defer cancel()
+	return s.client.Ping(ctx, nil) == nil
+}
+
 func (s *MongoPatientIdentitySource) ResolveByDocument(ctx context.Context, documentNumber string) (PatientIdentity, error) {
 	queryCtx, cancel := context.WithTimeout(ctx, s.queryTimeout)
 	defer cancel()

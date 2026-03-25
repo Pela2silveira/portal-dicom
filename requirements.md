@@ -56,6 +56,7 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 * **Criterio de matrícula profesional:** el backend debe leer `formacionGrado[].matriculacion[]` y tomar la primera entrada con `baja.fecha == null`, usando `matriculaNumero` como número visible.
 * **Demográficos visibles del profesional:** `nombre y apellido`, `DNI` y `número de matrícula`.
 * **Reconexión del provider Mongo:** cuando `his.provider = his_mongo_direct` y la conexión inicial falle, el backend debe reintentar la conexión al menos cada 1 minuto sin requerir reinicio del contenedor.
+* **Salud continua del provider Mongo:** si la conexión Mongo se pierde después de un arranque exitoso, `/api/health` debe degradarse también durante la caída y recuperarse cuando el provider vuelva a responder.
 
 ### 3.2 Flujo público visible en MVP: Ingreso de Pacientes
 * **UI visible en MVP:** formulario visual con `Documento`, acción `Enviar código` e ingreso de `Código por mail`.

@@ -39,6 +39,7 @@
 - [Ready] **Health endpoint**: `/api/health` reports `db_ok` and `orthanc_ok`.
 - [Ready] **Container liveness**: Docker Compose checks `/api/livez` so backend can stay `healthy` while `/api/health` is degraded and Nginx serves maintenance.
 - [Ready] **Maintenance fallback**: when backend health is degraded or the upstream is unavailable, Nginx serves a static maintenance page for `/` instead of surfacing a raw upstream error.
+- [Ready] **Continuous Mongo degradation**: if Mongo becomes unavailable after backend startup, `/api/health` degrades again and the landing falls back to maintenance until connectivity returns.
 - [Ready] **Logs accessible via compose**: `docker compose logs` is the primary inspection path; backend logs are JSON.
 - [Missing] **Retention automation**: backend cron for Orthanc purge (7 days) + DB cleanup (30 days) not implemented (Milestone 7 pending).
 - [Missing] **SSE proxy correctness**: Nginx config must explicitly disable buffering for SSE routes and set correct headers/timeouts (otherwise intermittent UI failures).
