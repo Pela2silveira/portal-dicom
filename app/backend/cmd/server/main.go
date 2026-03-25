@@ -47,9 +47,10 @@ type App struct {
 	externalConfig *ExternalConfig
 	configLoadedAt time.Time
 	identitySource PatientIdentitySource
-	patientSearchQueue chan string
-	retrieveQueue chan string
-	retrieveEventMu sync.Mutex
+	professionalIdentitySource ProfessionalIdentitySource
+	patientSearchQueue         chan string
+	retrieveQueue              chan string
+	retrieveEventMu            sync.Mutex
 	retrieveEventSubscribers map[string]map[chan RetrieveJobEvent]struct{}
 }
 
@@ -61,10 +62,17 @@ type RetrieveJobEvent struct {
 }
 
 var ErrPatientIdentityNotFound = errors.New("patient identity not found")
+var ErrProfessionalIdentityNotFound = errors.New("professional identity not found")
+var ErrProfessionalNotLicensed = errors.New("professional not licensed")
 
 type PatientIdentitySource interface {
 	ProviderName() string
 	ResolveByDocument(ctx context.Context, documentNumber string) (PatientIdentity, error)
+}
+
+type ProfessionalIdentitySource interface {
+	ProviderName() string
+	ResolveByUsername(ctx context.Context, username string) (ProfessionalIdentity, error)
 }
 
 type patientIdentitySourceCloser interface {
@@ -80,6 +88,16 @@ type PatientIdentity struct {
 	GenderIdentity     string
 	Email              string
 	AlternateIDs       []PatientAlternateIdentifier
+	SourceSystem       string
+	LastSynchronizedAt time.Time
+}
+
+type ProfessionalIdentity struct {
+	Username           string
+	DNI                string
+	FullName           string
+	LicenseNumber      string
+	Licensed           bool
 	SourceSystem       string
 	LastSynchronizedAt time.Time
 }
@@ -104,6 +122,29 @@ type MongoPacienteDocument struct {
 	Contacto        []MongoPacienteContacto `bson:"contacto"`
 }
 
+type MongoProfesionalDocument struct {
+	ID                      primitive.ObjectID          `bson:"_id"`
+	Documento               any                         `bson:"documento"`
+	Nombre                  string                      `bson:"nombre"`
+	Apellido                string                      `bson:"apellido"`
+	Habilitado              bool                        `bson:"habilitado"`
+	ProfesionalMatriculado  bool                        `bson:"profesionalMatriculado"`
+	FormacionGrado          []MongoProfesionalFormacion `bson:"formacionGrado"`
+}
+
+type MongoProfesionalFormacion struct {
+	Matriculacion []MongoProfesionalMatriculacion `bson:"matriculacion"`
+}
+
+type MongoProfesionalMatriculacion struct {
+	MatriculaNumero any                    `bson:"matriculaNumero"`
+	Baja            MongoProfesionalBaja   `bson:"baja"`
+}
+
+type MongoProfesionalBaja struct {
+	Fecha any `bson:"fecha"`
+}
+
 type MongoPacienteContacto struct {
 	Activo bool   `bson:"activo"`
 	Tipo   string `bson:"tipo"`
@@ -111,6 +152,7 @@ type MongoPacienteContacto struct {
 }
 
 type LocalSeedPatientIdentitySource struct{}
+type LocalSeedProfessionalIdentitySource struct{}
 
 type MongoPatientIdentitySource struct {
 	client         *mongo.Client
@@ -119,7 +161,18 @@ type MongoPatientIdentitySource struct {
 	queryTimeout   time.Duration
 }
 
+type MongoProfessionalIdentitySource struct {
+	client         *mongo.Client
+	collection     *mongo.Collection
+	connectTimeout time.Duration
+	queryTimeout   time.Duration
+}
+
 func (s *LocalSeedPatientIdentitySource) ProviderName() string {
+	return "local_seed"
+}
+
+func (s *LocalSeedProfessionalIdentitySource) ProviderName() string {
 	return "local_seed"
 }
 
@@ -142,7 +195,27 @@ func (s *LocalSeedPatientIdentitySource) ResolveByDocument(_ context.Context, do
 	}, nil
 }
 
+func (s *LocalSeedProfessionalIdentitySource) ResolveByUsername(_ context.Context, username string) (ProfessionalIdentity, error) {
+	dni := digitsOnly(username)
+	if dni == "" {
+		dni = username
+	}
+	return ProfessionalIdentity{
+		Username:           username,
+		DNI:                dni,
+		FullName:           "Profesional " + username,
+		LicenseNumber:      "MP-" + dni,
+		Licensed:           true,
+		SourceSystem:       "landing_mock",
+		LastSynchronizedAt: time.Now().UTC(),
+	}, nil
+}
+
 func (s *MongoPatientIdentitySource) ProviderName() string {
+	return "his_mongo_direct"
+}
+
+func (s *MongoProfessionalIdentitySource) ProviderName() string {
 	return "his_mongo_direct"
 }
 
@@ -177,6 +250,98 @@ func (s *MongoPatientIdentitySource) ResolveByDocument(ctx context.Context, docu
 }
 
 func (s *MongoPatientIdentitySource) Close(ctx context.Context) error {
+	disconnectCtx, cancel := context.WithTimeout(ctx, s.connectTimeout)
+	defer cancel()
+	return s.client.Disconnect(disconnectCtx)
+}
+
+func (s *MongoProfessionalIdentitySource) ResolveByUsername(ctx context.Context, username string) (ProfessionalIdentity, error) {
+	documentNumber := digitsOnly(username)
+	if documentNumber == "" {
+		documentNumber = strings.TrimSpace(username)
+	}
+
+	queryCtx, cancel := context.WithTimeout(ctx, s.queryTimeout)
+	defer cancel()
+
+	filter := bson.D{{Key: "$or", Value: mongoDocumentoCandidates(documentNumber)}}
+	projection := bson.D{
+		{Key: "_id", Value: 1},
+		{Key: "documento", Value: 1},
+		{Key: "nombre", Value: 1},
+		{Key: "apellido", Value: 1},
+		{Key: "habilitado", Value: 1},
+		{Key: "profesionalMatriculado", Value: 1},
+		{Key: "formacionGrado.matriculacion.matriculaNumero", Value: 1},
+		{Key: "formacionGrado.matriculacion.baja.fecha", Value: 1},
+	}
+
+	var doc MongoProfesionalDocument
+	err := s.collection.FindOne(queryCtx, filter, options.FindOne().SetProjection(projection)).Decode(&doc)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return ProfessionalIdentity{}, ErrProfessionalIdentityNotFound
+		}
+		return ProfessionalIdentity{}, fmt.Errorf("find profesional by documento: %w", err)
+	}
+
+	resolvedDocument := normalizeMongoDocumento(doc.Documento)
+	if resolvedDocument == "" {
+		resolvedDocument = documentNumber
+	}
+	fullName := strings.TrimSpace(strings.TrimSpace(doc.Apellido) + ", " + strings.TrimSpace(doc.Nombre))
+	if strings.TrimSpace(doc.Apellido) == "" && strings.TrimSpace(doc.Nombre) != "" {
+		fullName = strings.TrimSpace(doc.Nombre)
+	}
+	if strings.TrimSpace(doc.Apellido) != "" && strings.TrimSpace(doc.Nombre) == "" {
+		fullName = strings.TrimSpace(doc.Apellido)
+	}
+	licenseNumber := activeProfessionalLicenseNumber(doc)
+	licensed := doc.Habilitado && doc.ProfesionalMatriculado && strings.TrimSpace(licenseNumber) != ""
+
+	return ProfessionalIdentity{
+		Username:           username,
+		DNI:                resolvedDocument,
+		FullName:           fullName,
+		LicenseNumber:      licenseNumber,
+		Licensed:           licensed,
+		SourceSystem:       "his_mongo_direct",
+		LastSynchronizedAt: time.Now().UTC(),
+	}, nil
+}
+
+func activeProfessionalLicenseNumber(doc MongoProfesionalDocument) string {
+	for _, formacion := range doc.FormacionGrado {
+		for _, matriculacion := range formacion.Matriculacion {
+			if !mongoValueIsNull(matriculacion.Baja.Fecha) {
+				continue
+			}
+			licenseNumber := normalizeMongoDocumento(matriculacion.MatriculaNumero)
+			if strings.TrimSpace(licenseNumber) != "" {
+				return licenseNumber
+			}
+		}
+	}
+	return ""
+}
+
+func mongoValueIsNull(value any) bool {
+	if value == nil {
+		return true
+	}
+	switch typed := value.(type) {
+	case primitive.Null:
+		return true
+	case primitive.DateTime:
+		return false
+	case time.Time:
+		return typed.IsZero()
+	default:
+		return false
+	}
+}
+
+func (s *MongoProfessionalIdentitySource) Close(ctx context.Context) error {
 	disconnectCtx, cancel := context.WithTimeout(ctx, s.connectTimeout)
 	defer cancel()
 	return s.client.Disconnect(disconnectCtx)
@@ -351,6 +516,17 @@ type PhysicianResultsResponse struct {
 	Results   []PhysicianResult      `json:"results"`
 }
 
+type PhysicianLoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type PhysicianLoginResponse struct {
+	Status    string           `json:"status"`
+	Message   string           `json:"message"`
+	Physician PhysicianSummary `json:"physician,omitempty"`
+}
+
 type PhysicianRetrieveRequest struct {
 	Username         string `json:"username"`
 	StudyInstanceUID string `json:"study_instance_uid"`
@@ -371,13 +547,15 @@ type retrieveJobSnapshot struct {
 }
 
 type PhysicianSummary struct {
-	ID       string `json:"id"`
-	Username string `json:"username"`
-	DNI      string `json:"dni"`
-	FullName string `json:"full_name"`
+	ID            string `json:"id"`
+	Username      string `json:"username"`
+	DNI           string `json:"dni"`
+	FullName      string `json:"full_name"`
+	LicenseNumber string `json:"license_number"`
 }
 
 type PhysicianSearchFilters struct {
+	PatientID   string `json:"patient_id,omitempty"`
 	PatientName string `json:"patient_name,omitempty"`
 	DateFrom    string `json:"date_from,omitempty"`
 	DateTo      string `json:"date_to,omitempty"`
@@ -405,15 +583,17 @@ type ConfigResponse struct {
 	PACSNodes  []PACSNodeResponse `json:"pacs_nodes"`
 	HIS        HISConfigResponse  `json:"his"`
 	Patient    PatientConfig      `json:"patient"`
+	Professional ProfessionalConfig `json:"professional"`
 	Cache      CacheConfig        `json:"cache"`
 	Migrations []string           `json:"migrations"`
 }
 
 type ExternalConfig struct {
-	PACSNodes []PACSNodeConfig `json:"pacs_nodes"`
-	HIS       HISConfig        `json:"his"`
-	Patient   PatientConfig    `json:"patient"`
-	Cache     CacheConfig      `json:"cache"`
+	PACSNodes    []PACSNodeConfig   `json:"pacs_nodes"`
+	HIS          HISConfig          `json:"his"`
+	Patient      PatientConfig      `json:"patient"`
+	Professional ProfessionalConfig `json:"professional"`
+	Cache        CacheConfig        `json:"cache"`
 }
 
 type PACSNodeConfig struct {
@@ -446,6 +626,10 @@ type HISConfig struct {
 }
 
 type PatientConfig struct {
+	FakeAuth bool `json:"fake_auth"`
+}
+
+type ProfessionalConfig struct {
 	FakeAuth bool `json:"fake_auth"`
 }
 
@@ -548,8 +732,9 @@ func main() {
 		externalConfig: externalConfig,
 		configLoadedAt: time.Now().UTC(),
 		identitySource: buildPatientIdentitySource(*externalConfig),
-		patientSearchQueue: make(chan string, 32),
-		retrieveQueue:      make(chan string, 32),
+		professionalIdentitySource: buildProfessionalIdentitySource(*externalConfig),
+		patientSearchQueue:         make(chan string, 32),
+		retrieveQueue:              make(chan string, 32),
 		retrieveEventSubscribers: make(map[string]map[chan RetrieveJobEvent]struct{}),
 	}
 
@@ -563,6 +748,7 @@ func main() {
 	mux.HandleFunc("/api/patient/search", app.handlePatientSearch)
 	mux.HandleFunc("/api/patient/studies", app.handlePatientStudies)
 	mux.HandleFunc("/api/patient/retrieve", app.handlePatientRetrieve)
+	mux.HandleFunc("/api/physician/login", app.handlePhysicianLogin)
 	mux.HandleFunc("/api/retrieve/jobs/", app.handleRetrieveJobEvents)
 	mux.HandleFunc("/api/physician/results", app.handlePhysicianResults)
 	mux.HandleFunc("/api/physician/retrieve", app.handlePhysicianRetrieve)
@@ -573,6 +759,15 @@ func main() {
 			defer cancel()
 			if err := closer.Close(closeCtx); err != nil {
 				app.log("error", "patient_identity_source_close_failed", map[string]any{"error": err.Error()})
+			}
+		}()
+	}
+	if closer, ok := app.professionalIdentitySource.(patientIdentitySourceCloser); ok {
+		defer func() {
+			closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := closer.Close(closeCtx); err != nil {
+				app.log("error", "professional_identity_source_close_failed", map[string]any{"error": err.Error()})
 			}
 		}()
 	}
@@ -662,9 +857,10 @@ func (a *App) handleConfig(appliedMigrations []string) http.HandlerFunc {
 				AuthType:           a.externalConfig.HIS.AuthType,
 				DocumentLookupPath: a.externalConfig.HIS.DocumentLookupPath,
 			},
-			Patient:    a.externalConfig.Patient,
-			Cache:      a.externalConfig.Cache,
-			Migrations: appliedMigrations,
+			Patient:      a.externalConfig.Patient,
+			Professional: a.externalConfig.Professional,
+			Cache:        a.externalConfig.Cache,
+			Migrations:   appliedMigrations,
 		}
 
 		for _, node := range a.externalConfig.PACSNodes {
@@ -1249,13 +1445,14 @@ func (a *App) handlePhysicianResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	username := strings.TrimSpace(r.URL.Query().Get("username"))
+	username := normalizeProfessionalDocumentInput(r.URL.Query().Get("username"))
 	if username == "" {
 		http.Error(w, "missing required query param: username", http.StatusBadRequest)
 		return
 	}
 
 	filters := PhysicianSearchFilters{
+		PatientID:   strings.TrimSpace(r.URL.Query().Get("patient_id")),
 		PatientName: strings.TrimSpace(r.URL.Query().Get("patient_name")),
 		DateFrom:    strings.TrimSpace(r.URL.Query().Get("date_from")),
 		DateTo:      strings.TrimSpace(r.URL.Query().Get("date_to")),
@@ -1265,8 +1462,16 @@ func (a *App) handlePhysicianResults(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	physician, err := a.ensurePhysicianSeed(ctx, username)
+	physician, err := a.ensurePhysicianRecord(ctx, username)
 	if err != nil {
+		if errors.Is(err, ErrProfessionalIdentityNotFound) {
+			http.Error(w, "professional not found", http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, ErrProfessionalNotLicensed) {
+			http.Error(w, "professional not licensed", http.StatusForbidden)
+			return
+		}
 		a.log("error", "physician_seed_failed", map[string]any{
 			"username": username,
 			"error":    err.Error(),
@@ -1296,8 +1501,64 @@ func (a *App) handlePhysicianResults(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+func (a *App) handlePhysicianLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var reqBody PhysicianLoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		http.Error(w, "invalid json body", http.StatusBadRequest)
+		return
+	}
+
+	reqBody.Username = normalizeProfessionalDocumentInput(reqBody.Username)
+	if reqBody.Username == "" {
+		http.Error(w, "username is required", http.StatusBadRequest)
+		return
+	}
+	if a.externalConfig != nil && !a.externalConfig.Professional.FakeAuth {
+		writeJSON(w, http.StatusNotImplemented, PhysicianLoginResponse{
+			Status:  "provider_not_implemented",
+			Message: "La autenticación institucional LDAP/MFA aún no está implementada en este entorno.",
+		})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	physician, err := a.ensurePhysicianRecord(ctx, reqBody.Username)
+		if err != nil {
+			if errors.Is(err, ErrProfessionalIdentityNotFound) {
+				writeJSON(w, http.StatusNotFound, PhysicianLoginResponse{
+					Status:  "professional_not_found",
+					Message: "Profesional no registrado.",
+				})
+				return
+			}
+		if errors.Is(err, ErrProfessionalNotLicensed) {
+			writeJSON(w, http.StatusForbidden, PhysicianLoginResponse{
+				Status:  "professional_not_licensed",
+				Message: "El profesional no se encuentra matriculado.",
+			})
+			return
+		}
+		http.Error(w, "failed to validate professional access", http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, PhysicianLoginResponse{
+		Status:    "ready",
+		Message:   "Ingreso profesional validado.",
+		Physician: physician,
+	})
+}
+
 func hasPhysicianFilters(filters PhysicianSearchFilters) bool {
-	return strings.TrimSpace(filters.PatientName) != "" ||
+	return strings.TrimSpace(filters.PatientID) != "" ||
+		strings.TrimSpace(filters.PatientName) != "" ||
 		strings.TrimSpace(filters.DateFrom) != "" ||
 		strings.TrimSpace(filters.DateTo) != "" ||
 		strings.TrimSpace(filters.Modality) != ""
@@ -1315,7 +1576,7 @@ func (a *App) handlePhysicianRetrieve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reqBody.Username = strings.TrimSpace(reqBody.Username)
+	reqBody.Username = normalizeProfessionalDocumentInput(reqBody.Username)
 	reqBody.StudyInstanceUID = strings.TrimSpace(reqBody.StudyInstanceUID)
 	if reqBody.Username == "" || reqBody.StudyInstanceUID == "" {
 		http.Error(w, "username and study_instance_uid are required", http.StatusBadRequest)
@@ -1325,8 +1586,16 @@ func (a *App) handlePhysicianRetrieve(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
-	physician, err := a.ensurePhysicianSeed(ctx, reqBody.Username)
+	physician, err := a.ensurePhysicianRecord(ctx, reqBody.Username)
 	if err != nil {
+		if errors.Is(err, ErrProfessionalIdentityNotFound) {
+			http.Error(w, "professional not found", http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, ErrProfessionalNotLicensed) {
+			http.Error(w, "professional not licensed", http.StatusForbidden)
+			return
+		}
 		a.log("error", "physician_retrieve_prepare_failed", map[string]any{
 			"username": reqBody.Username,
 			"error":    err.Error(),
@@ -1411,6 +1680,9 @@ func loadExternalConfig(path string) (*ExternalConfig, error) {
 		Patient: PatientConfig{
 			FakeAuth: true,
 		},
+		Professional: ProfessionalConfig{
+			FakeAuth: true,
+		},
 	}
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config json: %w", err)
@@ -1453,6 +1725,40 @@ func buildPatientIdentitySource(cfg ExternalConfig) PatientIdentitySource {
 	}
 }
 
+func buildProfessionalIdentitySource(cfg ExternalConfig) ProfessionalIdentitySource {
+	if !strings.EqualFold(strings.TrimSpace(cfg.HIS.Provider), "his_mongo_direct") {
+		return &LocalSeedProfessionalIdentitySource{}
+	}
+
+	mongoURI := strings.TrimSpace(os.Getenv("HIS_MONGO_URI"))
+	mongoDatabase := strings.TrimSpace(os.Getenv("HIS_MONGO_DATABASE"))
+	if mongoURI == "" || mongoDatabase == "" {
+		log.Fatal("missing required mongo env vars for his_mongo_direct provider")
+	}
+
+	connectTimeout := durationFromEnv("HIS_MONGO_CONNECT_TIMEOUT_MS", 5000*time.Millisecond)
+	queryTimeout := durationFromEnv("HIS_MONGO_QUERY_TIMEOUT_MS", 3000*time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
+	defer cancel()
+
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
+	if err != nil {
+		log.Fatalf("connect mongo professional provider: %v", err)
+	}
+
+	if err := client.Ping(ctx, nil); err != nil {
+		log.Fatalf("ping mongo professional provider: %v", err)
+	}
+
+	return &MongoProfessionalIdentitySource{
+		client:         client,
+		collection:     client.Database(mongoDatabase).Collection("profesional"),
+		connectTimeout: connectTimeout,
+		queryTimeout:   queryTimeout,
+	}
+}
+
 func nullTime(value time.Time) any {
 	if value.IsZero() {
 		return nil
@@ -1471,6 +1777,10 @@ func validateDocumentNumber(value string) error {
 		}
 	}
 	return nil
+}
+
+func normalizeProfessionalDocumentInput(value string) string {
+	return digitsOnly(strings.TrimSpace(value))
 }
 
 func durationFromEnv(name string, fallback time.Duration) time.Duration {
@@ -2757,28 +3067,44 @@ func dicomStringList(item qidoResponseItem, tag string) []string {
 	return values
 }
 
-func (a *App) ensurePhysicianSeed(ctx context.Context, username string) (PhysicianSummary, error) {
+func (a *App) ensurePhysicianRecord(ctx context.Context, username string) (PhysicianSummary, error) {
 	var physician PhysicianSummary
-	dni := digitsOnly(username)
+
+	identity, err := a.professionalIdentitySource.ResolveByUsername(ctx, username)
+	if err != nil {
+		return PhysicianSummary{}, err
+	}
+	if !identity.Licensed {
+		return PhysicianSummary{}, ErrProfessionalNotLicensed
+	}
+	dni := identity.DNI
 	if dni == "" {
-		dni = username
+		dni = digitsOnly(username)
+		if dni == "" {
+			dni = username
+		}
 	}
 
-	err := a.db.QueryRowContext(ctx, `
-		INSERT INTO physicians (username, dni, full_name, auth_provider, mfa_enabled, last_login_at, last_success_auth_at, updated_at)
-		VALUES ($1, $2, $3, 'ldap_provincial', true, now(), now(), now())
+	err = a.db.QueryRowContext(ctx, `
+		INSERT INTO physicians (username, dni, full_name, license_number, licensed, auth_provider, mfa_enabled, last_login_at, last_success_auth_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, true, now(), now(), now())
 		ON CONFLICT (username) DO UPDATE SET
 			dni = EXCLUDED.dni,
 			full_name = EXCLUDED.full_name,
+			license_number = EXCLUDED.license_number,
+			licensed = EXCLUDED.licensed,
 			last_login_at = now(),
 			last_success_auth_at = now(),
 			updated_at = now()
-		RETURNING id::text, username, COALESCE(dni, ''), COALESCE(full_name, '')
+		RETURNING id::text, username, COALESCE(dni, ''), COALESCE(full_name, ''), COALESCE(license_number, '')
 	`,
 		username,
 		dni,
-		"Profesional "+username,
-	).Scan(&physician.ID, &physician.Username, &physician.DNI, &physician.FullName)
+		identity.FullName,
+		identity.LicenseNumber,
+		identity.Licensed,
+		identity.SourceSystem,
+	).Scan(&physician.ID, &physician.Username, &physician.DNI, &physician.FullName, &physician.LicenseNumber)
 	if err != nil {
 		return PhysicianSummary{}, fmt.Errorf("upsert physician: %w", err)
 	}
@@ -2897,6 +3223,7 @@ func (a *App) searchPhysicianResultsFromSingleNode(ctx context.Context, physicia
 		"physician_id": physician.ID,
 		"username":     physician.Username,
 		"node_id":      node.ID,
+		"patient_id":   filters.PatientID,
 		"patient_name": filters.PatientName,
 		"date_from":    filters.DateFrom,
 		"date_to":      filters.DateTo,
@@ -2921,6 +3248,9 @@ func (a *App) searchPhysicianResultsFromSingleNode(ctx context.Context, physicia
 	query.Add("includefield", "ModalitiesInStudy")
 	query.Add("includefield", "PatientName")
 	query.Add("includefield", "PatientID")
+	if filters.PatientID != "" {
+		query.Set("PatientID", filters.PatientID)
+	}
 	if filters.PatientName != "" {
 		query.Set("PatientName", filters.PatientName)
 	}
@@ -3036,6 +3366,7 @@ func buildQIDODateRange(dateFrom, dateTo string) string {
 
 func (a *App) persistPhysicianRecentQuery(ctx context.Context, physicianID string, filters PhysicianSearchFilters, results []PhysicianResult) error {
 	payload := map[string]any{
+		"patient_id":   filters.PatientID,
 		"patient_name": filters.PatientName,
 		"date_from":    filters.DateFrom,
 		"date_to":      filters.DateTo,
@@ -3191,54 +3522,58 @@ func (a *App) listPhysicianResults(ctx context.Context, physicianID string, filt
 			return nil, err
 		}
 
-		var payload struct {
-			PatientName string `json:"patient_name"`
-			DateFrom    string `json:"date_from"`
-			DateTo      string `json:"date_to"`
-			Modalities  []string `json:"modalities"`
-			Results     []struct {
-				StudyInstanceUID string   `json:"study_instance_uid"`
-				PatientName      string   `json:"patient_name"`
-				PatientID        string   `json:"patient_id"`
-				StudyDate        string   `json:"study_date"`
-				StudyDescription string   `json:"study_description"`
-				Modalities       []string `json:"modalities"`
-				Locations        []string `json:"locations"`
-				CacheStatus      string   `json:"cache_status"`
-				RetrieveStatus   string   `json:"retrieve_status"`
-				PartialFilter    bool     `json:"partial_filter"`
-			} `json:"results"`
-		}
+			var payload struct {
+				PatientID   string `json:"patient_id"`
+				PatientName string `json:"patient_name"`
+				DateFrom    string `json:"date_from"`
+				DateTo      string `json:"date_to"`
+				Modalities  []string `json:"modalities"`
+				Results     []struct {
+					StudyInstanceUID string   `json:"study_instance_uid"`
+					PatientName      string   `json:"patient_name"`
+					PatientID        string   `json:"patient_id"`
+					StudyDate        string   `json:"study_date"`
+					StudyDescription string   `json:"study_description"`
+					Modalities       []string `json:"modalities"`
+					Locations        []string `json:"locations"`
+					CacheStatus      string   `json:"cache_status"`
+					RetrieveStatus   string   `json:"retrieve_status"`
+					PartialFilter    bool     `json:"partial_filter"`
+				} `json:"results"`
+			}
 
 		if err := json.Unmarshal(raw, &payload); err != nil {
 			return nil, fmt.Errorf("parse physician query_json: %w", err)
 		}
 
-		for _, item := range payload.Results {
-			if _, ok := seen[item.StudyInstanceUID]; ok {
-				continue
-			}
-			if filters.PatientName != "" && !strings.Contains(strings.ToUpper(item.PatientName), strings.ToUpper(filters.PatientName)) {
-				continue
-			}
-			if filters.DateFrom != "" && item.StudyDate < filters.DateFrom {
-				continue
-			}
-			if filters.DateTo != "" && item.StudyDate > filters.DateTo {
-				continue
-			}
-			if filters.Modality != "" {
-				match := false
-				for _, modality := range item.Modalities {
-					if strings.ToUpper(modality) == filters.Modality {
-						match = true
-						break
-					}
-				}
-				if !match {
+			for _, item := range payload.Results {
+				if _, ok := seen[item.StudyInstanceUID]; ok {
 					continue
 				}
-			}
+				if filters.PatientID != "" && item.PatientID != filters.PatientID {
+					continue
+				}
+				if filters.PatientName != "" && !strings.Contains(strings.ToUpper(item.PatientName), strings.ToUpper(filters.PatientName)) {
+					continue
+				}
+				if filters.DateFrom != "" && item.StudyDate < filters.DateFrom {
+					continue
+				}
+				if filters.DateTo != "" && item.StudyDate > filters.DateTo {
+					continue
+				}
+				if filters.Modality != "" {
+					match := false
+					for _, modality := range item.Modalities {
+						if strings.ToUpper(modality) == filters.Modality {
+							match = true
+							break
+						}
+					}
+					if !match {
+						continue
+					}
+				}
 
 			result := PhysicianResult{
 				StudyInstanceUID: item.StudyInstanceUID,

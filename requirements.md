@@ -42,10 +42,15 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 ## 3. Modelos de Acceso y Autenticación
 
 ### 3.1 Flujo público visible en MVP: Ingreso de Médicos
-* **UI visible en MVP:** formulario visual con `DNI / usuario` y `contraseña`.
-* **Estado actual:** sólo maqueta funcional de interfaz; no hay autenticación real ni sesión.
+* **UI visible en MVP:** formulario visual con `DNI` y `contraseña`.
+* **Estado actual:** el portal valida el ingreso profesional contra la colección Mongo `profesional` cuando `his.provider = his_mongo_direct`, pero todavía no existe autenticación real provincial ni sesión final.
 * **Objetivo de integración posterior:** autenticación contra **LDAP provincial** y segundo factor **MFA** para médicos.
 * **Alcance funcional futuro:** acceso a una consola propia del portal con búsqueda manual mediante filtros, estado federado por PACS remoto, disponibilidad local, estado de retrieve y apertura puntual en el visor.
+* **Feature flag operativa de auth profesional:** el backend debe permitir alternar rápidamente entre el modo transitorio actual y el modo institucional futuro mediante `professional.fake_auth` en `config.json`, con default `true`.
+* **Semántica del modo falso profesional:** con `professional.fake_auth = true`, el backend mantiene la validación operativa actual contra Mongo `profesional`; con `false`, el acceso profesional queda reservado para la futura autenticación institucional `LDAP provincial + MFA`.
+* **Restricción funcional actual:** sólo se permite el ingreso si el profesional existe, `habilitado == true`, `profesionalMatriculado == true` y tiene una matrícula profesional en Mongo.
+* **Criterio de matrícula profesional:** el backend debe leer `formacionGrado[].matriculacion[]` y tomar la primera entrada con `baja.fecha == null`, usando `matriculaNumero` como número visible.
+* **Demográficos visibles del profesional:** `nombre y apellido`, `DNI` y `número de matrícula`.
 
 ### 3.2 Flujo público visible en MVP: Ingreso de Pacientes
 * **UI visible en MVP:** formulario visual con `Documento`, acción `Enviar código` e ingreso de `Código por mail`.

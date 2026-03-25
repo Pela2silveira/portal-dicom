@@ -28,6 +28,8 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The patient `Enviar código` step is a backend prevalidation step: patient must exist and have an active email before the future mail delivery integration is attempted.
 - Patient auth mode must be switchable at runtime through `patient.fake_auth` in `config.json`, defaulting to `true` for current MVP/demo compatibility.
 - With `patient.fake_auth = true`, the backend still requires the patient to exist but skips real email validation/sending so demos can proceed without the mail dependency.
+- Professional auth mode must be switchable at runtime through `professional.fake_auth` in `config.json`, defaulting to `true` for current MVP/demo compatibility.
+- With `professional.fake_auth = true`, the backend keeps the current transitional professional access validation against Mongo `profesional`; with `false`, professional login is reserved for future `LDAP provincial + MFA`.
 - Patient demographic identity shown in the portal must prefer HIS/Mongo data and must not be overwritten by DICOM `PatientName` values observed during QIDO synchronization.
 - Remote dcm4chee integration details must be externalized as configuration.
 - Nginx is exposed only on `http://localhost:8080` for the MVP.
@@ -37,7 +39,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The landing page brand is `Portal de Imágenes`.
 - The landing page should use visual identity inspired by the `andes/app` application.
 - The landing page includes a visible patient flow with `Documento + código por mail` as a UI-only flow in the MVP.
-- The landing page includes a visible physician flow with `DNI / usuario + contraseña` as a UI-only flow in the MVP.
+- The landing page includes a visible physician flow with `DNI + contraseña`.
 - The current landing must route patient and physician flows to portal-owned surfaces before any direct OHIF navigation.
 - The public UI should communicate product-ready workflows and avoid demo/mock wording in visible copy, even while some validation steps still use placeholder-backed behavior.
 - The public landing page must not expose direct links to OHIF root, backend health endpoints, or raw DICOMweb endpoints.
@@ -56,6 +58,9 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The current viewer handoff must open OHIF with a specific `StudyInstanceUID` instead of `/ohif/` root, so patient access does not land on the general study list after retrieve.
 - OHIF root (`/ohif/`) must not be exposed as a navigable entrypoint; Nginx should redirect it back to the landing and keep only study-specific viewer URLs as supported entrypoints.
 - Physician access must use a portal-owned search and workflow panel.
+- Professional identity may be resolved temporarily from Mongo collection `profesional` when `his.provider = his_mongo_direct`.
+- Professional access is allowed only if the Mongo document exists, `habilitado == true`, `profesionalMatriculado == true`, and it exposes a professional registration under `formacionGrado[].matriculacion[]` with `baja.fecha == null`.
+- The professional summary shown in the portal must expose `nombre y apellido`, `DNI`, and `matrícula`.
 - Physician workflow should be asynchronous and must expose remote PACS context, local cache presence, and retrieve state before opening OHIF.
 - The first functional physician panel is now backed by `GET /api/physician/results`, with DB-seeded recent-query rows per username until real federated search is implemented.
 - The physician panel now exposes a first real `Retrieve` action backed by `POST /api/physician/retrieve`, which enqueues a background job reusing Orthanc `C-GET` and recalculates local state from `cached_studies`, `retrieve_jobs`, and Orthanc.

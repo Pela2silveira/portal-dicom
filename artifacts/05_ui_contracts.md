@@ -179,7 +179,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 
 ### Entry Surface
 
-- Public landing flow: `DNI / usuario + contraseña`
+- Public landing flow: `DNI + contraseña`
 - Current implementation already opens the portal-owned physician surface
 - Browser refresh inside the physician workspace should restore the physician surface and its active filters from session state instead of sending the user back to the public landing.
 - The visible language of the entry flow should read as operational product language, not as internal demo text
@@ -197,6 +197,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 ### Screen Model
 
 - Compact professional data summary at the top of the page
+- Professional summary fields: `Nombre y apellido`, `DNI`, `Matrícula`
 - Search filters in a dedicated block below the professional data section
 - Search execution status
 - Federated results table as the primary visual element

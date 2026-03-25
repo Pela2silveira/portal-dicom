@@ -29,6 +29,9 @@
   "patient": {
     "fake_auth": true
   },
+  "professional": {
+    "fake_auth": true
+  },
   "cache": {
     "orthanc_base_url": "http://orthanc:8042",
     "retention_days": 7

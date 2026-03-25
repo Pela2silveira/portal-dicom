@@ -593,6 +593,10 @@
         gap: 12px;
       }
 
+      .field-group-grouped-body.field-group-grouped-body-patient-lookup {
+        grid-template-columns: 1fr;
+      }
+
       .field-group-grouped-body > .field-group {
         min-width: 0;
       }
@@ -614,6 +618,10 @@
         .field-group-grouped-body {
           grid-template-columns: minmax(180px, 1.15fr) minmax(0, 1fr);
           align-items: start;
+        }
+
+        .field-group-grouped-body.field-group-grouped-body-patient-lookup {
+          grid-template-columns: minmax(140px, 1fr) minmax(0, 2fr);
         }
       }
 
@@ -1132,16 +1140,16 @@
 
             <section class="flow" data-flow="physician">
               <div class="field-group">
-                <label for="physician-dni">DNI / usuario</label>
-                <input id="physician-dni" name="physician-dni" type="text" inputmode="numeric" placeholder="Ingrese su DNI">
+                <label for="physician-dni">DNI</label>
+                <input id="physician-dni" name="physician-dni" type="text" inputmode="numeric" maxlength="11" autocomplete="off" spellcheck="false" placeholder="Ingrese su DNI">
               </div>
 
               <div class="field-group">
                 <label for="physician-password">Contrasena</label>
-                <input id="physician-password" name="physician-password" type="password" placeholder="Ingrese su contrasena">
+                <input id="physician-password" name="physician-password" type="password" autocomplete="current-password" spellcheck="false" placeholder="Ingrese su contrasena">
               </div>
 
-              <button class="action action-primary" type="button">Continuar</button>
+              <button class="action action-primary" type="button" disabled>Continuar</button>
 
               <div class="note note-neutral">
                 Ingreso institucional.
@@ -1192,7 +1200,7 @@
               <div class="patient-filter-layout">
                 <div class="field-group-grouped">
                   <label for="patient-filter-period">Fecha</label>
-                  <div class="field-group-grouped-body">
+                  <div class="field-group-grouped-body field-group-grouped-body-patient-lookup">
                     <div class="field-group">
                       <select id="patient-filter-period">
                         <option value="">Todos</option>
@@ -1286,12 +1294,12 @@
                   <strong id="physician-full-name-value">Sin profesional cargado</strong>
                 </div>
                 <div class="summary-item">
-                  <span>Usuario</span>
-                  <strong id="physician-username-value">-</strong>
-                </div>
-                <div class="summary-item">
                   <span>DNI</span>
                   <strong id="physician-dni-value">-</strong>
+                </div>
+                <div class="summary-item">
+                  <span>Matricula</span>
+                  <strong id="physician-license-value">-</strong>
                 </div>
               </div>
             </section>
@@ -1299,9 +1307,16 @@
             <section class="workspace-card">
               <h4>Filtros</h4>
               <div class="patient-filter-layout">
-                <div class="field-group">
-                  <label for="physician-search-patient">Paciente</label>
-                  <input id="physician-search-patient" type="text" value="">
+                <div class="field-group-grouped">
+                  <label for="physician-search-patient-id">Datos del paciente</label>
+                  <div class="field-group-grouped-body">
+                    <div class="field-group">
+                      <input id="physician-search-patient-id" type="text" inputmode="numeric" maxlength="11" autocomplete="off" spellcheck="false" placeholder="Identificador del paciente">
+                    </div>
+                    <div class="field-group">
+                      <input id="physician-search-patient" type="text" value="" autocomplete="off" spellcheck="false" placeholder="Nombre del paciente">
+                    </div>
+                  </div>
                 </div>
                 <div class="field-group-grouped">
                   <label for="physician-filter-period">Fecha</label>
@@ -1348,19 +1363,21 @@
                     </div>
                   </div>
                 </div>
-                <div class="field-group">
+                <div class="field-group-grouped field-group-grouped-single">
                   <label for="physician-search-modality">Tipo de Estudio</label>
-                  <select id="physician-search-modality">
-                    <option value="">Todas</option>
-                    <option value="CR">Radiografia computada (CR)</option>
-                    <option value="CT">Tomografia computada (CT)</option>
-                    <option value="DX">Radiografia digital (DX)</option>
-                    <option value="MG">Mamografia (MG)</option>
-                    <option value="MR">Resonancia magnetica (MR)</option>
-                    <option value="US">Ecografia (US)</option>
-                    <option value="XA">Angiografia (XA)</option>
-                    <option value="OT">Otros estudios (OT)</option>
-                  </select>
+                  <div class="field-group">
+                    <select id="physician-search-modality">
+                      <option value="">Todas</option>
+                      <option value="CR">Radiografia computada (CR)</option>
+                      <option value="CT">Tomografia computada (CT)</option>
+                      <option value="DX">Radiografia digital (DX)</option>
+                      <option value="MG">Mamografia (MG)</option>
+                      <option value="MR">Resonancia magnetica (MR)</option>
+                      <option value="US">Ecografia (US)</option>
+                      <option value="XA">Angiografia (XA)</option>
+                      <option value="OT">Otros estudios (OT)</option>
+                    </select>
+                  </div>
                 </div>
               </div>
               <div class="filter-action">
@@ -1426,6 +1443,7 @@
       const patientValidateButton = document.getElementById("patient-continue");
       const physicianDni = document.getElementById("physician-dni");
       const physicianPassword = document.getElementById("physician-password");
+      const physicianSearchPatientID = document.getElementById("physician-search-patient-id");
       const physicianSearchPatient = document.getElementById("physician-search-patient");
       const physicianFilterPeriod = document.getElementById("physician-filter-period");
       const physicianDateDropdown = document.getElementById("physician-date-dropdown");
@@ -1438,8 +1456,8 @@
       const physicianApplyFiltersButton = document.getElementById("physician-apply-filters");
       const physicianResultList = document.getElementById("physician-result-list");
       const physicianFullNameValue = document.getElementById("physician-full-name-value");
-      const physicianUsernameValue = document.getElementById("physician-username-value");
       const physicianDniValue = document.getElementById("physician-dni-value");
+      const physicianLicenseValue = document.getElementById("physician-license-value");
       const physicianLoginButton = document.querySelector('[data-flow="physician"] .action-primary');
       const physicianNote = document.querySelector('[data-flow="physician"] .note');
       const resetButtons = document.querySelectorAll("[data-reset]");
@@ -1524,6 +1542,7 @@
         if (activeKind === "physician" && activePhysicianUsername) {
           state.physician = {
             username: activePhysicianUsername,
+            patient_id: physicianSearchPatientID.value.trim(),
             patient_name: physicianSearchPatient.value.trim(),
             date_from: physicianDateFilter.from || "",
             date_to: physicianDateFilter.to || "",
@@ -1581,6 +1600,7 @@
         if (state?.kind === "physician" && state.physician?.username) {
           activateRole("physician");
           physicianDni.value = state.physician.username;
+          physicianSearchPatientID.value = state.physician.patient_id || "";
           physicianSearchPatient.value = state.physician.patient_name || "";
           if (state.physician.date_from || state.physician.date_to) {
             physicianFilterPeriod.value = "custom";
@@ -1618,6 +1638,14 @@
         return String(value || "").replace(/\D+/g, "").slice(0, 11);
       }
 
+      function normalizePhysicianDocumentInput(value) {
+        return String(value || "").replace(/\D+/g, "").slice(0, 11);
+      }
+
+      function normalizePatientLookupIdentifierInput(value) {
+        return String(value || "").replace(/\D+/g, "").slice(0, 11);
+      }
+
       function setMailCodeFeedback(message, isWarning = false) {
         mailCodeFeedback.classList.remove("hidden", "warning");
         mailCodeFeedback.textContent = "";
@@ -1630,6 +1658,12 @@
       function syncPatientContinueState() {
         const hasCode = patientMailCode.value.trim() !== "";
         patientValidateButton.disabled = !(patientMailCodeReady && hasCode);
+      }
+
+      function syncPhysicianContinueState() {
+        const hasDocument = normalizePhysicianDocumentInput(physicianDni.value) !== "";
+        const hasPassword = physicianPassword.value.trim() !== "";
+        physicianLoginButton.disabled = !(hasDocument && hasPassword);
       }
 
       function clearPatientSyncPoll() {
@@ -2070,8 +2104,8 @@
 
       function renderPhysicianResults(payload) {
         physicianFullNameValue.textContent = payload.physician.full_name || "-";
-        physicianUsernameValue.textContent = payload.physician.username || "-";
         physicianDniValue.textContent = payload.physician.dni || "-";
+        physicianLicenseValue.textContent = payload.physician.license_number || "-";
 
         if (!payload.results.length) {
           physicianResultList.innerHTML =
@@ -2206,6 +2240,7 @@
         activePhysicianUsername = username;
 
         const params = new URLSearchParams({ username });
+        if (physicianSearchPatientID.value.trim()) params.set("patient_id", physicianSearchPatientID.value.trim());
         if (physicianSearchPatient.value.trim()) params.set("patient_name", physicianSearchPatient.value.trim());
         if (physicianDateFilter.from) params.set("date_from", physicianDateFilter.from);
         if (physicianDateFilter.to) {
@@ -2292,6 +2327,30 @@
         }
 
         return response.json();
+      }
+
+      async function loginPhysician(username, password) {
+        const response = await fetch("/api/physician/login", {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            username,
+            password
+          })
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const error = new Error(payload.message || "physician login request failed");
+          error.status = response.status;
+          error.payload = payload;
+          throw error;
+        }
+
+        return payload;
       }
 
       function watchPatientRetrieveJob(jobID) {
@@ -2615,14 +2674,15 @@
         }, 700);
       });
 
-      physicianLoginButton.addEventListener("click", () => {
-        const dniValue = physicianDni.value.trim();
+      physicianLoginButton.addEventListener("click", async () => {
+        const dniValue = normalizePhysicianDocumentInput(physicianDni.value);
+        physicianDni.value = dniValue;
         const passwordValue = physicianPassword.value.trim();
 
         physicianNote.classList.remove("warning");
 
         if (!dniValue) {
-          physicianNote.textContent = "Ingrese su DNI o usuario antes de continuar.";
+          physicianNote.textContent = "Ingrese su DNI antes de continuar.";
           physicianNote.classList.add("warning");
           return;
         }
@@ -2633,23 +2693,31 @@
           return;
         }
 
-        physicianNote.textContent =
-          "Acceso profesional confirmado para " +
-          dniValue +
-          ". Abriendo la consola de trabajo...";
+        physicianLoginButton.disabled = true;
+        physicianLoginButton.textContent = "Validando...";
+        physicianNote.textContent = "Validando matricula profesional...";
 
-        window.setTimeout(async () => {
+        try {
+          const payload = await loginPhysician(dniValue, passwordValue);
           showWorkspace("physician");
+          physicianFullNameValue.textContent = payload.physician?.full_name || "-";
+          physicianDniValue.textContent = payload.physician?.dni || dniValue;
+          physicianLicenseValue.textContent = payload.physician?.license_number || "-";
+          physicianNote.textContent = payload.message || "Ingreso profesional validado.";
           try {
             await loadPhysicianResults(dniValue);
           } catch (error) {
-            physicianFullNameValue.textContent = "Profesional " + dniValue;
-            physicianUsernameValue.textContent = dniValue;
-            physicianDniValue.textContent = dniValue;
             physicianResultList.innerHTML =
               '<div class="empty-state">No se pudieron cargar los resultados del profesional.</div>';
           }
-        }, 700);
+        } catch (error) {
+          physicianNote.textContent =
+            error?.payload?.message || "No se pudo validar el acceso profesional.";
+          physicianNote.classList.add("warning");
+        } finally {
+          physicianLoginButton.textContent = "Continuar";
+          syncPhysicianContinueState();
+        }
       });
 
       activateRole("patient");
@@ -2660,10 +2728,20 @@
         syncPatientContinueState();
       });
       patientMailCode.addEventListener("input", syncPatientContinueState);
+      physicianDni.addEventListener("input", () => {
+        physicianDni.value = normalizePhysicianDocumentInput(physicianDni.value);
+        syncPhysicianContinueState();
+      });
+      physicianPassword.addEventListener("input", syncPhysicianContinueState);
+      physicianSearchPatientID.addEventListener("input", () => {
+        physicianSearchPatientID.value = normalizePatientLookupIdentifierInput(physicianSearchPatientID.value);
+        savePortalWorkspaceState();
+      });
       patientFilterModality.addEventListener("change", () => savePortalWorkspaceState());
       physicianSearchPatient.addEventListener("input", () => savePortalWorkspaceState());
       physicianSearchModality.addEventListener("change", () => savePortalWorkspaceState());
       syncPatientContinueState();
+      syncPhysicianContinueState();
       renderPhysicianCalendar();
       restorePortalWorkspaceState().catch(() => {});
     </script>

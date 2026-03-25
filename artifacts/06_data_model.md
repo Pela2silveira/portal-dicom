@@ -161,11 +161,20 @@ Key fields:
 - `username`
 - `dni`
 - `full_name`
+- `license_number`
+- `licensed`
 - `auth_provider`
 - `mfa_enabled`
 - `last_login_at`
 - `last_success_auth_at`
 - `last_failed_auth_at`
+
+Notes:
+
+- The temporary professional identity adapter may resolve against Mongo collection `profesional`.
+- The current Mongo projection of interest is `documento`, `nombre`, `apellido`, and `formacionGrado[].matriculacion[]`.
+- Active professional registration is resolved from the first `matriculacion` entry with `baja.fecha == null`.
+- The visible `license_number` is sourced from that active `matriculaNumero`.
 
 ### `physician_sessions`
 

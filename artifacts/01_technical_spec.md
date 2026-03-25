@@ -23,8 +23,10 @@
 - El paso `Enviar código` debe consultar backend antes del envío real del mail para distinguir tres resultados: `ready_to_send`, `missing_active_email` y `patient_not_found`.
 - El modo de auth paciente debe poder alternarse por config (`patient.fake_auth`) para conmutar rápido entre demos y validación real por correo sin cambiar endpoints ni UI principal.
 - Si `patient.fake_auth` no está presente en `config.json`, el backend debe asumir `true` para preservar compatibilidad con el MVP actual.
+- El modo de auth profesional debe poder alternarse por config (`professional.fake_auth`) para desacoplar la validación transitoria actual del objetivo futuro `LDAP provincial + MFA`.
+- Si `professional.fake_auth` no está presente en `config.json`, el backend debe asumir `true` para preservar compatibilidad con el MVP actual.
 - Las fechas de estudio que llegan desde DICOM/QIDO deben normalizarse a `YYYY-MM-DD` antes de persistirse o filtrarse en superficies del portal.
-- El flujo visible de profesional en la landing usa `DNI / usuario + contraseña` como experiencia UI.
+- El flujo visible de profesional en la landing usa `DNI + contraseña` como experiencia UI.
 - La landing y las superficies propias del portal deben ser **responsive** para dispositivos móviles.
 - La integración futura objetivo para profesionales es **LDAP provincial + MFA**.
 - OHIF está fijado a `ohif/app:v3.11.1`.
@@ -62,7 +64,12 @@ Proveer un portal operativo mínimo capaz de:
   - Mostrar branding institucional.
   - Presentar selector `Paciente` / `Profesional`.
   - Exponer el flujo visual de `Documento + código por mail` para pacientes.
-  - Exponer el flujo visual de `DNI / usuario + contraseña` para profesionales.
+  - Exponer el flujo visual de `DNI + contraseña` para profesionales.
+  - Con `professional.fake_auth = true`, mantener la validación profesional transitoria vigente.
+  - Con `professional.fake_auth = false`, reservar el acceso profesional para la futura autenticación institucional.
+  - Validar el ingreso profesional contra la colección Mongo `profesional` cuando el provider operativo sea `his_mongo_direct`.
+  - Permitir el acceso sólo si el documento existe, `habilitado == true`, `profesionalMatriculado == true`, y consta con matrícula profesional.
+  - La matrícula profesional debe resolverse desde `formacionGrado[].matriculacion[]`, tomando la primera entrada con `baja.fecha == null` y usando `matriculaNumero` como valor visible.
   - Enlazar a OHIF y a verificaciones operativas.
 - **UI Operativa (MVP)**: página simple servida por Nginx o frontend mínimo para:
   - Buscar (invoca backend).

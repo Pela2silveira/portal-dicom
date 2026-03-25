@@ -69,7 +69,7 @@
 - Landing pública:
   - selector `Paciente` / `Profesional`
   - flujo visual `Documento + código por mail`
-  - flujo visual `DNI / usuario + contraseña`
+  - flujo visual `DNI + contraseña`
   - textos alineados con roadmap `LDAP provincial + MFA` para médicos
   - aclaración visual de que el portal es la superficie de acceso y OHIF es el visor
   - adaptación responsive para teléfonos y tablets
