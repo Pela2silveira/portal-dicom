@@ -127,7 +127,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - `Recuperar estudio` when `availabilityStatus = pending_retrieve`
 - `Ver estudio` when `availabilityStatus = available_local`
 - `Buscar` to enqueue a remote refresh with the current patient filters while keeping cached results visible
-- the patient result area must differentiate `Buscando estudios...` from `Recuperando estudio...` with separate visible status bands
+- the patient result area must differentiate QIDO search feedback from per-study retrieve state without adding parallel UI state machines
 
 ### Explicitly Forbidden Actions
 
@@ -251,7 +251,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - local cache presence
 - retrieve progress or terminal state
 - partial-filter warning when a node could not apply all requested filters
-- a visible retrieve-in-progress banner distinct from the federated search feedback
+- retrieve progress must be readable directly in the result row and action state
 
 ### OHIF Handoff
 

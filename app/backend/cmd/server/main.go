@@ -699,13 +699,7 @@ func (a *App) recoverQueuedPatientSearches(ctx context.Context) error {
 }
 
 func (a *App) enqueuePatientSearch(requestID string) {
-	select {
-	case a.patientSearchQueue <- requestID:
-	default:
-		go func() {
-			a.patientSearchQueue <- requestID
-		}()
-	}
+	a.patientSearchQueue <- requestID
 }
 
 func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
@@ -2177,19 +2171,33 @@ func (a *App) getStudyOperationalState(ctx context.Context, studyUID string, fal
 		cacheStatus = fallbackCacheStatus
 	}
 
-	var latestRetrieveStatus string
+	var (
+		latestRetrieveStatus string
+		retrieveCreatedAt    time.Time
+		retrieveStartedAt    sql.NullTime
+		retrieveFinishedAt   sql.NullTime
+	)
 	err = a.db.QueryRowContext(ctx, `
-		SELECT status
+		SELECT status, created_at, started_at, finished_at
 		FROM retrieve_jobs
 		WHERE study_instance_uid = $1
 		ORDER BY created_at DESC, id DESC
 		LIMIT 1
-	`, studyUID).Scan(&latestRetrieveStatus)
+	`, studyUID).Scan(&latestRetrieveStatus, &retrieveCreatedAt, &retrieveStartedAt, &retrieveFinishedAt)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", "", "", err
 	}
 	if latestRetrieveStatus != "" {
 		retrieveStatus = latestRetrieveStatus
+		if (latestRetrieveStatus == "queued" || latestRetrieveStatus == "running") && !retrieveFinishedAt.Valid {
+			lastActivity := retrieveCreatedAt
+			if retrieveStartedAt.Valid {
+				lastActivity = retrieveStartedAt.Time
+			}
+			if time.Since(lastActivity) > 10*time.Minute {
+				retrieveStatus = "idle"
+			}
+		}
 	}
 
 	isLocal, _, err := a.findOrthancStudy(ctx, studyUID)

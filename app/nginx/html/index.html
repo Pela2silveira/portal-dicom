@@ -548,11 +548,6 @@
         justify-content: flex-end;
       }
 
-      .inline-status {
-        color: #8a4b00;
-        font-size: 0.9rem;
-        font-weight: 700;
-      }
 
       .action.ghost {
         background: var(--surface);
@@ -1249,7 +1244,6 @@
             <section class="workspace-card workspace-card-primary">
               <h4>Resultados</h4>
               <div class="sync-status" id="patient-sync-status" aria-live="polite"></div>
-              <div class="sync-status" id="patient-retrieve-status" aria-live="polite"></div>
               <div class="study-list" id="patient-study-list">
                 <div class="empty-state">Ingrese por el flujo paciente para cargar estudios desde la API del portal.</div>
               </div>
@@ -1306,7 +1300,6 @@
             <section class="workspace-card">
               <h4>Resultados</h4>
               <div class="workspace-note">Esta grilla ya diferencia estudios listos para visualizar, estudios pendientes de recuperar y resultados que requieren reintento u otra accion operativa.</div>
-              <div class="sync-status" id="physician-retrieve-status" aria-live="polite"></div>
               <div class="result-list" id="physician-result-list">
                 <div class="empty-state">Ingrese por el flujo profesional para cargar resultados desde la API del portal.</div>
               </div>
@@ -1353,7 +1346,6 @@
       const patientCalendarNext = document.getElementById("patient-calendar-next");
       const patientApplyFiltersButton = document.getElementById("patient-apply-filters");
       const patientSyncStatus = document.getElementById("patient-sync-status");
-      const patientRetrieveStatus = document.getElementById("patient-retrieve-status");
       const patientStudyList = document.getElementById("patient-study-list");
       const patientFullNameValue = document.getElementById("patient-full-name-value");
       const patientDocumentValue = document.getElementById("patient-document-value");
@@ -1368,7 +1360,6 @@
       const physicianSearchFrom = document.getElementById("physician-search-from");
       const physicianSearchTo = document.getElementById("physician-search-to");
       const physicianSearchModality = document.getElementById("physician-search-modality");
-      const physicianRetrieveStatus = document.getElementById("physician-retrieve-status");
       const physicianApplyFiltersButton = document.getElementById("physician-apply-filters");
       const physicianResultList = document.getElementById("physician-result-list");
       const physicianSummary = document.getElementById("physician-summary");
@@ -1379,8 +1370,6 @@
       let activePhysicianUsername = "";
       let patientMailCodeReady = false;
       let patientSyncPollHandle = null;
-      let patientRetrieveInFlight = false;
-      let physicianRetrieveInFlight = false;
       const patientDateFilter = (() => {
         const now = new Date();
         return {
@@ -1415,12 +1404,6 @@
         physicianWorkspace.classList.add("hidden");
         patientSyncStatus.classList.remove("active", "error");
         patientSyncStatus.textContent = "";
-        patientRetrieveStatus.classList.remove("active", "error", "warn");
-        patientRetrieveStatus.textContent = "";
-        physicianRetrieveStatus.classList.remove("active", "error", "warn");
-        physicianRetrieveStatus.textContent = "";
-        patientRetrieveInFlight = false;
-        physicianRetrieveInFlight = false;
       }
 
       function escapeHTML(value) {
@@ -1479,27 +1462,6 @@
           patientSyncStatus.classList.add("active", "error");
           patientSyncStatus.textContent = sync.message || "No se pudo completar la búsqueda remota.";
         }
-      }
-
-      function setRetrieveStatusBanner(element, message = "", tone = "warn") {
-        element.classList.remove("active", "error", "warn");
-        element.textContent = "";
-        if (!message) {
-          return;
-        }
-        element.classList.add("active");
-        if (tone === "error") {
-          element.classList.add("error");
-        } else if (tone === "warn") {
-          element.classList.add("warn");
-        }
-        element.textContent = message;
-      }
-
-      function nextFrame() {
-        return new Promise(resolve => {
-          window.requestAnimationFrame(() => resolve());
-        });
       }
 
       function chipClassForStatus(status) {
@@ -1673,18 +1635,6 @@
         patientSexValue.textContent = payload.patient.sex || "-";
         patientGenderIdentityValue.textContent = payload.patient.gender_identity || "-";
 
-        const activeRetrieves = payload.studies.filter(study => study.retrieve_status === "running" || study.retrieve_status === "queued");
-        if (activeRetrieves.length) {
-          setRetrieveStatusBanner(
-            patientRetrieveStatus,
-            activeRetrieves.length === 1 ? "Recuperando 1 estudio en segundo plano..." : "Recuperando " + activeRetrieves.length + " estudios en segundo plano...",
-            "warn"
-          );
-          patientRetrieveInFlight = false;
-        } else if (!patientRetrieveInFlight) {
-          setRetrieveStatusBanner(patientRetrieveStatus);
-        }
-
         if (!payload.studies.length) {
           const hasFilters =
             Boolean(payload.filters?.date_from) ||
@@ -1727,10 +1677,6 @@
                   const action = study.viewer_url
                     ? '<a class="action action-primary" href="' + escapeHTML(study.viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar estudio</a>'
                     : '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '">Recuperar estudio</button>';
-                  const inlineStatus =
-                    study.retrieve_status === "running" || study.retrieve_status === "queued"
-                      ? '<span class="inline-status">Recuperando estudio...</span>'
-                      : "";
 
                   const statusChips =
                     '<div class="chip-row status-chips">' +
@@ -1757,7 +1703,7 @@
                         modalities +
                         '<div class="chip">' + escapeHTML(study.study_instance_uid) + '</div>' +
                       '</div>' +
-                      '<div class="inline-actions">' + action + inlineStatus + '</div>' +
+                      '<div class="inline-actions">' + action + '</div>' +
                     '</article>'
                   );
                 })
@@ -1803,18 +1749,6 @@
         physicianSummary.textContent =
           payload.physician.full_name + " · DNI " + payload.physician.dni;
 
-        const activeRetrieves = payload.results.filter(result => result.retrieve_status === "running" || result.retrieve_status === "queued");
-        if (activeRetrieves.length) {
-          setRetrieveStatusBanner(
-            physicianRetrieveStatus,
-            activeRetrieves.length === 1 ? "Recuperando 1 estudio en segundo plano..." : "Recuperando " + activeRetrieves.length + " estudios en segundo plano...",
-            "warn"
-          );
-          physicianRetrieveInFlight = false;
-        } else if (!physicianRetrieveInFlight) {
-          setRetrieveStatusBanner(physicianRetrieveStatus);
-        }
-
         if (!payload.results.length) {
           physicianResultList.innerHTML =
             '<div class="empty-state">No hay resultados para los filtros seleccionados.</div>';
@@ -1831,12 +1765,10 @@
               ? '<a class="action action-primary" href="' + escapeHTML(result.viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar</a>'
               : '<button class="action ghost" type="button">Visualizar cuando esté listo</button>';
             let retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '">Recuperar estudio</button>';
-            let retrieveInlineStatus = "";
             if (result.retrieve_status === "done" && result.viewer_url) {
               retrieveAction = '<button class="action action-secondary" type="button" disabled>Recuperado</button>';
             } else if (result.retrieve_status === "running" || result.retrieve_status === "queued") {
               retrieveAction = '<button class="action action-secondary" type="button" disabled>Recuperando</button>';
-              retrieveInlineStatus = '<span class="inline-status">Recuperando estudio...</span>';
             } else if (result.retrieve_status === "failed") {
               retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '">Reintentar recuperacion</button>';
             }
@@ -1867,7 +1799,6 @@
                   '<div class="chip info">Filtro parcial: ' + escapeHTML(result.partial_filter ? "si" : "no") + '</div>' +
                 '</div>' +
                 '<div class="inline-actions">' +
-                  retrieveInlineStatus +
                   retrieveAction +
                   action +
                 '</div>' +
@@ -2082,21 +2013,11 @@
 
         button.disabled = true;
         button.textContent = "Recuperando...";
-        patientRetrieveInFlight = true;
-        setRetrieveStatusBanner(patientRetrieveStatus, "Recuperando estudio...", "warn");
-        const inlineStatus = document.createElement("span");
-        inlineStatus.className = "inline-status";
-        inlineStatus.textContent = "Recuperando estudio...";
-        button.insertAdjacentElement("afterend", inlineStatus);
-        await nextFrame();
 
         try {
           await triggerPatientRetrieve(studyInstanceUID);
           await loadPatientStudies(activePatientDocument, { requestSync: false });
         } catch (error) {
-          patientRetrieveInFlight = false;
-          setRetrieveStatusBanner(patientRetrieveStatus, "No se pudo completar la recuperación del estudio.", "error");
-          inlineStatus.remove();
           button.disabled = false;
           button.textContent = "Recuperar";
         }
@@ -2115,21 +2036,11 @@
 
         button.disabled = true;
         button.textContent = "Recuperando...";
-        physicianRetrieveInFlight = true;
-        setRetrieveStatusBanner(physicianRetrieveStatus, "Recuperando estudio...", "warn");
-        const inlineStatus = document.createElement("span");
-        inlineStatus.className = "inline-status";
-        inlineStatus.textContent = "Recuperando estudio...";
-        button.insertAdjacentElement("afterend", inlineStatus);
-        await nextFrame();
 
         try {
           await triggerPhysicianRetrieve(studyInstanceUID);
           await loadPhysicianResults(activePhysicianUsername);
         } catch (error) {
-          physicianRetrieveInFlight = false;
-          setRetrieveStatusBanner(physicianRetrieveStatus, "No se pudo completar la recuperación del estudio.", "error");
-          inlineStatus.remove();
           button.disabled = false;
           button.textContent = "Recuperar";
         }
