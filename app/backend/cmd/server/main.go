@@ -370,6 +370,7 @@ type ConfigResponse struct {
 	LoadedAt   string             `json:"loaded_at"`
 	PACSNodes  []PACSNodeResponse `json:"pacs_nodes"`
 	HIS        HISConfigResponse  `json:"his"`
+	Patient    PatientConfig      `json:"patient"`
 	Cache      CacheConfig        `json:"cache"`
 	Migrations []string           `json:"migrations"`
 }
@@ -377,6 +378,7 @@ type ConfigResponse struct {
 type ExternalConfig struct {
 	PACSNodes []PACSNodeConfig `json:"pacs_nodes"`
 	HIS       HISConfig        `json:"his"`
+	Patient   PatientConfig    `json:"patient"`
 	Cache     CacheConfig      `json:"cache"`
 }
 
@@ -407,6 +409,10 @@ type HISConfig struct {
 	BaseURL            string `json:"base_url"`
 	AuthType           string `json:"auth_type"`
 	DocumentLookupPath string `json:"document_lookup_path"`
+}
+
+type PatientConfig struct {
+	InitialSyncPeriod string `json:"initial_sync_period"`
 }
 
 type CacheConfig struct {
@@ -614,6 +620,7 @@ func (a *App) handleConfig(appliedMigrations []string) http.HandlerFunc {
 				AuthType:           a.externalConfig.HIS.AuthType,
 				DocumentLookupPath: a.externalConfig.HIS.DocumentLookupPath,
 			},
+			Patient:    a.externalConfig.Patient,
 			Cache:      a.externalConfig.Cache,
 			Migrations: appliedMigrations,
 		}
@@ -769,7 +776,7 @@ func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if shouldSync {
-		patient, err = a.syncPatientStudiesFromSingleNode(ctx, patient, documentNumber, filters)
+		patient, err = a.syncPatientStudiesFromSingleNode(ctx, patient, documentNumber, a.initialPatientSyncFilter())
 		if err != nil {
 			a.log("error", "patient_qido_sync_failed", map[string]any{
 				"document_number": documentNumber,
@@ -816,6 +823,33 @@ func (a *App) patientHasStudyCache(ctx context.Context, patientID string) (bool,
 		return false, err
 	}
 	return exists, nil
+}
+
+func (a *App) initialPatientSyncFilter() PatientStudiesFilter {
+	now := time.Now()
+	preset := strings.TrimSpace(strings.ToLower(a.externalConfig.Patient.InitialSyncPeriod))
+
+	switch preset {
+	case "", "current_month":
+		start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+		end := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, now.Location())
+		return PatientStudiesFilter{DateFrom: start.Format("2006-01-02"), DateTo: end.Format("2006-01-02")}
+	case "current_week":
+		offset := (int(now.Weekday()) + 6) % 7
+		start := time.Date(now.Year(), now.Month(), now.Day()-offset, 0, 0, 0, 0, now.Location())
+		end := start.AddDate(0, 0, 6)
+		return PatientStudiesFilter{DateFrom: start.Format("2006-01-02"), DateTo: end.Format("2006-01-02")}
+	case "current_year":
+		start := time.Date(now.Year(), time.January, 1, 0, 0, 0, 0, now.Location())
+		end := time.Date(now.Year(), time.December, 31, 0, 0, 0, 0, now.Location())
+		return PatientStudiesFilter{DateFrom: start.Format("2006-01-02"), DateTo: end.Format("2006-01-02")}
+	case "all":
+		return PatientStudiesFilter{}
+	default:
+		start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+		end := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, now.Location())
+		return PatientStudiesFilter{DateFrom: start.Format("2006-01-02"), DateTo: end.Format("2006-01-02")}
+	}
 }
 
 func (a *App) handlePatientRetrieve(w http.ResponseWriter, r *http.Request) {
@@ -2599,6 +2633,14 @@ func buildOHIFViewerURL(studyInstanceUID string) string {
 func validateExternalConfig(cfg ExternalConfig) error {
 	if len(cfg.PACSNodes) == 0 {
 		return errors.New("config must include at least one PACS node")
+	}
+
+	if cfg.Patient.InitialSyncPeriod != "" {
+		switch strings.TrimSpace(strings.ToLower(cfg.Patient.InitialSyncPeriod)) {
+		case "current_month", "current_week", "current_year", "all":
+		default:
+			return fmt.Errorf("patient initial_sync_period must be one of current_month, current_week, current_year, all")
+		}
 	}
 
 	for _, node := range cfg.PACSNodes {
