@@ -20,6 +20,7 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 * **Separación liveness/readiness:** el contenedor backend debe exponer un endpoint liviano de liveness para Docker Compose y reservar `/api/health` para estado operativo degradado/listo.
 * **Salud por componente:** `/api/health` debe distinguir componentes `required` y `optional`, de modo que sólo los requeridos dejen la app `unavailable`; los opcionales deben degradar capacidad sin forzar mantenimiento global.
 * **Eventos de salud del sistema:** el backend debe exponer un stream SSE para cambios de estado operativo, de modo que la app abierta pueda volver a la landing de mantenimiento y la landing pueda recargarse cuando el sistema se recupere.
+* **Frecuencia de chequeo de salud:** el watcher agregado de componentes debe ejecutarse con una cadencia conservadora de 1 minuto; la conexión SSE puede mantenerse viva con heartbeats más frecuentes sin volver a ejecutar todos los checks.
 * **Componentes requeridos actuales:** `backend`, `postgres`, `orthanc`, `mongo_identity` y `config`.
 * **Componentes opcionales actuales:** nodos `remote_pacs`.
 * **Extensibilidad prevista:** el modelo de componentes debe admitir futuros ítems como `ldap_auth` y `mail_delivery`, junto con workflows de contingencia específicos.
