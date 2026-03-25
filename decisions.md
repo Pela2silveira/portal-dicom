@@ -78,6 +78,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Docker Compose backend healthcheck must use a dedicated liveness endpoint and not `/api/health`, so the container stays healthy while the app is degraded behind maintenance mode.
 - `/api/health` must evaluate components by severity: required components (`backend`, `config`, `postgres`, `orthanc`, `mongo_identity`) can make the app unavailable; optional components such as remote PACS only degrade capability.
 - Remote PACS health is informative and must not trigger maintenance mode by itself.
+- `/api/health` must serve the latest cached system-health snapshot instead of recalculating remote PACS checks inline on every request.
 - The portal must use an SSE system-health stream to react to backend state changes in real time instead of periodic polling.
 - The system-health component watcher should run every 1 minute; SSE heartbeats may be more frequent, but full dependency checks should stay conservative.
 - The database must cache patient identity anchors, alternate identifiers from HIS, known authorized study UIDs, physician recent searches, and future session state.

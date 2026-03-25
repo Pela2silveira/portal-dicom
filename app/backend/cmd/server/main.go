@@ -1295,20 +1295,21 @@ func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
-	defer cancel()
-
-	components := a.collectComponentHealth(ctx)
+	event := a.currentSystemHealthEvent()
+	components := event.Components
+	checkedAt := event.TS
+	if checkedAt == "" {
+		checkedAt = time.Now().UTC().Format(time.RFC3339)
+	}
 
 	resp := HealthResponse{
-		Status:              overallHealthStatus(components),
+		Status:              event.Status,
 		AppEnv:              a.cfg.AppEnv,
 		DBOK:                componentHealthy(components, "postgres"),
 		OrthancOK:           componentHealthy(components, "orthanc"),
 		ConfigOK:            componentHealthy(components, "config"),
 		IdentityProvidersOK: componentHealthy(components, "mongo_identity"),
-		CheckedAt:           time.Now().UTC().Format(time.RFC3339),
+		CheckedAt:           checkedAt,
 		ConfigPath:          a.cfg.ConfigPath,
 		Components:          components,
 	}

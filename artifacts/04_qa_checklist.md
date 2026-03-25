@@ -46,6 +46,7 @@
 - [Ready] **Continuous Mongo degradation**: if Mongo becomes unavailable after backend startup, `/api/health` degrades again and the landing falls back to maintenance until connectivity returns.
 - [Ready] **Optional remote PACS degradation**: remote PACS health is reported as optional and must not trigger maintenance mode for the whole app by itself.
 - [Ready] **Remote PACS health modes**: optional PACS health supports explicit modes such as authenticated QIDO and DIMSE C-ECHO through Orthanc.
+- [Ready] **Cached health snapshot**: `/api/health` serves the latest in-memory snapshot instead of recomputing remote PACS checks inline on every request, reducing Orthanc and backend overhead.
 - [Ready] **System health SSE**: portal and maintenance page react to `GET /api/system/events` so they switch automatically when the backend becomes unavailable or recovers.
 - [Ready] **Logs accessible via compose**: `docker compose logs` is the primary inspection path; backend logs are JSON.
 - [Missing] **Retention automation**: backend cron for Orthanc purge (7 days) + DB cleanup (30 days) not implemented (Milestone 7 pending).

@@ -33,6 +33,7 @@
 - Cuando `his.provider = his_mongo_direct` no pueda conectarse a Mongo al inicio, el backend debe reintentar la conexión cada 1 minuto sin reinicio.
 - La salud operativa del provider Mongo debe evaluarse también después del arranque; si pierde conectividad luego de estar disponible, `/api/health` debe volver a `503`.
 - El detalle completo de `/api/health` debe reservarse al subrequest interno de Nginx; la respuesta pública de `/api/health` debe limitarse al estado agregado y timestamp.
+- `/api/health` debe responder desde el último snapshot de salud calculado por el watcher en background, evitando recalcular inline los checks de PACS remotos en cada request.
 - El backend debe publicar `GET /api/system/events` como SSE de salud del sistema, pero el payload público debe limitarse al estado agregado y timestamp.
 - `/api/config` debe considerarse endpoint interno/operativo y no debe quedar publicado por la superficie pública de Nginx.
 - El watcher agregado que recalcula salud de componentes debe correr cada 1 minuto; el SSE puede usar heartbeats separados para sostener la conexión.
