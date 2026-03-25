@@ -1373,6 +1373,7 @@
       let patientSyncPollHandle = null;
       let patientRetrieveEventSource = null;
       let physicianRetrieveEventSource = null;
+      const portalWorkspaceStorageKey = "portalWorkspaceState";
       const patientDateFilter = (() => {
         const now = new Date();
         return {
@@ -1398,6 +1399,7 @@
         hero.classList.add("hidden");
         patientWorkspace.classList.toggle("hidden", kind !== "patient");
         physicianWorkspace.classList.toggle("hidden", kind !== "physician");
+        savePortalWorkspaceState(kind);
       }
 
       function resetLanding() {
@@ -1410,6 +1412,100 @@
         patientSyncStatus.classList.remove("active", "error");
         patientSyncStatus.textContent = "";
         activePatientSearchRequestID = "";
+        activePatientDocument = "";
+        activePhysicianUsername = "";
+        clearPortalWorkspaceState();
+      }
+
+      function savePortalWorkspaceState(kindOverride = "") {
+        const activeKind = kindOverride || (!patientWorkspace.classList.contains("hidden") ? "patient" : (!physicianWorkspace.classList.contains("hidden") ? "physician" : ""));
+        if (!activeKind) {
+          sessionStorage.removeItem(portalWorkspaceStorageKey);
+          return;
+        }
+
+        const state = { kind: activeKind };
+        if (activeKind === "patient" && activePatientDocument) {
+          state.patient = {
+            document_number: activePatientDocument,
+            date_from: patientDateFilter.from || "",
+            date_to: patientDateFilter.to || "",
+            modality: patientFilterModality.value || "",
+            preset: patientFilterPeriod.value || "month"
+          };
+        }
+        if (activeKind === "physician" && activePhysicianUsername) {
+          state.physician = {
+            username: activePhysicianUsername,
+            patient_name: physicianSearchPatient.value.trim(),
+            date_from: physicianSearchFrom.value || "",
+            date_to: physicianSearchTo.value || "",
+            modality: physicianSearchModality.value.trim()
+          };
+        }
+
+        sessionStorage.setItem(portalWorkspaceStorageKey, JSON.stringify(state));
+      }
+
+      function clearPortalWorkspaceState() {
+        sessionStorage.removeItem(portalWorkspaceStorageKey);
+      }
+
+      async function restorePortalWorkspaceState() {
+        const rawState = sessionStorage.getItem(portalWorkspaceStorageKey);
+        if (!rawState) {
+          return;
+        }
+
+        let state;
+        try {
+          state = JSON.parse(rawState);
+        } catch (_error) {
+          clearPortalWorkspaceState();
+          return;
+        }
+
+        if (state?.kind === "patient" && state.patient?.document_number) {
+          activateRole("patient");
+          patientDocument.value = state.patient.document_number;
+          patientFilterModality.value = state.patient.modality || "";
+          if (state.patient.date_from || state.patient.date_to) {
+            patientFilterPeriod.value = state.patient.preset || "custom";
+            patientDateFilter.from = state.patient.date_from || "";
+            patientDateFilter.to = state.patient.date_to || "";
+            patientDateFilter.awaitingRangeEnd = false;
+            if (patientDateFilter.from) {
+              const focusDate = new Date(patientDateFilter.from + "T00:00:00");
+              patientDateFilter.viewYear = focusDate.getFullYear();
+              patientDateFilter.viewMonth = focusDate.getMonth();
+            }
+            renderPatientCalendar();
+          }
+          showWorkspace("patient");
+          try {
+            await loadPatientStudies(state.patient.document_number);
+          } catch (_error) {
+            patientStudyList.innerHTML =
+              '<div class="empty-state">No se pudieron restaurar los estudios del paciente.</div>';
+          }
+          return;
+        }
+
+        if (state?.kind === "physician" && state.physician?.username) {
+          activateRole("physician");
+          physicianDni.value = state.physician.username;
+          physicianSearchPatient.value = state.physician.patient_name || "";
+          physicianSearchFrom.value = state.physician.date_from || "";
+          physicianSearchTo.value = state.physician.date_to || "";
+          physicianSearchModality.value = state.physician.modality || "";
+          showWorkspace("physician");
+          try {
+            await loadPhysicianResults(state.physician.username);
+          } catch (_error) {
+            physicianResultList.innerHTML =
+              '<div class="empty-state">No se pudieron restaurar los resultados del profesional.</div>';
+          }
+        }
       }
 
       function escapeHTML(value) {
@@ -1862,6 +1958,7 @@
 
         const payload = await response.json();
         renderPatientStudies(payload);
+        savePortalWorkspaceState("patient");
       }
 
       async function startPatientSearch(documentNumber) {
@@ -1928,6 +2025,7 @@
 
         const payload = await response.json();
         renderPhysicianResults(payload);
+        savePortalWorkspaceState("physician");
       }
 
       async function triggerPatientRetrieve(studyInstanceUID) {
@@ -2039,6 +2137,7 @@
 
       patientFilterPeriod.addEventListener("change", () => {
         applyPatientPreset(patientFilterPeriod.value);
+        savePortalWorkspaceState();
       });
 
       patientCalendarPrev.addEventListener("click", () => {
@@ -2070,6 +2169,7 @@
         }
 
         selectPatientCalendarDate(button.getAttribute("data-patient-calendar-day"));
+        savePortalWorkspaceState();
       });
 
       document.addEventListener("click", event => {
@@ -2300,7 +2400,13 @@
         syncPatientContinueState();
       });
       patientMailCode.addEventListener("input", syncPatientContinueState);
+      patientFilterModality.addEventListener("change", () => savePortalWorkspaceState());
+      physicianSearchPatient.addEventListener("input", () => savePortalWorkspaceState());
+      physicianSearchFrom.addEventListener("input", () => savePortalWorkspaceState());
+      physicianSearchTo.addEventListener("input", () => savePortalWorkspaceState());
+      physicianSearchModality.addEventListener("input", () => savePortalWorkspaceState());
       syncPatientContinueState();
+      restorePortalWorkspaceState().catch(() => {});
     </script>
   </body>
 </html>

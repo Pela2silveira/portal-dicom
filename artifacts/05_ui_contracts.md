@@ -37,6 +37,7 @@ Allow a patient to see only their authorized studies and open one selected study
   - `missing_active_email`: show contact-update guidance in a prominent warning style
   - `patient_not_found`: show that the patient has no records
 - Current implementation already opens the portal-owned patient surface.
+- Browser refresh inside the patient workspace should restore the patient surface and its active filters from session state instead of sending the user back to the public landing.
 - The visible language of the entry flow should read as product, not as internal demo text.
 - The institutional strapline in the public header should read `Ministerio de Salud - Provincia del Neuquén`.
 - The public landing should keep the access form as the visual center and leave only brief orientation copy around it.
@@ -178,6 +179,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 
 - Public landing flow: `DNI / usuario + contraseña`
 - Current implementation already opens the portal-owned physician surface
+- Browser refresh inside the physician workspace should restore the physician surface and its active filters from session state instead of sending the user back to the public landing.
 - The visible language of the entry flow should read as operational product language, not as internal demo text
 - The institutional strapline in the public header should read `Ministerio de Salud - Provincia del Neuquén`.
 - The public landing should keep supporting context concise so the professional access form remains the dominant visual element.
