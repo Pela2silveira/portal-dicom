@@ -26,9 +26,6 @@
     "auth_type": "pending",
     "document_lookup_path": "/core-v2/mpi/pacientes?documento={dni}"
   },
-  "patient": {
-    "initial_sync_period": "current_month"
-  },
   "cache": {
     "orthanc_base_url": "http://orthanc:8042",
     "retention_days": 7
