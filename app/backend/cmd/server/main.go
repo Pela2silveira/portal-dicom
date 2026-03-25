@@ -753,22 +753,7 @@ func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shouldSync := filters.DateFrom == "" && filters.DateTo == "" && filters.Modality == ""
-	if !shouldSync {
-		hasCache, err := a.patientHasStudyCache(ctx, patient.ID)
-		if err != nil {
-			a.log("error", "patient_cache_probe_failed", map[string]any{
-				"document_number": documentNumber,
-				"patient_id":      patient.ID,
-				"error":           err.Error(),
-			})
-			http.Error(w, "failed to query patient studies", http.StatusInternalServerError)
-			return
-		}
-		shouldSync = !hasCache
-	}
-
-	if shouldSync {
+	if filters.DateFrom == "" && filters.DateTo == "" && filters.Modality == "" {
 		patient, err = a.syncPatientStudiesFromSingleNode(ctx, patient, documentNumber)
 		if err != nil {
 			a.log("error", "patient_qido_sync_failed", map[string]any{
@@ -801,21 +786,6 @@ func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
-}
-
-func (a *App) patientHasStudyCache(ctx context.Context, patientID string) (bool, error) {
-	var exists bool
-	err := a.db.QueryRowContext(ctx, `
-		SELECT EXISTS (
-			SELECT 1
-			FROM patient_study_access
-			WHERE patient_id = $1::uuid
-		)
-	`, patientID).Scan(&exists)
-	if err != nil {
-		return false, err
-	}
-	return exists, nil
 }
 
 func (a *App) handlePatientRetrieve(w http.ResponseWriter, r *http.Request) {
