@@ -65,6 +65,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The professional summary shown in the portal must expose `nombre y apellido`, `DNI`, and `matrícula`.
 - Physician workflow should be asynchronous and must expose remote PACS context, local cache presence, and retrieve state before opening Stone or OHIF.
 - When a study is already local in Orthanc, both patient and physician surfaces must expose a `Descargar DICOM` action that streams the full study archive ZIP through the backend.
+- Professional full-study DICOM ZIP downloads must be rate-limited by a configurable weekly quota (`professional.weekly_download_limit`), with an initial shared value of `100`.
 - The first load of the physician panel must come from Orthanc local cache for the configured initial relative period, queried live at login without requiring prior recent-query seed data.
 - The physician panel now exposes a first real `Retrieve` action backed by `POST /api/physician/retrieve`, which enqueues a background job reusing Orthanc `C-GET` and recalculates local state from `cached_studies`, `retrieve_jobs`, and Orthanc.
 - The current physician panel now switches to real remote QIDO search whenever the operator applies filters; the no-filter state must query Orthanc local for the configured initial relative period.

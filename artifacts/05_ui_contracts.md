@@ -263,6 +263,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - `Visualizar estudio` only when the study is available in local Orthanc
 - `Visualizar con OHIF Viewer` only when the study is available in local Orthanc
 - `Descargar DICOM` only when the study is available in local Orthanc
+- `Descargar DICOM` for physician results is additionally subject to the configured weekly quota and may return a rate-limit response when the quota is exhausted
 - When local viewing is available, `Visualizar estudio` is the preferred emphasized action and should appear before `Visualizar con OHIF Viewer`, which in turn should appear before `Descargar DICOM`
 
 ### Visualizar Enablement Rule

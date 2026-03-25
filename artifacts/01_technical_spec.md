@@ -46,6 +46,7 @@
 - El paciente debe navegar una lista propia del portal, no la study list nativa de OHIF.
 - La configuración actual de OHIF mantiene `showStudyList: false` y el root `/ohif/` redirige a la landing pública; el acceso soportado al visor es por URL puntual (`/ohif/viewer?...`).
 - Cuando un estudio esté disponible localmente, el portal debe exponer además una descarga `ZIP DICOM` del estudio completo desde Orthanc, autorizada por backend.
+- Las descargas `ZIP DICOM` de profesionales deben contabilizarse en Postgres y respetar un cupo semanal configurable (`professional.weekly_download_limit`), con rechazo explícito cuando se supere.
 - El médico debe trabajar sobre un panel propio del portal con búsqueda federada y retrieve asíncrono.
 - Los contratos explícitos de ambas superficies se documentan en `artifacts/05_ui_contracts.md`.
 - Aun en el mock de la landing, ambos ingresos deben aterrizar primero en superficies del portal y no en la home general del visor.

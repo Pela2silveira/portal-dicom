@@ -60,6 +60,7 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 * **Alcance funcional futuro:** acceso a una consola propia del portal con búsqueda manual mediante filtros, estado federado por PACS remoto, disponibilidad local, estado de retrieve y apertura puntual en el visor.
 * **Feature flag operativa de auth profesional:** el backend debe permitir alternar rápidamente entre el modo transitorio actual y el modo institucional futuro mediante `professional.fake_auth` en `config.json`, con default `true`.
 * **Ventana inicial del panel profesional:** el backend debe permitir definir en `config.json` el período relativo usado para la carga inicial del profesional sin filtros mediante `professional.initial_cache_period`.
+* **Rate limit de descarga profesional:** el backend debe permitir definir en `config.json` un máximo semanal de descargas completas `ZIP DICOM` por profesional mediante `professional.weekly_download_limit`, con valor operativo inicial de `100`.
 * **Semántica del modo falso profesional:** con `professional.fake_auth = true`, el backend mantiene la validación operativa actual contra Mongo `profesional`; con `false`, el acceso profesional queda reservado para la futura autenticación institucional `LDAP provincial + MFA`.
 * **Restricción funcional actual:** sólo se permite el ingreso si el profesional existe, `habilitado == true`, `profesionalMatriculado == true` y tiene una matrícula profesional en Mongo.
 * **Criterio de matrícula profesional:** el backend debe leer `formacionGrado[].matriculacion[]` y tomar la primera entrada con `baja.fecha == null`, usando `matriculaNumero` como número visible.
@@ -132,6 +133,7 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 * **Listado de estudios:** la study list nativa de OHIF y cualquier navegación general de visor son decisiones de UX y no deben considerarse mecanismos de restricción de acceso.
 * **Pacientes:** no deben usar la study list nativa de OHIF. Deben ver una lista propia del portal con sus estudios autorizados.
 * **Descarga de estudio:** tanto paciente como profesional deben poder descargar el estudio completo local en formato `ZIP DICOM` desde Orthanc cuando ya esté disponible en caché local.
+* **Límite de descarga profesional:** las descargas `ZIP DICOM` iniciadas por profesionales deben respetar el límite semanal configurado y rechazar el exceso con una respuesta de rate limit.
 * **Médicos:** no deben depender de la study list nativa de OHIF como workflow principal. Deben usar un panel propio del portal con búsqueda, estado federado y retrieve.
 
 ## 6.1 Superficies de UI futuras

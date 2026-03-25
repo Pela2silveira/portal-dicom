@@ -141,6 +141,7 @@ Fields:
 
 - `fake_auth`: when `true`, professional access uses the current transitional validation flow instead of real LDAP/MFA
 - `initial_cache_period`: controls the no-filter result window loaded after professional login from Orthanc local cache
+- `weekly_download_limit`: maximum number of full-study DICOM ZIP downloads a professional can trigger during a calendar week
 
 Accepted `initial_cache_period` values:
 
@@ -157,7 +158,8 @@ Recommended default:
 ```json
 {
   "fake_auth": true,
-  "initial_cache_period": "current_week"
+  "initial_cache_period": "current_week",
+  "weekly_download_limit": 100
 }
 ```
 

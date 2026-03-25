@@ -958,8 +958,9 @@ type PatientConfig struct {
 }
 
 type ProfessionalConfig struct {
-	FakeAuth          bool   `json:"fake_auth"`
-	InitialCachePeriod string `json:"initial_cache_period"`
+	FakeAuth            bool `json:"fake_auth"`
+	InitialCachePeriod  string `json:"initial_cache_period"`
+	WeeklyDownloadLimit int    `json:"weekly_download_limit"`
 }
 
 type CacheConfig struct {
@@ -2118,6 +2119,27 @@ func (a *App) handlePhysicianDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	usedDownloads, weeklyLimit, allowed, err := a.enforcePhysicianDownloadLimit(ctx, physician.ID, studyInstanceUID)
+	if err != nil {
+		a.log("error", "physician_download_limit_check_failed", map[string]any{
+			"physician_id":       physician.ID,
+			"study_instance_uid": studyInstanceUID,
+			"error":              err.Error(),
+		})
+		http.Error(w, "failed to validate physician download limit", http.StatusInternalServerError)
+		return
+	}
+	if !allowed {
+		a.log("info", "physician_download_limit_reached", map[string]any{
+			"physician_id":    physician.ID,
+			"weekly_limit":    weeklyLimit,
+			"downloads_used":  usedDownloads,
+			"study_instance_uid": studyInstanceUID,
+		})
+		http.Error(w, "weekly physician download limit reached", http.StatusTooManyRequests)
+		return
+	}
+
 	if err := a.streamStudyArchiveByUID(ctx, w, studyInstanceUID); err != nil {
 		a.log("error", "physician_download_failed", map[string]any{
 			"physician_id":       physician.ID,
@@ -2125,7 +2147,15 @@ func (a *App) handlePhysicianDownload(w http.ResponseWriter, r *http.Request) {
 			"error":              err.Error(),
 		})
 		http.Error(w, "failed to download study archive", http.StatusBadGateway)
+		return
 	}
+
+	a.log("info", "physician_download_completed", map[string]any{
+		"physician_id":       physician.ID,
+		"study_instance_uid": studyInstanceUID,
+		"weekly_limit":       weeklyLimit,
+		"downloads_used":     usedDownloads,
+	})
 }
 
 func (a *App) handlePhysicianLogin(w http.ResponseWriter, r *http.Request) {
@@ -2824,8 +2854,9 @@ func loadExternalConfig(path string) (*ExternalConfig, error) {
 			FakeAuth: true,
 		},
 		Professional: ProfessionalConfig{
-			FakeAuth:           true,
-			InitialCachePeriod: "current_week",
+			FakeAuth:            true,
+			InitialCachePeriod:  "current_week",
+			WeeklyDownloadLimit: 100,
 		},
 	}
 	if err := json.Unmarshal(raw, &cfg); err != nil {
@@ -4121,6 +4152,68 @@ func (a *App) streamStudyArchiveByUID(ctx context.Context, w http.ResponseWriter
 func sanitizeDownloadToken(value string) string {
 	replacer := strings.NewReplacer("/", "_", "\\", "_", " ", "_", "\"", "", "'", "")
 	return replacer.Replace(strings.TrimSpace(value))
+}
+
+func startOfCurrentWeek(now time.Time) time.Time {
+	year, month, day := now.Date()
+	start := time.Date(year, month, day, 0, 0, 0, 0, now.Location())
+	weekday := int(start.Weekday())
+	if weekday == 0 {
+		weekday = 7
+	}
+	return start.AddDate(0, 0, -(weekday - 1))
+}
+
+func (a *App) physicianWeeklyDownloadLimit() int {
+	if a.externalConfig == nil {
+		return 100
+	}
+	if a.externalConfig.Professional.WeeklyDownloadLimit <= 0 {
+		return 100
+	}
+	return a.externalConfig.Professional.WeeklyDownloadLimit
+}
+
+func (a *App) enforcePhysicianDownloadLimit(ctx context.Context, physicianID, studyInstanceUID string) (int, int, bool, error) {
+	limit := a.physicianWeeklyDownloadLimit()
+	windowStart := startOfCurrentWeek(time.Now().In(time.Local))
+
+	tx, err := a.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, limit, false, err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	var used int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM physician_download_events
+		WHERE physician_id = $1::uuid
+		  AND downloaded_at >= $2
+	`, physicianID, windowStart).Scan(&used); err != nil {
+		return 0, limit, false, err
+	}
+	if used >= limit {
+		return used, limit, false, nil
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO physician_download_events (
+			physician_id, study_instance_uid, downloaded_at
+		) VALUES (
+			$1::uuid, $2, now()
+		)
+	`, physicianID, studyInstanceUID); err != nil {
+		return 0, limit, false, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, limit, false, err
+	}
+
+	return used + 1, limit, true, nil
 }
 
 func (a *App) getPatientSourceNode(ctx context.Context, patientID, studyInstanceUID string) (PACSNodeConfig, string, error) {

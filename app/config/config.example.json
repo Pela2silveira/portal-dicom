@@ -40,7 +40,8 @@
   },
   "professional": {
     "fake_auth": true,
-    "initial_cache_period": "current_week"
+    "initial_cache_period": "current_week",
+    "weekly_download_limit": 100
   },
   "cache": {
     "orthanc_base_url": "http://orthanc:8042",
