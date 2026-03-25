@@ -2263,8 +2263,10 @@
                     statusChips +
                   '</div>' +
                   '<div class="meta-grid">' +
-                    '<div><span>Hospitales</span><strong>' + escapeHTML((study.locations || []).join(", ") || "-") + '</strong></div>' +
-                  '</div>' +
+                  '<div><span>Hospitales</span><strong>' + escapeHTML((study.locations || []).join(", ") || "-") + '</strong></div>' +
+                  '<div><span>Prestacion en ANDES</span><strong>' + escapeHTML(study.andes_prestacion || "-") + '</strong></div>' +
+                  '<div><span>Profesional en ANDES</span><strong>' + escapeHTML(study.andes_professional || "-") + '</strong></div>' +
+                '</div>' +
                   '<div class="chip-row">' +
                     (study.locations || []).map(location => '<div class="chip success">Hospital: ' + escapeHTML(location) + '</div>').join("") +
                     modalities +
@@ -2446,6 +2448,8 @@
                   '<div><span>Paciente</span><strong>' + escapeHTML(result.patient_id) + '</strong></div>' +
                   '<div><span>Modalidades</span><strong>' + escapeHTML(formatModalityList(result.modalities || [])) + '</strong></div>' +
                   '<div><span>Hospitales</span><strong>' + escapeHTML((result.locations || []).join(", ") || "-") + '</strong></div>' +
+                  '<div><span>Prestacion en ANDES</span><strong>' + escapeHTML(result.andes_prestacion || "-") + '</strong></div>' +
+                  '<div><span>Profesional en ANDES</span><strong>' + escapeHTML(result.andes_professional || "-") + '</strong></div>' +
                   '<div><span>Cache local</span><strong>' + escapeHTML(labelForCacheStatus(result.cache_status)) + '</strong></div>' +
                 '</div>' +
                 '<div class="chip-row">' +

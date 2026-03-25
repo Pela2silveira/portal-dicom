@@ -28,6 +28,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Patient remote QIDO search must use both the canonical document number and the persisted Mongo `_id` string (`mongo_object_id`) when available, merging matches by `StudyInstanceUID`.
 - Patient remote QIDO search must fan out across all configured `qido_rs` PACS nodes instead of assuming a single remote node.
 - Professional remote search must stop assuming a single globally configured PACS; the physician UI now selects one remote online PACS explicitly, while `local_cache` remains a first-class searchable source backed by Orthanc QIDO.
+- Each PACS node may now carry an optional `andes_organization_id` in config so the physician flow can enrich QIDO results from Mongo `prestaciones` using `solicitud.organizacion.id` plus `metadata.pacs-uid`.
 - The patient `Enviar código` step is a backend prevalidation step: patient must exist and have an active email before the future mail delivery integration is attempted.
 - Patient auth mode must be switchable at runtime through `patient.fake_auth` in `config.json`, defaulting to `true` for current MVP/demo compatibility.
 - With `patient.fake_auth = true`, the backend still requires the patient to exist but skips real email validation/sending so demos can proceed without the mail dependency.

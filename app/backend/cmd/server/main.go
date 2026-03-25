@@ -52,6 +52,7 @@ type App struct {
 	configLoadedAt time.Time
 	identitySource PatientIdentitySource
 	professionalIdentitySource ProfessionalIdentitySource
+	prestacionLookup          PrestacionLookupSource
 	patientSearchQueue         chan string
 	retrieveQueue              chan string
 	retrieveEventMu            sync.Mutex
@@ -118,6 +119,12 @@ type PatientIdentitySource interface {
 type ProfessionalIdentitySource interface {
 	ProviderName() string
 	ResolveByUsername(ctx context.Context, username string) (ProfessionalIdentity, error)
+}
+
+type PrestacionLookupSource interface {
+	ProviderName() string
+	FindByPatientAndStudyUIDs(ctx context.Context, patientMongoID string, studyUIDs []string) (map[string]AndesPrestacionSummary, error)
+	FindByOrganizationAndStudyUIDs(ctx context.Context, organizationID, studyDate string, studyUIDs []string) (map[string]AndesPrestacionSummary, error)
 }
 
 type patientIdentitySourceCloser interface {
@@ -406,6 +413,12 @@ type PatientAlternateIdentifier struct {
 	IsPrimary    bool
 }
 
+type AndesPrestacionSummary struct {
+	PrestacionID   string `json:"prestacion_id,omitempty"`
+	PrestacionFSN  string `json:"prestacion_fsn,omitempty"`
+	Professional   string `json:"professional,omitempty"`
+}
+
 type MongoPacienteDocument struct {
 	ID              primitive.ObjectID    `bson:"_id"`
 	Documento       any                   `bson:"documento"`
@@ -446,6 +459,34 @@ type MongoPacienteContacto struct {
 	Activo bool   `bson:"activo"`
 	Tipo   string `bson:"tipo"`
 	Valor  string `bson:"valor"`
+}
+
+type MongoPrestacionLookupSource struct {
+	client         *mongo.Client
+	collection     *mongo.Collection
+	connectTimeout time.Duration
+	queryTimeout   time.Duration
+}
+
+type NoopPrestacionLookupSource struct{}
+
+type MongoPrestacionMetadataEntry struct {
+	Key   string `bson:"key"`
+	Valor any    `bson:"valor"`
+}
+
+type MongoPrestacionLookupDocument struct {
+	ID       primitive.ObjectID              `bson:"_id"`
+	Metadata []MongoPrestacionMetadataEntry  `bson:"metadata"`
+	Solicitud struct {
+		TipoPrestacion struct {
+			FSN string `bson:"fsn"`
+		} `bson:"tipoPrestacion"`
+		Profesional struct {
+			Nombre   string `bson:"nombre"`
+			Apellido string `bson:"apellido"`
+		} `bson:"profesional"`
+	} `bson:"solicitud"`
 }
 
 type LocalSeedPatientIdentitySource struct{}
@@ -676,6 +717,134 @@ func (s *MongoProfessionalIdentitySource) Close(ctx context.Context) error {
 	return s.client.Disconnect(disconnectCtx)
 }
 
+func (s *MongoPrestacionLookupSource) ProviderName() string {
+	return "his_mongo_direct"
+}
+
+func (s *MongoPrestacionLookupSource) Close(ctx context.Context) error {
+	disconnectCtx, cancel := context.WithTimeout(ctx, s.connectTimeout)
+	defer cancel()
+	return s.client.Disconnect(disconnectCtx)
+}
+
+func (s *NoopPrestacionLookupSource) ProviderName() string {
+	return "noop"
+}
+
+func (s *NoopPrestacionLookupSource) FindByPatientAndStudyUIDs(_ context.Context, _ string, _ []string) (map[string]AndesPrestacionSummary, error) {
+	return map[string]AndesPrestacionSummary{}, nil
+}
+
+func (s *NoopPrestacionLookupSource) FindByOrganizationAndStudyUIDs(_ context.Context, _ string, _ string, _ []string) (map[string]AndesPrestacionSummary, error) {
+	return map[string]AndesPrestacionSummary{}, nil
+}
+
+func extractPACSSUIDFromPrestacionMetadata(entries []MongoPrestacionMetadataEntry) string {
+	for _, entry := range entries {
+		if !strings.EqualFold(strings.TrimSpace(entry.Key), "pacs-uid") {
+			continue
+		}
+		return strings.TrimSpace(fmt.Sprint(entry.Valor))
+	}
+	return ""
+}
+
+func andesPrestacionSummaryFromMongo(doc MongoPrestacionLookupDocument) AndesPrestacionSummary {
+	professional := strings.TrimSpace(strings.TrimSpace(doc.Solicitud.Profesional.Apellido) + ", " + strings.TrimSpace(doc.Solicitud.Profesional.Nombre))
+	if strings.TrimSpace(doc.Solicitud.Profesional.Apellido) == "" {
+		professional = strings.TrimSpace(doc.Solicitud.Profesional.Nombre)
+	}
+	return AndesPrestacionSummary{
+		PrestacionID:  doc.ID.Hex(),
+		PrestacionFSN: strings.TrimSpace(doc.Solicitud.TipoPrestacion.FSN),
+		Professional:  professional,
+	}
+}
+
+func (s *MongoPrestacionLookupSource) findByFilter(ctx context.Context, filter bson.M) (map[string]AndesPrestacionSummary, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, s.queryTimeout)
+	defer cancel()
+
+	cursor, err := s.collection.Find(queryCtx, filter, options.Find().SetProjection(bson.M{
+		"_id":                          1,
+		"metadata":                     1,
+		"solicitud.tipoPrestacion.fsn": 1,
+		"solicitud.profesional.nombre": 1,
+		"solicitud.profesional.apellido": 1,
+	}))
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(queryCtx)
+
+	var docs []MongoPrestacionLookupDocument
+	if err := cursor.All(queryCtx, &docs); err != nil {
+		return nil, err
+	}
+
+	results := make(map[string]AndesPrestacionSummary, len(docs))
+	for _, doc := range docs {
+		studyUID := extractPACSSUIDFromPrestacionMetadata(doc.Metadata)
+		if studyUID == "" {
+			continue
+		}
+		if _, exists := results[studyUID]; exists {
+			continue
+		}
+		results[studyUID] = andesPrestacionSummaryFromMongo(doc)
+	}
+	return results, nil
+}
+
+func (s *MongoPrestacionLookupSource) FindByPatientAndStudyUIDs(ctx context.Context, patientMongoID string, studyUIDs []string) (map[string]AndesPrestacionSummary, error) {
+	patientObjectID, err := primitive.ObjectIDFromHex(strings.TrimSpace(patientMongoID))
+	if err != nil {
+		return map[string]AndesPrestacionSummary{}, nil
+	}
+	if len(studyUIDs) == 0 {
+		return map[string]AndesPrestacionSummary{}, nil
+	}
+
+	return s.findByFilter(ctx, bson.M{
+		"paciente.id": patientObjectID,
+		"metadata": bson.M{
+			"$elemMatch": bson.M{
+				"key":   "pacs-uid",
+				"valor": bson.M{"$in": studyUIDs},
+			},
+		},
+	})
+}
+
+func (s *MongoPrestacionLookupSource) FindByOrganizationAndStudyUIDs(ctx context.Context, organizationID, studyDate string, studyUIDs []string) (map[string]AndesPrestacionSummary, error) {
+	orgObjectID, err := primitive.ObjectIDFromHex(strings.TrimSpace(organizationID))
+	if err != nil {
+		return map[string]AndesPrestacionSummary{}, nil
+	}
+	if len(studyUIDs) == 0 {
+		return map[string]AndesPrestacionSummary{}, nil
+	}
+	start, err := time.Parse("2006-01-02", strings.TrimSpace(studyDate))
+	if err != nil {
+		return map[string]AndesPrestacionSummary{}, nil
+	}
+	end := start.AddDate(0, 0, 1)
+
+	return s.findByFilter(ctx, bson.M{
+		"solicitud.fecha": bson.M{
+			"$gte": start.UTC(),
+			"$lt":  end.UTC(),
+		},
+		"solicitud.organizacion.id": orgObjectID,
+		"metadata": bson.M{
+			"$elemMatch": bson.M{
+				"key":   "pacs-uid",
+				"valor": bson.M{"$in": studyUIDs},
+			},
+		},
+	})
+}
+
 func mongoPacienteToPatientIdentity(documentNumber string, doc MongoPacienteDocument) PatientIdentity {
 	resolvedDocument := normalizeMongoDocumento(doc.Documento)
 	if resolvedDocument == "" {
@@ -814,6 +983,8 @@ type PatientStudy struct {
 	StudyDescription   string   `json:"study_description"`
 	ModalitiesInStudy  []string `json:"modalities_in_study"`
 	Locations          []string `json:"locations,omitempty"`
+	AndesPrestacion    string   `json:"andes_prestacion,omitempty"`
+	AndesProfessional  string   `json:"andes_professional,omitempty"`
 	AvailabilityStatus string   `json:"availability_status"`
 	RetrieveStatus     string   `json:"retrieve_status"`
 	AuthorizationBasis string   `json:"authorization_basis"`
@@ -918,6 +1089,8 @@ type PhysicianResult struct {
 	Modalities       []string `json:"modalities"`
 	Locations        []string `json:"locations"`
 	SourceNodeID     string   `json:"source_node_id,omitempty"`
+	AndesPrestacion  string   `json:"andes_prestacion,omitempty"`
+	AndesProfessional string  `json:"andes_professional,omitempty"`
 	CacheStatus      string   `json:"cache_status"`
 	RetrieveStatus   string   `json:"retrieve_status"`
 	PartialFilter    bool     `json:"partial_filter"`
@@ -949,6 +1122,7 @@ type ExternalConfig struct {
 type PACSNodeConfig struct {
 	ID              string         `json:"id"`
 	Name            string         `json:"name"`
+	AndesOrganizationID string     `json:"andes_organization_id,omitempty"`
 	Protocol        string         `json:"protocol"`
 	Priority        int            `json:"priority"`
 	AET             string         `json:"aet"`
@@ -1017,6 +1191,7 @@ type CacheConfig struct {
 type PACSNodeResponse struct {
 	ID              string           `json:"id"`
 	Name            string           `json:"name"`
+	AndesOrganizationID string       `json:"andes_organization_id,omitempty"`
 	Protocol        string           `json:"protocol"`
 	Priority        int              `json:"priority"`
 	AET             string           `json:"aet"`
@@ -1054,6 +1229,7 @@ type PACSNodeHealthResponse struct {
 type PACSNodeResolvedConfig struct {
 	ID              string
 	Name            string
+	AndesOrganizationID string
 	Protocol        string
 	Priority        int
 	AET             string
@@ -1207,9 +1383,15 @@ func main() {
 		provider: "config_unavailable",
 		err:      errors.New("external config not loaded"),
 	})
+	prestacionLookup := PrestacionLookupSource(&NoopPrestacionLookupSource{})
 	if externalConfig != nil {
 		identitySource = buildPatientIdentitySource(*externalConfig, logger)
 		professionalIdentitySource = buildProfessionalIdentitySource(*externalConfig, logger)
+		if source, err := buildPrestacionLookupSource(*externalConfig); err == nil {
+			prestacionLookup = source
+		} else {
+			recordStartupIssue("prestaciones_lookup", err)
+		}
 	}
 
 	app := &App{
@@ -1223,6 +1405,7 @@ func main() {
 		configLoadedAt: time.Now().UTC(),
 		identitySource: identitySource,
 		professionalIdentitySource: professionalIdentitySource,
+		prestacionLookup:             prestacionLookup,
 		patientSearchQueue:         make(chan string, 32),
 		retrieveQueue:              make(chan string, 32),
 		retrieveEventSubscribers: make(map[string]map[chan RetrieveJobEvent]struct{}),
@@ -1264,6 +1447,15 @@ func main() {
 			defer cancel()
 			if err := closer.Close(closeCtx); err != nil {
 				app.log("error", "professional_identity_source_close_failed", map[string]any{"error": err.Error()})
+			}
+		}()
+	}
+	if closer, ok := app.prestacionLookup.(patientIdentitySourceCloser); ok {
+		defer func() {
+			closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := closer.Close(closeCtx); err != nil {
+				app.log("error", "prestacion_lookup_close_failed", map[string]any{"error": err.Error()})
 			}
 		}()
 	}
@@ -1450,6 +1642,7 @@ func (a *App) handleConfig(appliedMigrations []string) http.HandlerFunc {
 			resp.PACSNodes = append(resp.PACSNodes, PACSNodeResponse{
 				ID:              resolved.ID,
 				Name:            resolved.Name,
+				AndesOrganizationID: resolved.AndesOrganizationID,
 				Protocol:        resolved.Protocol,
 				Priority:        resolved.Priority,
 				AET:             resolved.AET,
@@ -2823,6 +3016,7 @@ func (n PACSNodeConfig) Resolved() PACSNodeResolvedConfig {
 	resolved := PACSNodeResolvedConfig{
 		ID:              n.ID,
 		Name:            n.Name,
+		AndesOrganizationID: strings.TrimSpace(n.AndesOrganizationID),
 		Protocol:        strings.TrimSpace(n.Protocol),
 		Priority:        n.Priority,
 		AET:             strings.TrimSpace(n.AET),
@@ -2984,6 +3178,13 @@ func buildProfessionalIdentitySource(cfg ExternalConfig, logger *log.Logger) Pro
 	})
 }
 
+func buildPrestacionLookupSource(cfg ExternalConfig) (PrestacionLookupSource, error) {
+	if !strings.EqualFold(strings.TrimSpace(cfg.HIS.Provider), "his_mongo_direct") {
+		return &NoopPrestacionLookupSource{}, nil
+	}
+	return connectMongoPrestacionLookupSource()
+}
+
 func connectMongoPatientIdentitySource() (PatientIdentitySource, error) {
 	mongoURI := strings.TrimSpace(os.Getenv("HIS_MONGO_URI"))
 	mongoDatabase := strings.TrimSpace(os.Getenv("HIS_MONGO_DATABASE"))
@@ -3044,6 +3245,37 @@ func connectMongoProfessionalIdentitySource(cfg ProfessionalConfig) (Professiona
 		connectTimeout:    connectTimeout,
 		queryTimeout:      queryTimeout,
 		licenseExceptions: normalizeExceptionSet(cfg.LicenseExceptions),
+	}, nil
+}
+
+func connectMongoPrestacionLookupSource() (PrestacionLookupSource, error) {
+	mongoURI := strings.TrimSpace(os.Getenv("HIS_MONGO_URI"))
+	mongoDatabase := strings.TrimSpace(os.Getenv("HIS_MONGO_DATABASE"))
+	if mongoURI == "" || mongoDatabase == "" {
+		return nil, errors.New("missing required mongo env vars for prestaciones lookup")
+	}
+
+	connectTimeout := durationFromEnv("HIS_MONGO_CONNECT_TIMEOUT_MS", 5000*time.Millisecond)
+	queryTimeout := durationFromEnv("HIS_MONGO_QUERY_TIMEOUT_MS", 3000*time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
+	defer cancel()
+
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
+	if err != nil {
+		return nil, fmt.Errorf("connect mongo prestaciones provider: %w", err)
+	}
+
+	if err := client.Ping(ctx, nil); err != nil {
+		_ = client.Disconnect(context.Background())
+		return nil, fmt.Errorf("ping mongo prestaciones provider: %w", err)
+	}
+
+	return &MongoPrestacionLookupSource{
+		client:         client,
+		collection:     client.Database(mongoDatabase).Collection("prestaciones"),
+		connectTimeout: connectTimeout,
+		queryTimeout:   queryTimeout,
 	}, nil
 }
 
@@ -3562,6 +3794,13 @@ func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient Pati
 		return remoteStudies[i].StudyDate > remoteStudies[j].StudyDate
 	})
 
+	if err := a.enrichPatientStudiesWithAndes(ctx, patient.ID, remoteStudies); err != nil {
+		a.log("error", "patient_andes_enrichment_failed", map[string]any{
+			"patient_id": patient.ID,
+			"error":     err.Error(),
+		})
+	}
+
 	if err := a.replacePatientStudyAccessSlice(ctx, patient.ID, filters, remoteStudies); err != nil {
 		return patient, err
 	}
@@ -3879,6 +4118,8 @@ func (a *App) replacePatientStudyAccessSlice(ctx context.Context, patientID stri
 			"modalities_in_study": study.ModalitiesInStudy,
 			"locations":           study.Locations,
 			"source_node_id":      study.SourceNodeID,
+			"andes_prestacion":    study.AndesPrestacion,
+			"andes_professional":  study.AndesProfessional,
 		})
 		if err != nil {
 			return fmt.Errorf("marshal patient qido study: %w", err)
@@ -5152,6 +5393,14 @@ func (a *App) searchPhysicianResultsFromNode(ctx context.Context, physician Phys
 		return results[i].StudyDate > results[j].StudyDate
 	})
 
+	if err := a.enrichPhysicianResultsWithAndes(ctx, results); err != nil {
+		a.log("error", "physician_andes_enrichment_failed", map[string]any{
+			"physician_id": physician.ID,
+			"node_id":      node.ID,
+			"error":        err.Error(),
+		})
+	}
+
 	if err := a.persistPhysicianRecentQuery(ctx, physician.ID, filters, results); err != nil {
 		return nil, fmt.Errorf("persist physician recent query: %w", err)
 	}
@@ -5360,6 +5609,13 @@ func (a *App) searchPhysicianResultsFromLocalCache(ctx context.Context, username
 		return results[i].StudyDate > results[j].StudyDate
 	})
 
+	if err := a.enrichPhysicianResultsWithAndes(ctx, results); err != nil {
+		a.log("error", "physician_local_cache_andes_enrichment_failed", map[string]any{
+			"username": username,
+			"error":    err.Error(),
+		})
+	}
+
 	return results, nil
 }
 
@@ -5419,6 +5675,147 @@ func mergeStringSets(values ...[]string) []string {
 		}
 	}
 	return merged
+}
+
+func uniqueStudyUIDsFromPatientStudies(studies []PatientStudy) []string {
+	seen := make(map[string]struct{})
+	out := make([]string, 0, len(studies))
+	for _, study := range studies {
+		uid := strings.TrimSpace(study.StudyInstanceUID)
+		if uid == "" {
+			continue
+		}
+		if _, ok := seen[uid]; ok {
+			continue
+		}
+		seen[uid] = struct{}{}
+		out = append(out, uid)
+	}
+	return out
+}
+
+func uniqueStudyUIDsFromPhysicianResults(results []PhysicianResult) []string {
+	seen := make(map[string]struct{})
+	out := make([]string, 0, len(results))
+	for _, result := range results {
+		uid := strings.TrimSpace(result.StudyInstanceUID)
+		if uid == "" {
+			continue
+		}
+		if _, ok := seen[uid]; ok {
+			continue
+		}
+		seen[uid] = struct{}{}
+		out = append(out, uid)
+	}
+	return out
+}
+
+func (a *App) loadPatientMongoObjectID(ctx context.Context, patientID string) (string, error) {
+	var mongoObjectID string
+	err := a.db.QueryRowContext(ctx, `
+		SELECT identifier_value
+		FROM patient_identifiers
+		WHERE patient_id = $1::uuid
+		  AND identifier_type = 'mongo_object_id'
+		ORDER BY last_verified_at DESC, updated_at DESC
+		LIMIT 1
+	`, patientID).Scan(&mongoObjectID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(mongoObjectID), nil
+}
+
+func (a *App) enrichPatientStudiesWithAndes(ctx context.Context, patientID string, studies []PatientStudy) error {
+	if len(studies) == 0 {
+		return nil
+	}
+	patientMongoID, err := a.loadPatientMongoObjectID(ctx, patientID)
+	if err != nil {
+		return err
+	}
+	if patientMongoID == "" {
+		return nil
+	}
+
+	summaries, err := a.prestacionLookup.FindByPatientAndStudyUIDs(ctx, patientMongoID, uniqueStudyUIDsFromPatientStudies(studies))
+	if err != nil {
+		return err
+	}
+	for i := range studies {
+		if summary, ok := summaries[studies[i].StudyInstanceUID]; ok {
+			studies[i].AndesPrestacion = summary.PrestacionFSN
+			studies[i].AndesProfessional = summary.Professional
+		}
+	}
+	return nil
+}
+
+func (a *App) resolveConfiguredNodeIDForStudy(sourceNodeID string, locations []string) string {
+	if strings.TrimSpace(sourceNodeID) != "" {
+		return strings.TrimSpace(sourceNodeID)
+	}
+	for _, location := range locations {
+		for _, node := range a.externalConfig.PACSNodes {
+			if strings.EqualFold(strings.TrimSpace(node.Name), strings.TrimSpace(location)) || strings.EqualFold(strings.TrimSpace(node.ID), strings.TrimSpace(location)) {
+				return node.ID
+			}
+		}
+	}
+	return ""
+}
+
+func (a *App) enrichPhysicianResultsWithAndes(ctx context.Context, results []PhysicianResult) error {
+	if len(results) == 0 {
+		return nil
+	}
+
+	type groupKey struct {
+		organizationID string
+		studyDate      string
+	}
+	groupedUIDs := make(map[groupKey][]string)
+	indexByUID := make(map[string]int)
+
+	for i := range results {
+		indexByUID[results[i].StudyInstanceUID] = i
+		nodeID := a.resolveConfiguredNodeIDForStudy(results[i].SourceNodeID, results[i].Locations)
+		if nodeID == "" {
+			continue
+		}
+		node, ok := a.configuredPACSNodeByID(nodeID)
+		if !ok {
+			continue
+		}
+		orgID := strings.TrimSpace(node.AndesOrganizationID)
+		studyDate := strings.TrimSpace(results[i].StudyDate)
+		if orgID == "" || studyDate == "" {
+			continue
+		}
+		key := groupKey{organizationID: orgID, studyDate: studyDate}
+		groupedUIDs[key] = append(groupedUIDs[key], results[i].StudyInstanceUID)
+	}
+
+	for key, studyUIDs := range groupedUIDs {
+		summaries, err := a.prestacionLookup.FindByOrganizationAndStudyUIDs(ctx, key.organizationID, key.studyDate, studyUIDs)
+		if err != nil {
+			return err
+		}
+		for studyUID, summary := range summaries {
+			index, ok := indexByUID[studyUID]
+			if !ok {
+				continue
+			}
+			results[index].AndesPrestacion = summary.PrestacionFSN
+			results[index].AndesProfessional = summary.Professional
+		}
+	}
+
+	return nil
 }
 
 func (a *App) listPatientStudies(ctx context.Context, patientID, documentNumber string, filters PatientStudiesFilter) ([]PatientStudy, error) {
@@ -5482,6 +5879,8 @@ func (a *App) listPatientStudies(ctx context.Context, patientID, documentNumber 
 			ModalitiesInStudy []string `json:"modalities_in_study"`
 			Locations         []string `json:"locations"`
 			SourceNodeID      string   `json:"source_node_id"`
+			AndesPrestacion   string   `json:"andes_prestacion"`
+			AndesProfessional string   `json:"andes_professional"`
 		}
 		if len(sourceJSONRaw) > 0 {
 			if err := json.Unmarshal(sourceJSONRaw, &source); err != nil {
@@ -5495,6 +5894,8 @@ func (a *App) listPatientStudies(ctx context.Context, patientID, documentNumber 
 			StudyDescription:   source.StudyDescription,
 			ModalitiesInStudy:  source.ModalitiesInStudy,
 			Locations:          source.Locations,
+			AndesPrestacion:    source.AndesPrestacion,
+			AndesProfessional:  source.AndesProfessional,
 			AvailabilityStatus: availabilityStatus,
 			RetrieveStatus:     "idle",
 			AuthorizationBasis: authorizationBasis,
