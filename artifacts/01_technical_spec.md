@@ -208,8 +208,7 @@ Proveer un portal operativo mínimo capaz de:
 5. El paciente no navega la study list nativa de OHIF.
 6. La primera implementación funcional expone `GET /api/patient/studies?document=<dni>` como contrato inicial del portal-owned list.
 7. En la carga inicial, el backend ejecuta `QIDO-RS /studies?PatientID=<dni>` contra el único nodo PACS configurado si la cache del paciente todavía está vacía, aun cuando la UI ya envíe `date_from`, `date_to` o `modality` por filtros por defecto.
-8. El horizonte temporal de esa primera sincronización remota se define en `config.json` por `patient.initial_sync_period` (`current_month`, `current_week`, `current_year`, `all`), con default `current_month`.
-9. Esa sincronización inicial persiste `patient_study_access`, marca como `available_local` los estudios ya presentes en Orthanc y deja el resto como `pending_retrieve`.
+8. Esa sincronización inicial persiste `patient_study_access`, marca como `available_local` los estudios ya presentes en Orthanc y deja el resto como `pending_retrieve`.
 8. El flujo debe dejar trazas estructuradas de observabilidad para:
    - solicitud de token al PACS remoto;
    - request QIDO;
