@@ -23,6 +23,7 @@
 - [Ready] **Professional PACS health legend**: the physician results card shows `PACS en línea X/Y` from remote PACS health checks and exposes online/offline node names on hover/focus.
 - [Ready] **Professional access exceptions by config**: `professional.license_exceptions` can authorize a bounded list of DNI/username entries bypassing both active matrícula and `habilitado == true`.
 - [Ready] **First LDAP professional login slice**: when `professional.fake_auth = false`, `POST /api/physician/login` authenticates against LDAP using `LDAP_HOST`, `LDAP_PORT`, `LDAP_OU` and direct `uid=<dni>,<LDAP_OU>` bind before applying Mongo-based authorization.
+- [Ready] **AccessionNumber diagnostic probe**: remote and local QIDO parsing now requests `AccessionNumber (00080050)`, attempts Base64 decode when plausible, and logs raw/decoded values to confirm the upstream encoding contract.
 - [Missing] **Federated search**: `POST /api/search` + SSE events + dedup by `StudyInstanceUID` across ≥2 nodes not implemented (Milestone 4 pending).
 - [Missing] **Professional async panel backed by real multi-node search**: current “recent queries fallback” is acceptable but not the target behavior.
 - [Needs Decision] **Patient identifier strategy**: reliance on `PatientID == DNI` vs configurable mapping / HIS resolution (to avoid hard coupling).

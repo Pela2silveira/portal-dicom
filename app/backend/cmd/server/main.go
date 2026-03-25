@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 	"sync"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/go-ldap/ldap/v3"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -3058,6 +3060,46 @@ func patientSendCodeReadyMessage(maskedEmail string, demo bool) string {
 	return "Se ha enviado el código a " + maskedEmail + "."
 }
 
+func decodeBase64IfPrintable(value string) (string, bool) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", false
+	}
+	decoded, err := base64.StdEncoding.DecodeString(trimmed)
+	if err != nil || !utf8.Valid(decoded) {
+		return "", false
+	}
+	decodedText := strings.TrimSpace(string(decoded))
+	if decodedText == "" {
+		return "", false
+	}
+	for _, r := range decodedText {
+		if r == '\n' || r == '\r' || r == '\t' {
+			continue
+		}
+		if r < 32 {
+			return "", false
+		}
+	}
+	return decodedText, true
+}
+
+func (a *App) logAccessionNumberProbe(scope, nodeID, studyUID, raw string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return
+	}
+	decoded, ok := decodeBase64IfPrintable(raw)
+	a.log("info", "study_accession_probe", map[string]any{
+		"scope":       scope,
+		"node_id":     nodeID,
+		"study_uid":   studyUID,
+		"raw":         raw,
+		"decoded":     decoded,
+		"decoded_ok":  ok,
+	})
+}
+
 func authenticateProfessionalLDAP(_ context.Context, username, password string) error {
 	ldapHost := strings.TrimSpace(os.Getenv("LDAP_HOST"))
 	ldapPort := strings.TrimSpace(os.Getenv("LDAP_PORT"))
@@ -4188,6 +4230,7 @@ func (a *App) fetchPatientStudiesFromQIDOIdentifier(ctx context.Context, node PA
 	query.Add("includefield", "StudyDescription")
 	query.Add("includefield", "ModalitiesInStudy")
 	query.Add("includefield", "PatientName")
+	query.Add("includefield", "AccessionNumber")
 	endpoint.RawQuery = query.Encode()
 
 	a.log("info", "patient_qido_request_started", map[string]any{
@@ -4239,6 +4282,7 @@ func (a *App) fetchPatientStudiesFromQIDOIdentifier(ctx context.Context, node PA
 		if studyUID == "" {
 			continue
 		}
+		a.logAccessionNumberProbe("patient_remote_qido", node.ID, studyUID, dicomFirstString(item, "00080050"))
 
 		study := PatientStudy{
 			StudyInstanceUID:   studyUID,
@@ -4954,6 +4998,7 @@ func (a *App) searchPhysicianResultsFromSingleNode(ctx context.Context, physicia
 	query.Add("includefield", "ModalitiesInStudy")
 	query.Add("includefield", "PatientName")
 	query.Add("includefield", "PatientID")
+	query.Add("includefield", "AccessionNumber")
 	if filters.PatientID != "" {
 		query.Set("PatientID", filters.PatientID)
 	}
@@ -5009,6 +5054,7 @@ func (a *App) searchPhysicianResultsFromSingleNode(ctx context.Context, physicia
 		if studyUID == "" {
 			continue
 		}
+		a.logAccessionNumberProbe("physician_remote_qido", node.ID, studyUID, dicomFirstString(item, "00080050"))
 
 		result := PhysicianResult{
 			StudyInstanceUID: studyUID,
@@ -5156,6 +5202,7 @@ func (a *App) listPhysicianCachedResultsForInitialPeriod(ctx context.Context, us
 	query.Add("includefield", "ModalitiesInStudy")
 	query.Add("includefield", "PatientName")
 	query.Add("includefield", "PatientID")
+	query.Add("includefield", "AccessionNumber")
 	endpoint.RawQuery = query.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
@@ -5192,6 +5239,7 @@ func (a *App) listPhysicianCachedResultsForInitialPeriod(ctx context.Context, us
 		if studyUID == "" {
 			continue
 		}
+		a.logAccessionNumberProbe("physician_local_cache_qido", "orthanc", studyUID, dicomFirstString(item, "00080050"))
 
 		cacheStatus, retrieveStatus, viewerURL, ohifViewerURL, err := a.getStudyOperationalState(ctx, studyUID, "local_complete", "done")
 		if err != nil {
