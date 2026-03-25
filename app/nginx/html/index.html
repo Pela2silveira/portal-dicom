@@ -2161,7 +2161,7 @@
                     '<article class="study-item">' +
                       '<div class="item-head">' +
                         '<div>' +
-                          '<strong>' + escapeHTML(study.study_description || "Estudio sin descripción") + '</strong>' +
+                          '<strong>Descripcion del estudio: ' + escapeHTML(study.study_description || "Estudio sin descripción") + '</strong>' +
                           '<span>' + escapeHTML(study.study_date || "Sin fecha") + '</span>' +
                         '</div>' +
                         statusChips +
@@ -2256,7 +2256,7 @@
               '<article class="result-item">' +
                 '<div class="item-head">' +
                   '<div>' +
-                    '<strong>' + escapeHTML(result.study_description || "Estudio sin descripción") + '</strong>' +
+                    '<strong>Descripcion del estudio: ' + escapeHTML(result.study_description || "Estudio sin descripción") + '</strong>' +
                     '<span>' + escapeHTML(result.patient_name) + " · " + escapeHTML(result.study_date || "Sin fecha") + '</span>' +
                   '</div>' +
                   '<div class="' + chipClassForRetrieve(result.retrieve_status) + '">' +
