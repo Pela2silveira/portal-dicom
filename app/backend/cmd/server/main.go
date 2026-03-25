@@ -404,6 +404,7 @@ type ConfigResponse struct {
 	LoadedAt   string             `json:"loaded_at"`
 	PACSNodes  []PACSNodeResponse `json:"pacs_nodes"`
 	HIS        HISConfigResponse  `json:"his"`
+	Patient    PatientConfig      `json:"patient"`
 	Cache      CacheConfig        `json:"cache"`
 	Migrations []string           `json:"migrations"`
 }
@@ -411,6 +412,7 @@ type ConfigResponse struct {
 type ExternalConfig struct {
 	PACSNodes []PACSNodeConfig `json:"pacs_nodes"`
 	HIS       HISConfig        `json:"his"`
+	Patient   PatientConfig    `json:"patient"`
 	Cache     CacheConfig      `json:"cache"`
 }
 
@@ -441,6 +443,10 @@ type HISConfig struct {
 	BaseURL            string `json:"base_url"`
 	AuthType           string `json:"auth_type"`
 	DocumentLookupPath string `json:"document_lookup_path"`
+}
+
+type PatientConfig struct {
+	FakeAuth bool `json:"fake_auth"`
 }
 
 type CacheConfig struct {
@@ -656,6 +662,7 @@ func (a *App) handleConfig(appliedMigrations []string) http.HandlerFunc {
 				AuthType:           a.externalConfig.HIS.AuthType,
 				DocumentLookupPath: a.externalConfig.HIS.DocumentLookupPath,
 			},
+			Patient:    a.externalConfig.Patient,
 			Cache:      a.externalConfig.Cache,
 			Migrations: appliedMigrations,
 		}
@@ -789,6 +796,19 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 			"error":           err.Error(),
 		})
 		http.Error(w, "failed to validate patient contact", http.StatusBadGateway)
+		return
+	}
+
+	if a.externalConfig != nil && a.externalConfig.Patient.FakeAuth {
+		a.log("info", "patient_send_code_ready_fake_auth", map[string]any{
+			"document_number": reqBody.DocumentNumber,
+			"patient_id":      patient.ID,
+			"provider":        a.identitySource.ProviderName(),
+		})
+		writeJSON(w, http.StatusOK, PatientSendCodeResponse{
+			Status:  "ready_to_send",
+			Message: "Modo demo activo. Se omite la validación real del correo.",
+		})
 		return
 	}
 
@@ -1387,7 +1407,11 @@ func loadExternalConfig(path string) (*ExternalConfig, error) {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
 
-	var cfg ExternalConfig
+	cfg := ExternalConfig{
+		Patient: PatientConfig{
+			FakeAuth: true,
+		},
+	}
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config json: %w", err)
 	}

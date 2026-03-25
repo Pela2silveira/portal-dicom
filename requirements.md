@@ -57,6 +57,8 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 * **Restricción de performance del adaptador Mongo:** las consultas deben ser performantes, acotadas, con proyecciones mínimas y apoyadas en índices adecuados; no se admiten collection scans como base del flujo normal.
 * **Búsqueda Implícita futura:** al validar correctamente el ingreso de paciente, el portal armará una lista propia de estudios autorizados para ese paciente.
 * **Validación actual al enviar código:** el portal llama al backend para verificar que el paciente exista y que tenga un mail activo antes del envío real del correo.
+* **Feature flag operativa de auth paciente:** el backend debe permitir alternar rápidamente entre flujo falso y flujo real mediante `patient.fake_auth` en `config.json`, para demos y validación incremental del correo real.
+* **Semántica del modo falso:** con `patient.fake_auth = true`, el backend mantiene la validación de existencia del paciente pero omite la validación real del mail y el envío efectivo del código.
 * **Mensajes funcionales requeridos:** si el paciente no tiene mail activo, la UI debe indicar que concurra a su centro de salud más cercano para actualizar los datos de contacto; si el paciente no existe, debe informar que el paciente no cuenta con registros.
 * **Restricción funcional futura:** el paciente no debe navegar la base completa del caché local ni la lista nativa de estudios de OHIF.
 

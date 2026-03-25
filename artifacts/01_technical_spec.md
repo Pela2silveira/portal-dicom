@@ -21,6 +21,8 @@
 - El flujo visible de paciente en la landing usa `Documento + código por mail` como experiencia UI.
 - El campo `Documento` del flujo paciente debe validarse tanto en frontend como en backend con formato numérico acotado antes de tocar búsquedas, retrieve o futuros pasos de verificación.
 - El paso `Enviar código` debe consultar backend antes del envío real del mail para distinguir tres resultados: `ready_to_send`, `missing_active_email` y `patient_not_found`.
+- El modo de auth paciente debe poder alternarse por config (`patient.fake_auth`) para conmutar rápido entre demos y validación real por correo sin cambiar endpoints ni UI principal.
+- Si `patient.fake_auth` no está presente en `config.json`, el backend debe asumir `true` para preservar compatibilidad con el MVP actual.
 - Las fechas de estudio que llegan desde DICOM/QIDO deben normalizarse a `YYYY-MM-DD` antes de persistirse o filtrarse en superficies del portal.
 - El flujo visible de profesional en la landing usa `DNI / usuario + contraseña` como experiencia UI.
 - La landing y las superficies propias del portal deben ser **responsive** para dispositivos móviles.
@@ -219,6 +221,7 @@ Proveer un portal operativo mínimo capaz de:
    - duración total del sync.
 11. Estas métricas no se persisten en PostgreSQL en esta etapa; se resuelven mediante logs estructurados y futuros endpoints de stats en memoria.
 12. Cuando el estudio queda `pending_retrieve`, la UI del paciente ofrece un botón `Retrieve` que llama `POST /api/patient/retrieve` y recarga la lista al completar.
+13. Con `patient.fake_auth = true`, `POST /api/patient/send-code` sigue validando la existencia del paciente pero omite la validación real del mail y el envío efectivo del código.
 11. Si QIDO no encuentra estudios, el endpoint debe responder `200` con `studies: []`; la UI no debe tratarlo como error técnico.
 12. El CTA de recarga del paciente debe expresar “Actualizar lista” o equivalente, no “Aplicar filtros”, para dejar claro que también reintenta el sync.
 

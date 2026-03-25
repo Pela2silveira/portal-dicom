@@ -79,6 +79,7 @@
   - lista de estudios
   - botón `Retrieve` por estudio pending
   - botón `Visualizar` cuando el estudio esté local
+  - flag `patient.fake_auth` para alternar rápido entre demo auth y auth real en construcción
 - Superficie profesional:
   - grilla de resultados
   - acciones Retrieve / Visualizar

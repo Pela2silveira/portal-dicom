@@ -30,6 +30,8 @@ Allow a patient to see only their authorized studies and open one selected study
 - Public landing flow: `Documento + código por mail`
 - The `Documento` field must accept digits only, sanitize non-numeric input in the browser, and reject implausible lengths before calling backend routes.
 - The `Enviar código` action must call backend prevalidation before any future mail delivery integration.
+- The patient auth mode must be switchable through backend config (`patient.fake_auth`) without changing the visible patient flow.
+- With `patient.fake_auth = true`, the UI contract remains the same but backend may return `ready_to_send` in demo mode after validating patient existence.
 - The `Enviar código` button must stay visually associated with the `Documento` input, not with the mail-code input.
 - The `Continuar` action should use the same primary blue CTA language and must stay disabled until the mail-code request succeeds and the patient enters a code value.
 - Required patient outcomes:
