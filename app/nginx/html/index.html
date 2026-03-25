@@ -1489,6 +1489,12 @@
         element.textContent = message;
       }
 
+      function nextFrame() {
+        return new Promise(resolve => {
+          window.requestAnimationFrame(() => resolve());
+        });
+      }
+
       function chipClassForStatus(status) {
         if (status === "available_local") return "chip success";
         if (status === "pending_retrieve") return "chip warn";
@@ -2064,6 +2070,7 @@
         button.textContent = "Recuperando...";
         patientRetrieveInFlight = true;
         setRetrieveStatusBanner(patientRetrieveStatus, "Recuperando estudio...", "warn");
+        await nextFrame();
 
         try {
           await triggerPatientRetrieve(studyInstanceUID);
@@ -2091,6 +2098,7 @@
         button.textContent = "Recuperando...";
         physicianRetrieveInFlight = true;
         setRetrieveStatusBanner(physicianRetrieveStatus, "Recuperando estudio...", "warn");
+        await nextFrame();
 
         try {
           await triggerPhysicianRetrieve(studyInstanceUID);
