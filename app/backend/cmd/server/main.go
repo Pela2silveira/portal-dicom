@@ -1783,6 +1783,92 @@ func normalizeProfessionalDocumentInput(value string) string {
 	return digitsOnly(strings.TrimSpace(value))
 }
 
+func buildPatientNameFuzzyQuery(value string) string {
+	tokens := tokenizeFuzzySearch(value)
+	if len(tokens) == 0 {
+		return ""
+	}
+	return "*" + strings.Join(tokens, "*") + "*"
+}
+
+func matchesPatientNameFuzzy(candidate, query string) bool {
+	queryTokens := tokenizeFuzzySearch(query)
+	if len(queryTokens) == 0 {
+		return true
+	}
+	candidateTokens := tokenizeFuzzySearch(candidate)
+	if len(candidateTokens) == 0 {
+		return false
+	}
+
+	candidateText := strings.Join(candidateTokens, " ")
+	for _, token := range queryTokens {
+		if !strings.Contains(candidateText, token) {
+			return false
+		}
+	}
+	return true
+}
+
+func tokenizeFuzzySearch(value string) []string {
+	normalized := normalizeFuzzySearchText(value)
+	if normalized == "" {
+		return nil
+	}
+	return strings.Fields(normalized)
+}
+
+func normalizeFuzzySearchText(value string) string {
+	upper := strings.ToUpper(strings.TrimSpace(value))
+	if upper == "" {
+		return ""
+	}
+
+	replacer := strings.NewReplacer(
+		"Á", "A",
+		"À", "A",
+		"Ä", "A",
+		"Â", "A",
+		"Ã", "A",
+		"É", "E",
+		"È", "E",
+		"Ë", "E",
+		"Ê", "E",
+		"Í", "I",
+		"Ì", "I",
+		"Ï", "I",
+		"Î", "I",
+		"Ó", "O",
+		"Ò", "O",
+		"Ö", "O",
+		"Ô", "O",
+		"Õ", "O",
+		"Ú", "U",
+		"Ù", "U",
+		"Ü", "U",
+		"Û", "U",
+		"Ñ", "N",
+	)
+	upper = replacer.Replace(upper)
+
+	var b strings.Builder
+	b.Grow(len(upper))
+	lastWasSpace := true
+	for _, r := range upper {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+			lastWasSpace = false
+			continue
+		}
+		if !lastWasSpace {
+			b.WriteByte(' ')
+			lastWasSpace = true
+		}
+	}
+
+	return strings.TrimSpace(b.String())
+}
+
 func durationFromEnv(name string, fallback time.Duration) time.Duration {
 	raw := strings.TrimSpace(os.Getenv(name))
 	if raw == "" {
@@ -3252,7 +3338,7 @@ func (a *App) searchPhysicianResultsFromSingleNode(ctx context.Context, physicia
 		query.Set("PatientID", filters.PatientID)
 	}
 	if filters.PatientName != "" {
-		query.Set("PatientName", filters.PatientName)
+		query.Set("PatientName", buildPatientNameFuzzyQuery(filters.PatientName))
 	}
 	if filters.Modality != "" {
 		query.Set("ModalitiesInStudy", filters.Modality)
@@ -3553,7 +3639,7 @@ func (a *App) listPhysicianResults(ctx context.Context, physicianID string, filt
 				if filters.PatientID != "" && item.PatientID != filters.PatientID {
 					continue
 				}
-				if filters.PatientName != "" && !strings.Contains(strings.ToUpper(item.PatientName), strings.ToUpper(filters.PatientName)) {
+				if filters.PatientName != "" && !matchesPatientNameFuzzy(item.PatientName, filters.PatientName) {
 					continue
 				}
 				if filters.DateFrom != "" && item.StudyDate < filters.DateFrom {

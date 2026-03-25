@@ -246,7 +246,8 @@ Proveer un portal operativo mínimo capaz de:
 7. El primer avance operativo expone `POST /api/physician/retrieve` para disparar `C-GET` vía Orthanc REST desde la misma grilla.
 8. La grilla del profesional debe recalcular `cacheStatus`, `retrieveStatus` y `viewer_url` a partir de `cached_studies`, `retrieve_jobs` y verificación real en Orthanc.
 9. Cuando el profesional aplica filtros, `GET /api/physician/results` debe ejecutar QIDO-RS contra el nodo remoto configurado y persistir el resultado como búsqueda reciente.
-10. Sin filtros, el panel puede seguir mostrando recientes persistidos como fallback transitorio, pero no debe considerarse el diseño final de búsqueda federada.
+10. El filtro `patient_name` del profesional debe resolverse como búsqueda fuzzy por términos normalizados; no debe requerir coincidencia literal exacta.
+11. Sin filtros, el panel puede seguir mostrando recientes persistidos como fallback transitorio, pero no debe considerarse el diseño final de búsqueda federada.
 
 ### 5.4 Landing pública y acceso futuro
 1. El usuario accede a `/` y visualiza la landing institucional.

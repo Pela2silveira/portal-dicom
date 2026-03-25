@@ -149,6 +149,7 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 * La primera implementación funcional de esta superficie consume `GET /api/physician/results?username=<dni>` y renderiza resultados desde búsquedas recientes sembradas en la base hasta integrar la búsqueda federada real.
 * El primer avance operativo de esta superficie expone `POST /api/physician/retrieve`, reutiliza Orthanc REST para `C-GET` y recalcula `cache_status` / `retrieve_status` desde Postgres y Orthanc local antes de habilitar `Visualizar`.
 * Con filtros cargados, `GET /api/physician/results` debe consultar QIDO-RS del nodo remoto configurado y persistir esa búsqueda como reciente para reutilización posterior.
+* El filtro `patient_name` del profesional debe comportarse como búsqueda fuzzy por términos normalizados, no como coincidencia literal exacta.
 
 ---
 
