@@ -278,10 +278,11 @@ Proveer un portal operativo mínimo capaz de:
 13. El backend debe rechazar las búsquedas profesionales remotas vacías sin filtros adicionales para evitar consultas amplias innecesarias.
 14. El retrieve profesional sobre resultados remotos debe resolver el `source_node_id` a partir del snapshot persistido de la búsqueda reciente para reinyectar el estudio desde el mismo PACS que devolvió el resultado.
 15. El filtro `patient_name` del profesional debe resolverse como búsqueda fuzzy por términos normalizados; no debe requerir coincidencia literal exacta.
-16. Tanto la tarjeta de paciente como la de profesional deben exponer, cuando exista match en Mongo `prestaciones`, los campos `Prestación en ANDES` y `Profesional en ANDES`.
-17. Para paciente, el enriquecimiento ANDES debe resolver por `metadata.pacs-uid == StudyInstanceUID` y por el identificador ANDES/Mongo del paciente persistido en `patient_identifiers` como `mongo_object_id`.
-18. Para profesional, el enriquecimiento ANDES debe resolver por `metadata.pacs-uid == StudyInstanceUID`, por rango diario de `StudyDate` y por `solicitud.organizacion.id == pacs_nodes[].andes_organization_id`.
-19. Cuando exista match en Mongo `prestaciones`, el portal también debe persistir el `_id` de la prestación ANDES como `andes_prestacion_id` dentro de los payloads persistidos de estudios/resultados para reutilización posterior.
+16. El enriquecimiento ANDES de resultados debe quedar detrás de la feature flag `his.prestaciones_enrichment_enabled`, deshabilitada por defecto; con la flag en `false`, la búsqueda no debe conectarse a Mongo `prestaciones`.
+17. Tanto la tarjeta de paciente como la de profesional deben exponer, cuando la flag esté activa y exista match en Mongo `prestaciones`, los campos `Prestación en ANDES` y `Profesional en ANDES`.
+18. Para paciente, el enriquecimiento ANDES debe resolver por `metadata.pacs-uid == StudyInstanceUID` y por el identificador ANDES/Mongo del paciente persistido en `patient_identifiers` como `mongo_object_id`.
+19. Para profesional, el enriquecimiento ANDES debe resolver por `metadata.pacs-uid == StudyInstanceUID`, por rango diario de `StudyDate` y por `solicitud.organizacion.id == pacs_nodes[].andes_organization_id`.
+20. Cuando exista match en Mongo `prestaciones`, el portal también debe persistir el `_id` de la prestación ANDES como `andes_prestacion_id` dentro de los payloads persistidos de estudios/resultados para reutilización posterior.
 
 ### 5.4 Landing pública y acceso futuro
 1. El usuario accede a `/` y visualiza la landing institucional.

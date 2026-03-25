@@ -118,6 +118,7 @@ Fields:
 
 - `provider`: integration mode, for example `his_mongo_direct` or `andes`
 - `enabled`: informational flag for the configured integration
+- `prestaciones_enrichment_enabled`: optional feature flag, disabled by default; when `true` and `provider = his_mongo_direct`, the backend connects to Mongo `prestaciones` to enrich study cards with `Prestación en ANDES` / `Profesional en ANDES`
 - `base_url`: upstream HIS base URL when applicable
 - `auth_type`: auth mode label for the upstream system
 - `document_lookup_path`: patient lookup template path

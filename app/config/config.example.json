@@ -34,7 +34,8 @@
     "enabled": false,
     "base_url": "https://pending-andes-host/api",
     "auth_type": "pending",
-    "document_lookup_path": "/core-v2/mpi/pacientes?documento={dni}"
+    "document_lookup_path": "/core-v2/mpi/pacientes?documento={dni}",
+    "prestaciones_enrichment_enabled": false
   },
   "patient": {
     "fake_auth": true

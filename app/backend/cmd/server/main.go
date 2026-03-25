@@ -1167,11 +1167,12 @@ type PACSAuthConfig struct {
 }
 
 type HISConfig struct {
-	Provider           string `json:"provider"`
-	Enabled            bool   `json:"enabled"`
-	BaseURL            string `json:"base_url"`
-	AuthType           string `json:"auth_type"`
-	DocumentLookupPath string `json:"document_lookup_path"`
+	Provider                      string `json:"provider"`
+	Enabled                       bool   `json:"enabled"`
+	BaseURL                       string `json:"base_url"`
+	AuthType                      string `json:"auth_type"`
+	DocumentLookupPath            string `json:"document_lookup_path"`
+	PrestacionesEnrichmentEnabled bool   `json:"prestaciones_enrichment_enabled"`
 }
 
 type PatientConfig struct {
@@ -1289,11 +1290,12 @@ type PACSAuthResponse struct {
 }
 
 type HISConfigResponse struct {
-	Provider           string `json:"provider"`
-	Enabled            bool   `json:"enabled"`
-	BaseURL            string `json:"base_url"`
-	AuthType           string `json:"auth_type"`
-	DocumentLookupPath string `json:"document_lookup_path"`
+	Provider                      string `json:"provider"`
+	Enabled                       bool   `json:"enabled"`
+	BaseURL                       string `json:"base_url"`
+	AuthType                      string `json:"auth_type"`
+	DocumentLookupPath            string `json:"document_lookup_path"`
+	PrestacionesEnrichmentEnabled bool   `json:"prestaciones_enrichment_enabled"`
 }
 
 func main() {
@@ -1619,11 +1621,12 @@ func (a *App) handleConfig(appliedMigrations []string) http.HandlerFunc {
 			ConfigPath: a.cfg.ConfigPath,
 			LoadedAt:   a.configLoadedAt.Format(time.RFC3339),
 			HIS: HISConfigResponse{
-				Provider:           a.externalConfig.HIS.Provider,
-				Enabled:            a.externalConfig.HIS.Enabled,
-				BaseURL:            a.externalConfig.HIS.BaseURL,
-				AuthType:           a.externalConfig.HIS.AuthType,
-				DocumentLookupPath: a.externalConfig.HIS.DocumentLookupPath,
+				Provider:                      a.externalConfig.HIS.Provider,
+				Enabled:                       a.externalConfig.HIS.Enabled,
+				BaseURL:                       a.externalConfig.HIS.BaseURL,
+				AuthType:                      a.externalConfig.HIS.AuthType,
+				DocumentLookupPath:            a.externalConfig.HIS.DocumentLookupPath,
+				PrestacionesEnrichmentEnabled: a.externalConfig.HIS.PrestacionesEnrichmentEnabled,
 			},
 			Patient:      a.externalConfig.Patient,
 			Professional: a.externalConfig.Professional,
@@ -3182,6 +3185,9 @@ func buildProfessionalIdentitySource(cfg ExternalConfig, logger *log.Logger) Pro
 
 func buildPrestacionLookupSource(cfg ExternalConfig) (PrestacionLookupSource, error) {
 	if !strings.EqualFold(strings.TrimSpace(cfg.HIS.Provider), "his_mongo_direct") {
+		return &NoopPrestacionLookupSource{}, nil
+	}
+	if !cfg.HIS.PrestacionesEnrichmentEnabled {
 		return &NoopPrestacionLookupSource{}, nil
 	}
 	return connectMongoPrestacionLookupSource()
