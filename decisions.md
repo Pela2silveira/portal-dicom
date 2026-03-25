@@ -28,6 +28,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The patient `Enviar código` step is a backend prevalidation step: patient must exist and have an active email before the future mail delivery integration is attempted.
 - Patient auth mode must be switchable at runtime through `patient.fake_auth` in `config.json`, defaulting to `true` for current MVP/demo compatibility.
 - With `patient.fake_auth = true`, the backend still requires the patient to exist but skips real email validation/sending so demos can proceed without the mail dependency.
+- Patient send-code confirmation must show the destination email obfuscated (`first 3 chars + **** + @domain`) both in demo mode and in real mode when an active email exists.
 - Professional auth mode must be switchable at runtime through `professional.fake_auth` in `config.json`, defaulting to `true` for current MVP/demo compatibility.
 - With `professional.fake_auth = true`, the backend keeps the current transitional professional access validation against Mongo `profesional`; with `false`, professional login is reserved for future `LDAP provincial + MFA`.
 - Patient demographic identity shown in the portal must prefer HIS/Mongo data and must not be overwritten by DICOM `PatientName` values observed during QIDO synchronization.

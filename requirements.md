@@ -76,6 +76,7 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 * **Feature flag operativa de auth paciente:** el backend debe permitir alternar rápidamente entre flujo falso y flujo real mediante `patient.fake_auth` en `config.json`, para demos y validación incremental del correo real.
 * **Semántica del modo falso:** con `patient.fake_auth = true`, el backend mantiene la validación de existencia del paciente pero omite la validación real del mail y el envío efectivo del código.
 * **Mensajes funcionales requeridos:** si el paciente no tiene mail activo, la UI debe indicar que concurra a su centro de salud más cercano para actualizar los datos de contacto; si el paciente no existe, debe informar que el paciente no cuenta con registros.
+* **Confirmación visible de destinatario:** cuando el paciente tenga mail registrado y solicite el código, la UI debe mostrar el correo ofuscado en el mensaje de confirmación, preservando los primeros 3 caracteres del local-part y ocultando desde el cuarto hasta `@`.
 * **Restricción funcional futura:** el paciente no debe navegar la base completa del caché local ni la lista nativa de estudios de OHIF.
 
 ---

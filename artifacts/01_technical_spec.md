@@ -21,6 +21,7 @@
 - El flujo visible de paciente en la landing usa `Documento + código por mail` como experiencia UI.
 - El campo `Documento` del flujo paciente debe validarse tanto en frontend como en backend con formato numérico acotado antes de tocar búsquedas, retrieve o futuros pasos de verificación.
 - El paso `Enviar código` debe consultar backend antes del envío real del mail para distinguir tres resultados: `ready_to_send`, `missing_active_email` y `patient_not_found`.
+- Cuando `ready_to_send` y exista email registrado, el mensaje visible debe incluir el correo ofuscado, preservando sólo los primeros 3 caracteres antes de `@`.
 - El modo de auth paciente debe poder alternarse por config (`patient.fake_auth`) para conmutar rápido entre demos y validación real por correo sin cambiar endpoints ni UI principal.
 - Si `patient.fake_auth` no está presente en `config.json`, el backend debe asumir `true` para preservar compatibilidad con el MVP actual.
 - El modo de auth profesional debe poder alternarse por config (`professional.fake_auth`) para desacoplar la validación transitoria actual del objetivo futuro `LDAP provincial + MFA`.

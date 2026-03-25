@@ -1411,6 +1411,7 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if a.externalConfig != nil && a.externalConfig.Patient.FakeAuth {
+		maskedEmail := maskPatientEmail(identity.Email)
 		a.log("info", "patient_send_code_ready_fake_auth", map[string]any{
 			"document_number": reqBody.DocumentNumber,
 			"patient_id":      patient.ID,
@@ -1418,7 +1419,7 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 		})
 		writeJSON(w, http.StatusOK, PatientSendCodeResponse{
 			Status:  "ready_to_send",
-			Message: "Modo demo activo. Se omite la validación real del correo.",
+			Message: patientSendCodeReadyMessage(maskedEmail, true),
 		})
 		return
 	}
@@ -1443,7 +1444,7 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 	})
 	writeJSON(w, http.StatusOK, PatientSendCodeResponse{
 		Status:  "ready_to_send",
-		Message: "Se enviará un código por mail al contacto registrado.",
+		Message: patientSendCodeReadyMessage(maskPatientEmail(identity.Email), false),
 	})
 }
 
@@ -2473,6 +2474,41 @@ func validateDocumentNumber(value string) error {
 		}
 	}
 	return nil
+}
+
+func patientSendCodeReadyMessage(maskedEmail string, demo bool) string {
+	if maskedEmail == "" {
+		if demo {
+			return "Modo demo activo. Se omite la validación real del correo."
+		}
+		return "Se enviará un código por mail al contacto registrado."
+	}
+
+	if demo {
+		return "Modo demo activo. Se ha enviado el código a " + maskedEmail + "."
+	}
+	return "Se ha enviado el código a " + maskedEmail + "."
+}
+
+func maskPatientEmail(email string) string {
+	trimmed := strings.TrimSpace(email)
+	parts := strings.Split(trimmed, "@")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return ""
+	}
+
+	localPart := []rune(parts[0])
+	if len(localPart) <= 3 {
+		return trimmed
+	}
+
+	masked := make([]rune, len(localPart))
+	copy(masked[:3], localPart[:3])
+	for i := 3; i < len(localPart); i++ {
+		masked[i] = '*'
+	}
+
+	return string(masked) + "@" + parts[1]
 }
 
 func normalizeProfessionalDocumentInput(value string) string {
