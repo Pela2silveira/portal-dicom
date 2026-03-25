@@ -630,7 +630,8 @@ type PatientConfig struct {
 }
 
 type ProfessionalConfig struct {
-	FakeAuth bool `json:"fake_auth"`
+	FakeAuth          bool   `json:"fake_auth"`
+	InitialCachePeriod string `json:"initial_cache_period"`
 }
 
 type CacheConfig struct {
@@ -1681,7 +1682,8 @@ func loadExternalConfig(path string) (*ExternalConfig, error) {
 			FakeAuth: true,
 		},
 		Professional: ProfessionalConfig{
-			FakeAuth: true,
+			FakeAuth:           true,
+			InitialCachePeriod: "current_week",
 		},
 	}
 	if err := json.Unmarshal(raw, &cfg); err != nil {
@@ -3195,102 +3197,6 @@ func (a *App) ensurePhysicianRecord(ctx context.Context, username string) (Physi
 		return PhysicianSummary{}, fmt.Errorf("upsert physician: %w", err)
 	}
 
-	seedQueries := []struct {
-		QueryJSON    map[string]any
-		ResultCount  int
-		ExpiresAfter string
-	}{
-		{
-			QueryJSON: map[string]any{
-				"patient_name": "Perez Juan",
-				"date_from":    "2026-03-01",
-				"date_to":      "2026-03-31",
-				"modalities":   []string{"MR"},
-				"results": []map[string]any{
-					{
-						"study_instance_uid": "1.2.826.0.1.3680043.10.54321.mr.101",
-						"patient_name":       "Perez Juan",
-						"patient_id":         "12345678",
-						"study_date":         "2026-03-21",
-						"study_description":  "RM de columna lumbar",
-						"modalities":         []string{"MR"},
-						"locations":          []string{"HPN", "Castro Rendon"},
-						"cache_status":       "local_complete",
-						"retrieve_status":    "done",
-						"partial_filter":     false,
-					},
-				},
-			},
-			ResultCount:  1,
-			ExpiresAfter: "7 days",
-		},
-		{
-			QueryJSON: map[string]any{
-				"patient_name": "Gomez Ana",
-				"date_from":    "2026-03-15",
-				"date_to":      "2026-03-31",
-				"modalities":   []string{"CT"},
-				"results": []map[string]any{
-					{
-						"study_instance_uid": "1.2.826.0.1.3680043.10.54321.ct.102",
-						"patient_name":       "Gomez Ana",
-						"patient_id":         "20111222",
-						"study_date":         "2026-03-19",
-						"study_description":  "TC de abdomen",
-						"modalities":         []string{"CT"},
-						"locations":          []string{"HPN"},
-						"cache_status":       "local_partial",
-						"retrieve_status":    "running",
-						"partial_filter":     true,
-					},
-				},
-			},
-			ResultCount:  1,
-			ExpiresAfter: "7 days",
-		},
-	}
-
-	for _, query := range seedQueries {
-		queryJSON, err := json.Marshal(query.QueryJSON)
-		if err != nil {
-			return PhysicianSummary{}, fmt.Errorf("marshal physician query seed: %w", err)
-		}
-
-		var exists bool
-		if err := a.db.QueryRowContext(ctx, `
-			SELECT EXISTS (
-				SELECT 1
-				FROM physician_recent_queries
-				WHERE physician_id = $1::uuid
-				  AND query_json = $2::jsonb
-			)
-		`,
-			physician.ID,
-			string(queryJSON),
-		).Scan(&exists); err != nil {
-			return PhysicianSummary{}, fmt.Errorf("check physician recent query seed: %w", err)
-		}
-
-		if exists {
-			continue
-		}
-
-		if _, err := a.db.ExecContext(ctx, `
-			INSERT INTO physician_recent_queries (
-				physician_id, query_json, result_count, searched_at, expires_at
-			) VALUES (
-				$1::uuid, $2::jsonb, $3, now(), now() + ($4)::interval
-			)
-		`,
-			physician.ID,
-			string(queryJSON),
-			query.ResultCount,
-			query.ExpiresAfter,
-		); err != nil {
-			return PhysicianSummary{}, fmt.Errorf("insert physician recent query: %w", err)
-		}
-	}
-
 	return physician, nil
 }
 
@@ -3450,6 +3356,39 @@ func buildQIDODateRange(dateFrom, dateTo string) string {
 	}
 }
 
+func configuredDateRange(period string, now time.Time) (string, string) {
+	switch strings.ToLower(strings.TrimSpace(period)) {
+	case "", "current_week", "week":
+		return currentWeekDateRange(now)
+	case "today":
+		year, month, day := now.Date()
+		current := time.Date(year, month, day, 0, 0, 0, 0, now.Location())
+		dayISO := current.Format("2006-01-02")
+		return dayISO, dayISO
+	case "current_month", "month":
+		year, month, _ := now.Date()
+		start := time.Date(year, month, 1, 0, 0, 0, 0, now.Location())
+		end := start.AddDate(0, 1, -1)
+		return start.Format("2006-01-02"), end.Format("2006-01-02")
+	case "current_year", "year":
+		year, _, _ := now.Date()
+		start := time.Date(year, time.January, 1, 0, 0, 0, 0, now.Location())
+		end := time.Date(year, time.December, 31, 0, 0, 0, 0, now.Location())
+		return start.Format("2006-01-02"), end.Format("2006-01-02")
+	default:
+		return currentWeekDateRange(now)
+	}
+}
+
+func currentWeekDateRange(now time.Time) (string, string) {
+	year, month, day := now.Date()
+	current := time.Date(year, month, day, 0, 0, 0, 0, now.Location())
+	offset := (int(current.Weekday()) + 6) % 7
+	start := current.AddDate(0, 0, -offset)
+	end := start.AddDate(0, 0, 6)
+	return start.Format("2006-01-02"), end.Format("2006-01-02")
+}
+
 func (a *App) persistPhysicianRecentQuery(ctx context.Context, physicianID string, filters PhysicianSearchFilters, results []PhysicianResult) error {
 	payload := map[string]any{
 		"patient_id":   filters.PatientID,
@@ -3476,6 +3415,125 @@ func (a *App) persistPhysicianRecentQuery(ctx context.Context, physicianID strin
 		)
 	`, physicianID, string(queryJSON), len(results))
 	return err
+}
+
+func (a *App) listPhysicianCachedResultsForInitialPeriod(ctx context.Context) ([]PhysicianResult, error) {
+	period := "current_week"
+	if a.externalConfig != nil && strings.TrimSpace(a.externalConfig.Professional.InitialCachePeriod) != "" {
+		period = a.externalConfig.Professional.InitialCachePeriod
+	}
+	dateFrom, dateTo := configuredDateRange(period, time.Now())
+
+	endpoint, err := url.Parse(strings.TrimRight(a.cfg.OrthancURL, "/") + "/dicom-web/studies")
+	if err != nil {
+		return nil, fmt.Errorf("build orthanc physician cache url: %w", err)
+	}
+
+	query := endpoint.Query()
+	query.Set("limit", "200")
+	query.Set("StudyDate", buildQIDODateRange(dateFrom, dateTo))
+	query.Add("includefield", "StudyInstanceUID")
+	query.Add("includefield", "StudyDate")
+	query.Add("includefield", "StudyDescription")
+	query.Add("includefield", "ModalitiesInStudy")
+	query.Add("includefield", "PatientName")
+	query.Add("includefield", "PatientID")
+	endpoint.RawQuery = query.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("build orthanc physician cache request: %w", err)
+	}
+	req.Header.Set("Accept", "application/dicom+json, application/json")
+	if a.cfg.OrthancUser != "" {
+		req.SetBasicAuth(a.cfg.OrthancUser, a.cfg.OrthancPass)
+	}
+
+	res, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("execute orthanc physician cache request: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+		return nil, fmt.Errorf("orthanc physician cache bad status %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var payload []qidoResponseItem
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		if !errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("decode orthanc physician cache response: %w", err)
+		}
+		payload = []qidoResponseItem{}
+	}
+
+	results := make([]PhysicianResult, 0, len(payload))
+	for _, item := range payload {
+		studyUID := dicomFirstString(item, "0020000D")
+		if studyUID == "" {
+			continue
+		}
+
+		cacheStatus, retrieveStatus, viewerURL, err := a.getStudyOperationalState(ctx, studyUID, "local_complete", "done")
+		if err != nil {
+			return nil, fmt.Errorf("resolve physician cached study state for %s: %w", studyUID, err)
+		}
+		locations, err := a.cachedStudyLocations(ctx, studyUID)
+		if err != nil {
+			return nil, fmt.Errorf("load cached study locations for %s: %w", studyUID, err)
+		}
+		if len(locations) == 0 {
+			locations = []string{"Cache local"}
+		}
+
+		results = append(results, PhysicianResult{
+			StudyInstanceUID: studyUID,
+			PatientName:      dicomFirstPersonName(item, "00100010"),
+			PatientID:        dicomFirstString(item, "00100020"),
+			StudyDate:        normalizeStudyDate(dicomFirstString(item, "00080020")),
+			StudyDescription: dicomFirstString(item, "00081030"),
+			Modalities:       dicomStringList(item, "00080061"),
+			Locations:        locations,
+			CacheStatus:      cacheStatus,
+			RetrieveStatus:   retrieveStatus,
+			PartialFilter:    false,
+			ViewerURL:        viewerURL,
+		})
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].StudyDate == results[j].StudyDate {
+			return results[i].StudyInstanceUID < results[j].StudyInstanceUID
+		}
+		return results[i].StudyDate > results[j].StudyDate
+	})
+
+	return results, nil
+}
+
+func (a *App) cachedStudyLocations(ctx context.Context, studyUID string) ([]string, error) {
+	var raw []byte
+	err := a.db.QueryRowContext(ctx, `
+		SELECT locations_json
+		FROM cached_studies
+		WHERE study_instance_uid = $1
+	`, studyUID).Scan(&raw)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var locations []string
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	if err := json.Unmarshal(raw, &locations); err != nil {
+		return nil, err
+	}
+	return locations, nil
 }
 
 func (a *App) listPatientStudies(ctx context.Context, patientID string, filters PatientStudiesFilter) ([]PatientStudy, error) {
@@ -3587,117 +3645,7 @@ func (a *App) listPhysicianResults(ctx context.Context, physicianID string, filt
 		return a.searchPhysicianResultsFromSingleNode(ctx, physician, filters)
 	}
 
-	rows, err := a.db.QueryContext(ctx, `
-		SELECT query_json
-		FROM physician_recent_queries
-		WHERE physician_id = $1::uuid
-		ORDER BY searched_at DESC, id DESC
-		LIMIT 10
-	`, physicianID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	results := make([]PhysicianResult, 0)
-	seen := make(map[string]struct{})
-
-	for rows.Next() {
-		var raw []byte
-		if err := rows.Scan(&raw); err != nil {
-			return nil, err
-		}
-
-			var payload struct {
-				PatientID   string `json:"patient_id"`
-				PatientName string `json:"patient_name"`
-				DateFrom    string `json:"date_from"`
-				DateTo      string `json:"date_to"`
-				Modalities  []string `json:"modalities"`
-				Results     []struct {
-					StudyInstanceUID string   `json:"study_instance_uid"`
-					PatientName      string   `json:"patient_name"`
-					PatientID        string   `json:"patient_id"`
-					StudyDate        string   `json:"study_date"`
-					StudyDescription string   `json:"study_description"`
-					Modalities       []string `json:"modalities"`
-					Locations        []string `json:"locations"`
-					CacheStatus      string   `json:"cache_status"`
-					RetrieveStatus   string   `json:"retrieve_status"`
-					PartialFilter    bool     `json:"partial_filter"`
-				} `json:"results"`
-			}
-
-		if err := json.Unmarshal(raw, &payload); err != nil {
-			return nil, fmt.Errorf("parse physician query_json: %w", err)
-		}
-
-			for _, item := range payload.Results {
-				if _, ok := seen[item.StudyInstanceUID]; ok {
-					continue
-				}
-				if filters.PatientID != "" && item.PatientID != filters.PatientID {
-					continue
-				}
-				if filters.PatientName != "" && !matchesPatientNameFuzzy(item.PatientName, filters.PatientName) {
-					continue
-				}
-				if filters.DateFrom != "" && item.StudyDate < filters.DateFrom {
-					continue
-				}
-				if filters.DateTo != "" && item.StudyDate > filters.DateTo {
-					continue
-				}
-				if filters.Modality != "" {
-					match := false
-					for _, modality := range item.Modalities {
-						if strings.ToUpper(modality) == filters.Modality {
-							match = true
-							break
-						}
-					}
-					if !match {
-						continue
-					}
-				}
-
-			result := PhysicianResult{
-				StudyInstanceUID: item.StudyInstanceUID,
-				PatientName:      item.PatientName,
-				PatientID:        item.PatientID,
-				StudyDate:        item.StudyDate,
-				StudyDescription: item.StudyDescription,
-				Modalities:       item.Modalities,
-				Locations:        item.Locations,
-				CacheStatus:      item.CacheStatus,
-				RetrieveStatus:   item.RetrieveStatus,
-				PartialFilter:    item.PartialFilter,
-			}
-			cacheStatus, retrieveStatus, viewerURL, err := a.getStudyOperationalState(ctx, item.StudyInstanceUID, item.CacheStatus, item.RetrieveStatus)
-			if err != nil {
-				return nil, fmt.Errorf("resolve physician result state for %s: %w", item.StudyInstanceUID, err)
-			}
-			result.CacheStatus = cacheStatus
-			result.RetrieveStatus = retrieveStatus
-			result.ViewerURL = viewerURL
-
-			results = append(results, result)
-			seen[item.StudyInstanceUID] = struct{}{}
-		}
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	sort.Slice(results, func(i, j int) bool {
-		if results[i].StudyDate == results[j].StudyDate {
-			return results[i].StudyInstanceUID < results[j].StudyInstanceUID
-		}
-		return results[i].StudyDate > results[j].StudyDate
-	})
-
-	return results, nil
+	return a.listPhysicianCachedResultsForInitialPeriod(ctx)
 }
 
 func digitsOnly(value string) string {

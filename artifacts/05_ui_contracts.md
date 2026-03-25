@@ -214,6 +214,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - `patient_name` should behave as a fuzzy normalized term search in the physician workspace
 - filters should start empty by default in the current portal UX
 - the physician date filter should use the same preset + range-calendar control pattern as the patient surface, not separate native `from/to` inputs
+- when the physician enters the workspace without filters, the first visible result set should be the local cached studies for the current calendar week
 
 ### Result Columns
 

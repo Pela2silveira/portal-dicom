@@ -193,7 +193,7 @@ Key fields:
 
 ### `physician_recent_queries`
 
-Stores the physician cache of recent searches.
+Stores persisted physician search history for filtered searches.
 
 Key fields:
 
@@ -205,7 +205,7 @@ Key fields:
 
 Use cases:
 
-- show recent searches in the physician panel
+- store filtered physician search history
 - accelerate repeated queries
 - build future "continue where you left off" behavior
 

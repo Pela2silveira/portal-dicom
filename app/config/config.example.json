@@ -30,7 +30,8 @@
     "fake_auth": true
   },
   "professional": {
-    "fake_auth": true
+    "fake_auth": true,
+    "initial_cache_period": "current_week"
   },
   "cache": {
     "orthanc_base_url": "http://orthanc:8042",

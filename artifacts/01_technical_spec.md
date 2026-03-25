@@ -242,12 +242,12 @@ Proveer un portal operativo mínimo capaz de:
    - acciones operativas.
 4. El profesional dispara retrieve bajo demanda cuando corresponda.
 5. El portal abre OHIF sobre el estudio puntual seleccionado.
-6. La primera implementación funcional expone `GET /api/physician/results?username=<dni>` como contrato inicial del panel del profesional, cargando resultados desde `physician_recent_queries` sembradas en Postgres.
+6. La primera implementación funcional expone `GET /api/physician/results?username=<dni>` como contrato inicial del panel del profesional.
 7. El primer avance operativo expone `POST /api/physician/retrieve` para disparar `C-GET` vía Orthanc REST desde la misma grilla.
 8. La grilla del profesional debe recalcular `cacheStatus`, `retrieveStatus` y `viewer_url` a partir de `cached_studies`, `retrieve_jobs` y verificación real en Orthanc.
-9. Cuando el profesional aplica filtros, `GET /api/physician/results` debe ejecutar QIDO-RS contra el nodo remoto configurado y persistir el resultado como búsqueda reciente.
-10. El filtro `patient_name` del profesional debe resolverse como búsqueda fuzzy por términos normalizados; no debe requerir coincidencia literal exacta.
-11. Sin filtros, el panel puede seguir mostrando recientes persistidos como fallback transitorio, pero no debe considerarse el diseño final de búsqueda federada.
+9. Sin filtros, `GET /api/physician/results` debe consultar Orthanc local en vivo y devolver todos los estudios en cache de la semana calendario actual.
+10. Cuando el profesional aplica filtros, `GET /api/physician/results` debe ejecutar QIDO-RS contra el nodo remoto configurado y persistir el resultado como búsqueda reciente.
+11. El filtro `patient_name` del profesional debe resolverse como búsqueda fuzzy por términos normalizados; no debe requerir coincidencia literal exacta.
 
 ### 5.4 Landing pública y acceso futuro
 1. El usuario accede a `/` y visualiza la landing institucional.
@@ -550,7 +550,7 @@ Problema: Orthanc puede recibir instancias progresivamente.
   - estudios sincronizados desde el único nodo configurado en la carga inicial sin filtros;
   - `studies: []` si no hay resultados, sin convertirlo en error técnico.
 - `GET /api/physician/results`:
-  - sin filtros: puede devolver recientes persistidos;
+  - sin filtros: debe consultar Orthanc local en vivo para estudios en cache de la semana actual;
   - con filtros: debe ejecutar QIDO real al nodo configurado.
 
 ### Retrieve

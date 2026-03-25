@@ -146,7 +146,7 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 * La experiencia debe ser responsive y usable en móvil, al menos para consulta y validación rápida.
 * El contrato explícito de esta superficie queda definido en `artifacts/05_ui_contracts.md`.
 * En el mock actual del portal, el ingreso profesional debe aterrizar primero en esta superficie y no redirigir directamente a la home general de OHIF.
-* La primera implementación funcional de esta superficie consume `GET /api/physician/results?username=<dni>` y renderiza resultados desde búsquedas recientes sembradas en la base hasta integrar la búsqueda federada real.
+* La primera implementación funcional de esta superficie consume `GET /api/physician/results?username=<dni>` y, sin filtros, debe mostrar siempre los estudios locales en cache de la semana actual consultando Orthanc local en vivo.
 * El primer avance operativo de esta superficie expone `POST /api/physician/retrieve`, reutiliza Orthanc REST para `C-GET` y recalcula `cache_status` / `retrieve_status` desde Postgres y Orthanc local antes de habilitar `Visualizar`.
 * Con filtros cargados, `GET /api/physician/results` debe consultar QIDO-RS del nodo remoto configurado y persistir esa búsqueda como reciente para reutilización posterior.
 * El filtro `patient_name` del profesional debe comportarse como búsqueda fuzzy por términos normalizados, no como coincidencia literal exacta.

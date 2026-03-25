@@ -2164,7 +2164,9 @@
 
         if (!payload.results.length) {
           physicianResultList.innerHTML =
-            '<div class="empty-state">No hay resultados para los filtros seleccionados.</div>';
+            hasPhysicianFilters(payload.filters)
+              ? '<div class="empty-state">No hay resultados para los filtros seleccionados.</div>'
+              : '<div class="empty-state">No hay estudios locales en cache para el rango temporal configurado.</div>';
           return;
         }
 

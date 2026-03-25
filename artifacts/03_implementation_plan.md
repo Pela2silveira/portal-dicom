@@ -83,7 +83,7 @@
 - Superficie profesional:
   - grilla de resultados
   - acciones Retrieve / Visualizar
-  - fallback a recientes persistidos sin filtros
+  - carga inicial desde Orthanc local con estudios en cache de la semana actual
 
 **Exit criteria (testable)**
 - Navegación: `/` → superficie paciente/profesional sin pasar por OHIF.
@@ -196,7 +196,7 @@
   - observabilidad estructurada del sync paciente: token, QIDO, duración y conteos
   - sin persistir métricas de observabilidad en Postgres; sólo logs y futuros stats en memoria
 - Physician surface:
-  - `GET /api/physician/results?username=<dni>` sobre `physician_recent_queries` sembradas en DB cuando no hay filtros
+  - `GET /api/physician/results?username=<dni>` contra Orthanc local cuando no hay filtros
   - búsqueda remota real por QIDO cuando el profesional aplica filtros
   - `POST /api/physician/retrieve` con actualización de estado local contra DB/Orthanc
 
@@ -306,7 +306,7 @@ El slice mínimo **ya implementado** que demuestra valor real hoy es:
    - retrieve real con `C-GET` vía Orthanc REST
    - handoff a OHIF por `StudyInstanceUID`
 5. **Profesional**:
-   - recientes persistidos sin filtros
+   - estudios locales de la semana actual sin filtros
    - QIDO real con filtros
    - retrieve real desde la grilla
 
