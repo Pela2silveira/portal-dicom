@@ -4017,7 +4017,7 @@ func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConf
 	return studies, patientName, nil
 }
 
-func (a *App) fetchPatientStudiesFromQIDOIdentifier(ctx context.Context, node PACSNodeConfig, resolved ResolvedPACSNodeConfig, token, documentNumber string, identifier PatientAlternateIdentifier, filters PatientStudiesFilter) ([]PatientStudy, string, error) {
+func (a *App) fetchPatientStudiesFromQIDOIdentifier(ctx context.Context, node PACSNodeConfig, resolved PACSNodeResolvedConfig, token, documentNumber string, identifier PatientAlternateIdentifier, filters PatientStudiesFilter) ([]PatientStudy, string, error) {
 	endpoint, err := url.Parse(strings.TrimRight(resolved.DICOMwebBaseURL, "/") + "/studies")
 	if err != nil {
 		return nil, "", fmt.Errorf("build qido url: %w", err)
