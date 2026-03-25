@@ -87,6 +87,11 @@ type SystemHealthEvent struct {
 	TS         string            `json:"ts"`
 }
 
+type PublicSystemHealthEvent struct {
+	Status string `json:"status"`
+	TS     string `json:"ts"`
+}
+
 type RetrieveJobEvent struct {
 	JobID            string `json:"job_id"`
 	StudyInstanceUID string `json:"study_instance_uid"`
@@ -734,6 +739,11 @@ type HealthResponse struct {
 	Components          []ComponentHealth `json:"components"`
 }
 
+type PublicHealthResponse struct {
+	Status    string `json:"status"`
+	CheckedAt string `json:"checked_at"`
+}
+
 type PatientStudiesResponse struct {
 	DocumentNumber string               `json:"document_number"`
 	Patient        PatientSummary       `json:"patient"`
@@ -1282,7 +1292,14 @@ func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	_ = json.NewEncoder(w).Encode(resp)
+	if r.Header.Get("X-Portal-Internal-Health") == "1" {
+		_ = json.NewEncoder(w).Encode(resp)
+	} else {
+		_ = json.NewEncoder(w).Encode(PublicHealthResponse{
+			Status:    resp.Status,
+			CheckedAt: resp.CheckedAt,
+		})
+	}
 
 	a.log("info", "health_checked", map[string]any{
 		"status":                resp.Status,
@@ -1325,7 +1342,7 @@ func (a *App) handleSystemEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Accel-Buffering", "no")
 
 	initialEvent := a.currentSystemHealthEvent()
-	if err := writeSystemHealthSSEEvent(w, "health_status_changed", initialEvent); err != nil {
+	if err := writeSystemHealthSSEEvent(w, "health_status_changed", publicSystemHealthEvent(initialEvent)); err != nil {
 		return
 	}
 	flusher.Flush()
@@ -1341,7 +1358,7 @@ func (a *App) handleSystemEvents(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case event := <-subscriber:
-			if err := writeSystemHealthSSEEvent(w, "health_status_changed", event); err != nil {
+			if err := writeSystemHealthSSEEvent(w, "health_status_changed", publicSystemHealthEvent(event)); err != nil {
 				return
 			}
 			flusher.Flush()
@@ -2726,6 +2743,13 @@ func systemHealthSignature(event SystemHealthEvent) string {
 		Components: event.Components,
 	})
 	return string(payload)
+}
+
+func publicSystemHealthEvent(event SystemHealthEvent) PublicSystemHealthEvent {
+	return PublicSystemHealthEvent{
+		Status: event.Status,
+		TS:     event.TS,
+	}
 }
 
 func (n PACSNodeConfig) Resolved() PACSNodeResolvedConfig {

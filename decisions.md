@@ -45,6 +45,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The current landing must route patient and physician flows to portal-owned surfaces before any direct Stone or OHIF navigation.
 - The public UI should communicate product-ready workflows and avoid demo/mock wording in visible copy, even while some validation steps still use placeholder-backed behavior.
 - The public landing page must not expose direct links to OHIF root, backend health endpoints, or raw DICOMweb endpoints.
+- Public-facing operational endpoints must be minimized by contract: `/api/system/events` and public `/api/health` may expose aggregate status only, while `/api/config` must stay blocked from public Nginx exposure.
 - The public landing page should visually center the access form and keep surrounding explanatory content brief and secondary.
 - The landing page and portal-owned UI surfaces must be responsive for mobile devices.
 - Physician authentication is still out of MVP implementation scope, but the target future integration is `LDAP provincial + MFA`.

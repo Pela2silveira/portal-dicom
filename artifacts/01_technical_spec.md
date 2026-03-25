@@ -32,8 +32,9 @@
 - Docker Compose debe usar un endpoint separado de liveness (`/api/livez`) para la salud del contenedor y dejar `/api/health` como readiness operativa.
 - Cuando `his.provider = his_mongo_direct` no pueda conectarse a Mongo al inicio, el backend debe reintentar la conexión cada 1 minuto sin reinicio.
 - La salud operativa del provider Mongo debe evaluarse también después del arranque; si pierde conectividad luego de estar disponible, `/api/health` debe volver a `503`.
-- `/api/health` debe publicar además el detalle de componentes `required` y `optional`, para distinguir indisponibilidad total de degradación parcial.
-- El backend debe publicar `GET /api/system/events` como SSE de salud del sistema, emitiendo cambios de estado agregado y snapshot de componentes.
+- El detalle completo de `/api/health` debe reservarse al subrequest interno de Nginx; la respuesta pública de `/api/health` debe limitarse al estado agregado y timestamp.
+- El backend debe publicar `GET /api/system/events` como SSE de salud del sistema, pero el payload público debe limitarse al estado agregado y timestamp.
+- `/api/config` debe considerarse endpoint interno/operativo y no debe quedar publicado por la superficie pública de Nginx.
 - El watcher agregado que recalcula salud de componentes debe correr cada 1 minuto; el SSE puede usar heartbeats separados para sostener la conexión.
 - El health de PACS remotos debe soportar explícitamente `auth_qido` y `dimse_c_echo`; este último puede ejecutarse a través de Orthanc REST sobre `/modalities/{id}/echo`.
 - Las fechas de estudio que llegan desde DICOM/QIDO deben normalizarse a `YYYY-MM-DD` antes de persistirse o filtrarse en superficies del portal.
