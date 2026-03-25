@@ -1012,6 +1012,7 @@ func main() {
 	app.startRetrieveWorker()
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/livez", app.handleLivez)
 	mux.HandleFunc("/api/health", app.handleHealth)
 	mux.HandleFunc("/api/config", app.handleConfig(appliedMigrations))
 	mux.HandleFunc("/api/patient/send-code", app.handlePatientSendCode)
@@ -1112,6 +1113,19 @@ func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"config_ok":   resp.ConfigOK,
 		"identity_providers_ok": resp.IdentityProvidersOK,
 		"status_code": statusCode,
+	})
+}
+
+func (a *App) handleLivez(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status": "alive",
+		"ts":     time.Now().UTC().Format(time.RFC3339),
 	})
 }
 

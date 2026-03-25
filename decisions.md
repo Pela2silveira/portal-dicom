@@ -67,6 +67,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The physician panel now exposes a first real `Retrieve` action backed by `POST /api/physician/retrieve`, which enqueues a background job reusing Orthanc `C-GET` and recalculates local state from `cached_studies`, `retrieve_jobs`, and Orthanc.
 - The current physician panel now switches to real remote QIDO search whenever the operator applies filters; the no-filter state must query Orthanc local for the configured initial relative period.
 - If backend dependencies fail at startup, the backend must stay running in degraded mode, expose `/api/health` as `503`, and retry the Mongo identity providers every 1 minute instead of exiting the process.
+- Docker Compose backend healthcheck must use a dedicated liveness endpoint and not `/api/health`, so the container stays healthy while the app is degraded behind maintenance mode.
 - The database must cache patient identity anchors, alternate identifiers from HIS, known authorized study UIDs, physician recent searches, and future session state.
 - Physician credentials must not be stored in clear text; only session state, auth events, and encrypted provider-issued auth material are allowed.
 - Observability metrics should not be persisted in PostgreSQL for now; use structured logs and optional in-memory stats instead.

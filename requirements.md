@@ -17,6 +17,7 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 * **Nginx:** servir contenido estático y actuar como reverse proxy para backend y visor.
 * **Fallback de mantenimiento:** si el backend no está operativo, Nginx debe responder la landing del portal con una página estática de mantenimiento y contacto institucional.
 * **Arranque degradado del backend:** si Postgres, Mongo, Orthanc o la carga de configuración fallan al inicio, el backend no debe abortar el proceso; debe quedar levantado, exponer `/api/health` degradado y permitir que Nginx sirva mantenimiento.
+* **Separación liveness/readiness:** el contenedor backend debe exponer un endpoint liviano de liveness para Docker Compose y reservar `/api/health` para estado operativo degradado/listo.
 * **Landing pública del portal:** página inicial servida por Nginx con branding **RedImagenesNQN** e identidad visual inspirada en **ANDES**.
 * **Experiencia de ingreso pública:** selector visual de perfil `Paciente` / `Profesional`.
 * **Responsive móvil:** la landing pública y las superficies del portal deben ser utilizables en teléfonos y tablets, con layout adaptativo y controles táctiles cómodos.

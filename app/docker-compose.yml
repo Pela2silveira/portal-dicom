@@ -37,7 +37,7 @@ services:
     networks:
       - backend_net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8081/api/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/api/livez"]
       interval: 10s
       timeout: 5s
       retries: 10
