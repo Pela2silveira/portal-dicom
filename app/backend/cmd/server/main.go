@@ -928,7 +928,8 @@ type PACSNodeRetrieveConfig struct {
 }
 
 type PACSNodeHealthConfig struct {
-	Mode string `json:"mode"`
+	Mode       string `json:"mode"`
+	CallingAET string `json:"calling_aet"`
 }
 
 type PACSAuthConfig struct {
@@ -993,7 +994,8 @@ type PACSNodeRetrieveResponse struct {
 }
 
 type PACSNodeHealthResponse struct {
-	Mode string `json:"mode"`
+	Mode       string `json:"mode"`
+	CallingAET string `json:"calling_aet,omitempty"`
 }
 
 type PACSNodeResolvedConfig struct {
@@ -1011,6 +1013,7 @@ type PACSNodeResolvedConfig struct {
 	SearchMode      string
 	RetrieveMode    string
 	HealthMode      string
+	HealthCallingAET string
 }
 
 type StudyQuery struct {
@@ -1042,6 +1045,8 @@ type HybridRetrieveAdapter struct{}
 type HTTPHealthAdapter struct{}
 type DIMSEHealthAdapter struct{}
 type MixedHealthAdapter struct{}
+type AuthQIDOHealthAdapter struct{}
+type DIMSECechoHealthAdapter struct{}
 
 type PACSAuthResponse struct {
 	Type                string `json:"type"`
@@ -1405,7 +1410,8 @@ func (a *App) handleConfig(appliedMigrations []string) http.HandlerFunc {
 					SupportsCGet:  resolved.SupportsCGet,
 				},
 				Health: PACSNodeHealthResponse{
-					Mode: resolved.HealthMode,
+					Mode:       resolved.HealthMode,
+					CallingAET: resolved.HealthCallingAET,
 				},
 			})
 		}
@@ -2317,6 +2323,23 @@ func (a *App) remotePACSComponents(ctx context.Context) []ComponentHealth {
 
 func (a *App) checkRemotePACS(parent context.Context, node PACSNodeConfig) bool {
 	resolved := node.Resolved()
+	switch resolved.HealthMode {
+	case "dimse_c_echo":
+		return a.checkRemotePACSViaOrthancEcho(parent, node, resolved)
+	case "auth_qido":
+		return a.checkRemotePACSWithAuthQIDO(parent, node, resolved)
+	case "http", "mixed", "":
+		return a.checkRemotePACSHTTP(parent, resolved)
+	default:
+		a.log("error", "remote_pacs_health_mode_unsupported", map[string]any{
+			"node_id": node.ID,
+			"mode":    resolved.HealthMode,
+		})
+		return false
+	}
+}
+
+func (a *App) checkRemotePACSHTTP(parent context.Context, resolved PACSNodeResolvedConfig) bool {
 	baseURL := strings.TrimRight(strings.TrimSpace(resolved.DICOMwebBaseURL), "/")
 	if baseURL == "" {
 		return false
@@ -2328,7 +2351,7 @@ func (a *App) checkRemotePACS(parent context.Context, node PACSNodeConfig) bool 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/studies?limit=1", nil)
 	if err != nil {
 		a.log("error", "remote_pacs_request_build_failed", map[string]any{
-			"node_id": node.ID,
+			"node_id": resolved.ID,
 			"mode":    resolved.HealthMode,
 			"error":   err.Error(),
 		})
@@ -2338,7 +2361,8 @@ func (a *App) checkRemotePACS(parent context.Context, node PACSNodeConfig) bool 
 	res, err := a.httpClient.Do(req)
 	if err != nil {
 		a.log("error", "remote_pacs_unreachable", map[string]any{
-			"node_id": node.ID,
+			"node_id": resolved.ID,
+			"mode":    resolved.HealthMode,
 			"error":   err.Error(),
 		})
 		return false
@@ -2348,9 +2372,129 @@ func (a *App) checkRemotePACS(parent context.Context, node PACSNodeConfig) bool 
 	ok := res.StatusCode >= 200 && res.StatusCode < 300
 	if !ok {
 		a.log("error", "remote_pacs_bad_status", map[string]any{
-			"node_id":     node.ID,
+			"node_id":     resolved.ID,
 			"mode":        resolved.HealthMode,
 			"status_code": res.StatusCode,
+		})
+	}
+
+	return ok
+}
+
+func (a *App) checkRemotePACSWithAuthQIDO(parent context.Context, node PACSNodeConfig, resolved PACSNodeResolvedConfig) bool {
+	baseURL := strings.TrimRight(strings.TrimSpace(resolved.DICOMwebBaseURL), "/")
+	if baseURL == "" {
+		return false
+	}
+
+	ctx, cancel := context.WithTimeout(parent, 4*time.Second)
+	defer cancel()
+
+	token, err := a.fetchPACSBearerToken(ctx, node)
+	if err != nil {
+		a.log("error", "remote_pacs_auth_failed", map[string]any{
+			"node_id": resolved.ID,
+			"mode":    resolved.HealthMode,
+			"error":   err.Error(),
+		})
+		return false
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/studies?limit=1", nil)
+	if err != nil {
+		a.log("error", "remote_pacs_request_build_failed", map[string]any{
+			"node_id": resolved.ID,
+			"mode":    resolved.HealthMode,
+			"error":   err.Error(),
+		})
+		return false
+	}
+	req.Header.Set("Accept", "application/dicom+json, application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	res, err := a.httpClient.Do(req)
+	if err != nil {
+		a.log("error", "remote_pacs_unreachable", map[string]any{
+			"node_id": resolved.ID,
+			"mode":    resolved.HealthMode,
+			"error":   err.Error(),
+		})
+		return false
+	}
+	defer res.Body.Close()
+
+	ok := res.StatusCode >= 200 && res.StatusCode < 300
+	if !ok {
+		a.log("error", "remote_pacs_bad_status", map[string]any{
+			"node_id":     resolved.ID,
+			"mode":        resolved.HealthMode,
+			"status_code": res.StatusCode,
+		})
+	}
+
+	return ok
+}
+
+func (a *App) checkRemotePACSViaOrthancEcho(parent context.Context, node PACSNodeConfig, resolved PACSNodeResolvedConfig) bool {
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+	defer cancel()
+
+	if err := a.ensureOrthancModality(ctx, node); err != nil {
+		a.log("error", "remote_pacs_echo_modality_failed", map[string]any{
+			"node_id": resolved.ID,
+			"mode":    resolved.HealthMode,
+			"error":   err.Error(),
+		})
+		return false
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"Timeout": 5,
+	})
+	if err != nil {
+		a.log("error", "remote_pacs_echo_payload_failed", map[string]any{
+			"node_id": resolved.ID,
+			"mode":    resolved.HealthMode,
+			"error":   err.Error(),
+		})
+		return false
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(a.cfg.OrthancURL, "/")+"/modalities/"+url.PathEscape(resolved.ID)+"/echo", strings.NewReader(string(payload)))
+	if err != nil {
+		a.log("error", "remote_pacs_echo_request_build_failed", map[string]any{
+			"node_id": resolved.ID,
+			"mode":    resolved.HealthMode,
+			"error":   err.Error(),
+		})
+		return false
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if a.cfg.OrthancUser != "" {
+		req.SetBasicAuth(a.cfg.OrthancUser, a.cfg.OrthancPass)
+	}
+
+	res, err := a.httpClient.Do(req)
+	if err != nil {
+		a.log("error", "remote_pacs_echo_unreachable", map[string]any{
+			"node_id": resolved.ID,
+			"mode":    resolved.HealthMode,
+			"error":   err.Error(),
+		})
+		return false
+	}
+	defer res.Body.Close()
+
+	ok := res.StatusCode >= 200 && res.StatusCode < 300
+	if !ok {
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+		a.log("error", "remote_pacs_echo_bad_status", map[string]any{
+			"node_id":     resolved.ID,
+			"mode":        resolved.HealthMode,
+			"status_code": res.StatusCode,
+			"body":        strings.TrimSpace(string(body)),
 		})
 	}
 
@@ -2516,6 +2660,9 @@ func (n PACSNodeConfig) Resolved() PACSNodeResolvedConfig {
 		resolved.HealthMode = strings.TrimSpace(n.Health.Mode)
 	} else if resolved.SearchMode == "c_find" || resolved.RetrieveMode == "c_move" || resolved.RetrieveMode == "c_get" {
 		resolved.HealthMode = "mixed"
+	}
+	if strings.TrimSpace(n.Health.CallingAET) != "" {
+		resolved.HealthCallingAET = strings.TrimSpace(n.Health.CallingAET)
 	}
 
 	if resolved.Protocol == "" {

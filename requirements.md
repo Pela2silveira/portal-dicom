@@ -32,6 +32,7 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 * **Persistencia local de éxito:** toda resolución exitosa de identidad de paciente desde Mongo debe persistirse en Postgres (`patients` + `patient_identifiers`) para reutilización operativa posterior.
 * **Configuración de PACS remotos:** el sistema debe permitir cargar detalles de conexión para nodos dcm4chee remotos.
 * **Capacidades por nodo PACS:** la configuración de cada nodo debe distinguir al menos `search`, `retrieve` y `health`, para soportar combinaciones `dicomweb`, `dimse` e `hybrid`.
+* **Health remoto por capacidad:** el modo `health` de un nodo debe poder definirse al menos como `auth_qido` o `dimse_c_echo`.
 * **Visualización desacoplada:** OHIF debe consumir estudios desde el Orthanc local y no desde los PACS remotos.
 * **Portal assets propios:** el logo, favicon y assets de la landing deben ser servidos por Nginx sin mezclarse con los assets del contenedor OHIF.
 

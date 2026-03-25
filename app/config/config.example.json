@@ -24,7 +24,7 @@
         "supports_cget": true
       },
       "health": {
-        "mode": "mixed"
+        "mode": "dimse_c_echo"
       }
     }
   ],

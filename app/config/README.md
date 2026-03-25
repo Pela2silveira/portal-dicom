@@ -62,7 +62,7 @@ Required fields per node:
 
 `health` fields:
 
-- `mode`: `http`, `dicom_echo`, or `mixed`
+- `mode`: `http`, `auth_qido`, or `dimse_c_echo`
 
 `auth` fields:
 
@@ -98,7 +98,7 @@ Example:
     "supports_cget": true
   },
   "health": {
-    "mode": "mixed"
+    "mode": "dimse_c_echo"
   }
 }
 ```
