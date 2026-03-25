@@ -457,6 +457,7 @@ type MongoProfessionalIdentitySource struct {
 	collection     *mongo.Collection
 	connectTimeout time.Duration
 	queryTimeout   time.Duration
+	licenseExceptions map[string]struct{}
 }
 
 func (s *LocalSeedPatientIdentitySource) ProviderName() string {
@@ -600,7 +601,11 @@ func (s *MongoProfessionalIdentitySource) ResolveByUsername(ctx context.Context,
 		fullName = strings.TrimSpace(doc.Apellido)
 	}
 	licenseNumber := activeProfessionalLicenseNumber(doc)
-	licensed := doc.Habilitado && doc.ProfesionalMatriculado && strings.TrimSpace(licenseNumber) != ""
+	licenseRequired := true
+	if _, ok := s.licenseExceptions[resolvedDocument]; ok {
+		licenseRequired = false
+	}
+	licensed := doc.Habilitado && ((!licenseRequired) || (doc.ProfesionalMatriculado && strings.TrimSpace(licenseNumber) != ""))
 
 	return ProfessionalIdentity{
 		Username:           username,
@@ -626,6 +631,21 @@ func activeProfessionalLicenseNumber(doc MongoProfesionalDocument) string {
 		}
 	}
 	return ""
+}
+
+func normalizeExceptionSet(values []string) map[string]struct{} {
+	normalized := make(map[string]struct{})
+	for _, value := range values {
+		key := digitsOnly(strings.TrimSpace(value))
+		if key == "" {
+			key = strings.TrimSpace(value)
+		}
+		if key == "" {
+			continue
+		}
+		normalized[key] = struct{}{}
+	}
+	return normalized
 }
 
 func mongoValueIsNull(value any) bool {
@@ -971,9 +991,10 @@ type PatientConfig struct {
 }
 
 type ProfessionalConfig struct {
-	FakeAuth            bool `json:"fake_auth"`
-	InitialCachePeriod  string `json:"initial_cache_period"`
-	WeeklyDownloadLimit int    `json:"weekly_download_limit"`
+	FakeAuth            bool     `json:"fake_auth"`
+	InitialCachePeriod  string   `json:"initial_cache_period"`
+	WeeklyDownloadLimit int      `json:"weekly_download_limit"`
+	LicenseExceptions   []string `json:"license_exceptions"`
 }
 
 type CacheConfig struct {
@@ -2917,7 +2938,7 @@ func buildProfessionalIdentitySource(cfg ExternalConfig, logger *log.Logger) Pro
 	}
 
 	return NewRetryingProfessionalIdentitySource("his_mongo_direct", logger, time.Minute, func() (ProfessionalIdentitySource, error) {
-		return connectMongoProfessionalIdentitySource()
+		return connectMongoProfessionalIdentitySource(cfg.Professional)
 	})
 }
 
@@ -2952,7 +2973,7 @@ func connectMongoPatientIdentitySource() (PatientIdentitySource, error) {
 	}, nil
 }
 
-func connectMongoProfessionalIdentitySource() (ProfessionalIdentitySource, error) {
+func connectMongoProfessionalIdentitySource(cfg ProfessionalConfig) (ProfessionalIdentitySource, error) {
 	mongoURI := strings.TrimSpace(os.Getenv("HIS_MONGO_URI"))
 	mongoDatabase := strings.TrimSpace(os.Getenv("HIS_MONGO_DATABASE"))
 	if mongoURI == "" || mongoDatabase == "" {
@@ -2976,10 +2997,11 @@ func connectMongoProfessionalIdentitySource() (ProfessionalIdentitySource, error
 	}
 
 	return &MongoProfessionalIdentitySource{
-		client:         client,
-		collection:     client.Database(mongoDatabase).Collection("profesional"),
-		connectTimeout: connectTimeout,
-		queryTimeout:   queryTimeout,
+		client:            client,
+		collection:        client.Database(mongoDatabase).Collection("profesional"),
+		connectTimeout:    connectTimeout,
+		queryTimeout:      queryTimeout,
+		licenseExceptions: normalizeExceptionSet(cfg.LicenseExceptions),
 	}, nil
 }
 

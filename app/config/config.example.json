@@ -41,7 +41,10 @@
   "professional": {
     "fake_auth": true,
     "initial_cache_period": "current_week",
-    "weekly_download_limit": 100
+    "weekly_download_limit": 100,
+    "license_exceptions": [
+      "20123456"
+    ]
   },
   "cache": {
     "orthanc_base_url": "http://orthanc:8042",
