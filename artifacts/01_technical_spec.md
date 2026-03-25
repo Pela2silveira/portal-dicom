@@ -193,10 +193,11 @@ Proveer un portal operativo mínimo capaz de:
    - A cada PACS remoto vía handler correspondiente.
    - En paralelo, consulta Orthanc local (para marcar “cache hit”).
 3. Backend deduplica por `StudyInstanceUID`, agregando `locations[]` (nodos donde existe).
-4. Backend transmite resultados parciales por:
+4. La UI del portal expone esas locaciones con etiquetas legibles para usuario usando `pacs_nodes.name` como nombre de hospital/sede.
+5. Backend transmite resultados parciales por:
    - **SSE**: `GET /api/search/{id}/events` (recomendado por simplicidad), o
    - WebSocket (si se requiere bidireccional).
-5. UI renderiza incrementalmente.
+6. UI renderiza incrementalmente.
 
 **Decisión explícita (MVP):** usar **SSE** salvo que haya requisito concreto de WS (SSE es más simple detrás de Nginx).
 

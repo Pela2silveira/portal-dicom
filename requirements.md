@@ -136,6 +136,7 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 * **Handoff actual al visor:** el portal debe abrir Stone u OHIF con `StudyInstanceUID` explícito para evitar que el paciente caiga en una study list general.
 * **Listado de estudios:** la study list nativa de OHIF y cualquier navegación general de visor son decisiones de UX y no deben considerarse mecanismos de restricción de acceso.
 * **Pacientes:** no deben usar la study list nativa de OHIF. Deben ver una lista propia del portal con sus estudios autorizados.
+* **Etiqueta de origen PACS en resultados:** el listado de paciente y el panel profesional deben indicar el hospital/sede de origen usando el `name` configurado del nodo DICOM/PACS, no solo identificadores técnicos.
 * **Descarga de estudio:** tanto paciente como profesional deben poder descargar el estudio completo local en formato `ZIP DICOM` desde Orthanc cuando ya esté disponible en caché local.
 * **Límite de descarga profesional:** las descargas `ZIP DICOM` iniciadas por profesionales deben respetar el límite semanal configurado y rechazar el exceso con una respuesta de rate limit.
 * **Médicos:** no deben depender de la study list nativa de OHIF como workflow principal. Deben usar un panel propio del portal con búsqueda, estado federado y retrieve.

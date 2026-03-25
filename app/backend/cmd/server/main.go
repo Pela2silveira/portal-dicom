@@ -786,6 +786,7 @@ type PatientStudy struct {
 	StudyDate          string   `json:"study_date"`
 	StudyDescription   string   `json:"study_description"`
 	ModalitiesInStudy  []string `json:"modalities_in_study"`
+	Locations          []string `json:"locations,omitempty"`
 	AvailabilityStatus string   `json:"availability_status"`
 	RetrieveStatus     string   `json:"retrieve_status"`
 	AuthorizationBasis string   `json:"authorization_basis"`
@@ -3387,6 +3388,7 @@ func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient Pati
 			if len(existing.ModalitiesInStudy) == 0 && len(study.ModalitiesInStudy) > 0 {
 				existing.ModalitiesInStudy = study.ModalitiesInStudy
 			}
+			existing.Locations = mergeStringSets(existing.Locations, study.Locations)
 			if existing.AuthorizationBasis == "" && study.AuthorizationBasis != "" {
 				existing.AuthorizationBasis = study.AuthorizationBasis
 			}
@@ -3736,6 +3738,7 @@ func (a *App) replacePatientStudyAccessSlice(ctx context.Context, patientID stri
 			"study_date":          study.StudyDate,
 			"study_description":   study.StudyDescription,
 			"modalities_in_study": study.ModalitiesInStudy,
+			"locations":           study.Locations,
 			"source_node_id":      study.SourceNodeID,
 		})
 		if err != nil {
@@ -4058,6 +4061,7 @@ func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConf
 			if len(existing.ModalitiesInStudy) == 0 && len(study.ModalitiesInStudy) > 0 {
 				existing.ModalitiesInStudy = study.ModalitiesInStudy
 			}
+			existing.Locations = mergeStringSets(existing.Locations, study.Locations)
 			if existing.AvailabilityStatus != "available_local" && study.AvailabilityStatus == "available_local" {
 				existing.AvailabilityStatus = study.AvailabilityStatus
 				existing.ViewerURL = study.ViewerURL
@@ -4165,6 +4169,7 @@ func (a *App) fetchPatientStudiesFromQIDOIdentifier(ctx context.Context, node PA
 			StudyDate:          normalizeStudyDate(dicomFirstString(item, "00080020")),
 			StudyDescription:   dicomFirstString(item, "00081030"),
 			ModalitiesInStudy:  dicomStringList(item, "00080061"),
+			Locations:          []string{node.Name},
 			AvailabilityStatus: "pending_retrieve",
 			AuthorizationBasis: authorizationBasis,
 			SourceNodeID:       node.ID,
@@ -5180,6 +5185,40 @@ func (a *App) cachedStudyLocations(ctx context.Context, studyUID string) ([]stri
 	return locations, nil
 }
 
+func (a *App) nodeDisplayName(nodeID string) string {
+	nodeID = strings.TrimSpace(nodeID)
+	for _, node := range a.externalConfig.PACSNodes {
+		if node.ID == nodeID {
+			name := strings.TrimSpace(node.Name)
+			if name != "" {
+				return name
+			}
+			break
+		}
+	}
+	return nodeID
+}
+
+func mergeStringSets(values ...[]string) []string {
+	merged := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, group := range values {
+		for _, value := range group {
+			trimmed := strings.TrimSpace(value)
+			if trimmed == "" {
+				continue
+			}
+			key := strings.ToLower(trimmed)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			merged = append(merged, trimmed)
+		}
+	}
+	return merged
+}
+
 func (a *App) listPatientStudies(ctx context.Context, patientID, documentNumber string, filters PatientStudiesFilter) ([]PatientStudy, error) {
 	query := `
 		SELECT
@@ -5239,6 +5278,8 @@ func (a *App) listPatientStudies(ctx context.Context, patientID, documentNumber 
 			StudyDate         string   `json:"study_date"`
 			StudyDescription  string   `json:"study_description"`
 			ModalitiesInStudy []string `json:"modalities_in_study"`
+			Locations         []string `json:"locations"`
+			SourceNodeID      string   `json:"source_node_id"`
 		}
 		if len(sourceJSONRaw) > 0 {
 			if err := json.Unmarshal(sourceJSONRaw, &source); err != nil {
@@ -5251,9 +5292,14 @@ func (a *App) listPatientStudies(ctx context.Context, patientID, documentNumber 
 			StudyDate:          source.StudyDate,
 			StudyDescription:   source.StudyDescription,
 			ModalitiesInStudy:  source.ModalitiesInStudy,
+			Locations:          source.Locations,
 			AvailabilityStatus: availabilityStatus,
 			RetrieveStatus:     "idle",
 			AuthorizationBasis: authorizationBasis,
+			SourceNodeID:       source.SourceNodeID,
+		}
+		if len(study.Locations) == 0 && study.SourceNodeID != "" {
+			study.Locations = []string{a.nodeDisplayName(study.SourceNodeID)}
 		}
 		cacheStatus := "not_local"
 		if availabilityStatus == "available_local" {
