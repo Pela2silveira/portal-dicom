@@ -3,19 +3,28 @@
     {
       "id": "hpn",
       "name": "DCM4CHEE HPN",
-      "protocol": "qido_rs",
+      "protocol": "hybrid",
       "priority": 1,
-      "aet": "PACSHPN",
-      "dicom_host": "pending-host",
-      "dicom_port": 11112,
-      "dicomweb_base_url": "https://pending-host/dcm4chee-arc/aets/PACSHPN/rs",
-      "supports_cmove": true,
-      "supports_cget": true,
-      "auth": {
-        "type": "keycloak_client_credentials",
-        "token_url": "https://pending-keycloak-host/auth/realms/dcm4che/protocol/openid-connect/token",
-        "client_id_env": "PACS_HPN_CLIENT_ID",
-        "client_secret_env": "PACS_HPN_CLIENT_SECRET"
+      "search": {
+        "mode": "qido_rs",
+        "dicomweb_base_url": "https://pending-host/dcm4chee-arc/aets/PACSHPN/rs",
+        "auth": {
+          "type": "keycloak_client_credentials",
+          "token_url": "https://pending-keycloak-host/auth/realms/dcm4che/protocol/openid-connect/token",
+          "client_id_env": "PACS_HPN_CLIENT_ID",
+          "client_secret_env": "PACS_HPN_CLIENT_SECRET"
+        }
+      },
+      "retrieve": {
+        "mode": "c_get",
+        "aet": "PACSHPN",
+        "dicom_host": "pending-host",
+        "dicom_port": 11112,
+        "supports_cmove": true,
+        "supports_cget": true
+      },
+      "health": {
+        "mode": "mixed"
       }
     }
   ],

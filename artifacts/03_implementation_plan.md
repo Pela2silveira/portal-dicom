@@ -22,6 +22,7 @@
 - Backend con separación de checks: `/api/livez` para liveness del contenedor y `/api/health` para readiness operativa.
 - `/api/health` con detalle de componentes requeridos y opcionales; sólo los requeridos deben activar mantenimiento global.
 - `GET /api/system/events` como SSE para transición automática entre portal operativo y mantenimiento.
+- Base de configuración por capacidades para nodos PACS (`search`, `retrieve`, `health`) con compatibilidad temporal hacia campos legacy.
 - Orthanc configurado (DICOM + DICOMweb) accesible **solo** vía Nginx HTTP; DICOM port `4242` publicado según compose.
 - OHIF configurado y pinneado a `ohif/app:v3.11.1`, consumiendo DICOMweb en `/dicom-web` (a través de Nginx).
 - Landing pública con branding `RedImagenesNQN`, assets propios y referencia visual ANDES.

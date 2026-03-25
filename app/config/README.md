@@ -39,15 +39,30 @@ Required fields per node:
 
 - `id`: stable internal code for the node
 - `name`: visible name
-- `protocol`: currently expected as `qido_rs`
+- `protocol`: high-level node kind, for example `dicomweb`, `dimse`, or `hybrid`
 - `priority`: numeric priority, lower means more preferred
-- `aet`: remote AE title
+- `search`: search capability config
+- `retrieve`: retrieve capability config
+- `health`: health-check mode
+
+`search` fields:
+
+- `mode`: `qido_rs` or `c_find`
+- `dicomweb_base_url`: required for `qido_rs`
+- `auth`: authentication config for DICOMweb access when needed
+
+`retrieve` fields:
+
+- `mode`: `c_move`, `c_get`, or empty when retrieve is not yet defined
+- `aet`: remote AE title for DIMSE retrieve
 - `dicom_host`: DIMSE hostname or IP
 - `dicom_port`: DIMSE port
-- `dicomweb_base_url`: remote DICOMweb base URL
 - `supports_cmove`: whether the node supports C-MOVE
 - `supports_cget`: whether the node supports C-GET
-- `auth`: authentication config for DICOMweb access
+
+`health` fields:
+
+- `mode`: `http`, `dicom_echo`, or `mixed`
 
 `auth` fields:
 
@@ -62,22 +77,36 @@ Example:
 {
   "id": "hpn",
   "name": "DCM4CHEE HPN",
-  "protocol": "qido_rs",
+  "protocol": "hybrid",
   "priority": 1,
-  "aet": "PACSHPN",
-  "dicom_host": "172.16.1.205",
-  "dicom_port": 11112,
-  "dicomweb_base_url": "https://pacshpn.andes.gob.ar/dcm4chee-arc/aets/PACSHPN/rs",
-  "supports_cmove": true,
-  "supports_cget": true,
-  "auth": {
-    "type": "keycloak_client_credentials",
-    "token_url": "https://keycloak-pacshpn.andes.gob.ar/auth/realms/dcm4che/protocol/openid-connect/token",
-    "client_id_env": "PACS_HPN_CLIENT_ID",
-    "client_secret_env": "PACS_HPN_CLIENT_SECRET"
+  "search": {
+    "mode": "qido_rs",
+    "dicomweb_base_url": "https://pacshpn.andes.gob.ar/dcm4chee-arc/aets/PACSHPN/rs",
+    "auth": {
+      "type": "keycloak_client_credentials",
+      "token_url": "https://keycloak-pacshpn.andes.gob.ar/auth/realms/dcm4che/protocol/openid-connect/token",
+      "client_id_env": "PACS_HPN_CLIENT_ID",
+      "client_secret_env": "PACS_HPN_CLIENT_SECRET"
+    }
+  },
+  "retrieve": {
+    "mode": "c_get",
+    "aet": "PACSHPN",
+    "dicom_host": "172.16.1.205",
+    "dicom_port": 11112,
+    "supports_cmove": true,
+    "supports_cget": true
+  },
+  "health": {
+    "mode": "mixed"
   }
 }
 ```
+
+Compatibility note:
+
+- The backend still accepts the previous flat fields such as `dicomweb_base_url`, `aet`, `dicom_host`, `dicom_port`, `supports_cmove`, `supports_cget`, and top-level `auth`.
+- New config should prefer `search` / `retrieve` / `health`.
 
 ## `his`
 

@@ -85,6 +85,8 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The initial remote dcm4chee node supports `C-MOVE`.
 - The dcm4chee Swagger / OpenAPI specification is the REST integration contract for the MVP.
 - The MVP uses dcm4chee `QIDO-RS`, `WADO-RS`, and `MOVE` capabilities only.
+- PACS node configuration should be capability-based (`search`, `retrieve`, `health`) rather than assuming one transport per node, so hybrid nodes can mix DICOMweb and DIMSE cleanly.
+- The adapter boundary should explicitly allow `dicomweb`, `dimse`, and `hybrid` implementations without changing portal-facing workflow code.
 - dcm4chee PAM-RS and patient administration operations are out of the first slice.
 - Remote dcm4chee REST authentication uses Keycloak `client_credentials`.
 - The backend must request an access token using `client_id` and `client_secret` from environment configuration.

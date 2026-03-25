@@ -907,6 +907,28 @@ type PACSNodeConfig struct {
 	SupportsCMove   bool           `json:"supports_cmove"`
 	SupportsCGet    bool           `json:"supports_cget"`
 	Auth            PACSAuthConfig `json:"auth"`
+	Search          PACSNodeSearchConfig   `json:"search"`
+	Retrieve        PACSNodeRetrieveConfig `json:"retrieve"`
+	Health          PACSNodeHealthConfig   `json:"health"`
+}
+
+type PACSNodeSearchConfig struct {
+	Mode            string         `json:"mode"`
+	DICOMwebBaseURL string         `json:"dicomweb_base_url"`
+	Auth            PACSAuthConfig `json:"auth"`
+}
+
+type PACSNodeRetrieveConfig struct {
+	Mode        string `json:"mode"`
+	AET         string `json:"aet"`
+	DICOMHost   string `json:"dicom_host"`
+	DICOMPort   int    `json:"dicom_port"`
+	SupportsCMove bool `json:"supports_cmove"`
+	SupportsCGet  bool `json:"supports_cget"`
+}
+
+type PACSNodeHealthConfig struct {
+	Mode string `json:"mode"`
 }
 
 type PACSAuthConfig struct {
@@ -950,7 +972,76 @@ type PACSNodeResponse struct {
 	SupportsCMove   bool             `json:"supports_cmove"`
 	SupportsCGet    bool             `json:"supports_cget"`
 	Auth            PACSAuthResponse `json:"auth"`
+	Search          PACSNodeSearchResponse   `json:"search"`
+	Retrieve        PACSNodeRetrieveResponse `json:"retrieve"`
+	Health          PACSNodeHealthResponse   `json:"health"`
 }
+
+type PACSNodeSearchResponse struct {
+	Mode            string           `json:"mode"`
+	DICOMwebBaseURL string           `json:"dicomweb_base_url"`
+	Auth            PACSAuthResponse `json:"auth"`
+}
+
+type PACSNodeRetrieveResponse struct {
+	Mode          string `json:"mode"`
+	AET           string `json:"aet"`
+	DICOMHost     string `json:"dicom_host"`
+	DICOMPort     int    `json:"dicom_port"`
+	SupportsCMove bool   `json:"supports_cmove"`
+	SupportsCGet  bool   `json:"supports_cget"`
+}
+
+type PACSNodeHealthResponse struct {
+	Mode string `json:"mode"`
+}
+
+type PACSNodeResolvedConfig struct {
+	ID              string
+	Name            string
+	Protocol        string
+	Priority        int
+	AET             string
+	DICOMHost       string
+	DICOMPort       int
+	DICOMwebBaseURL string
+	SupportsCMove   bool
+	SupportsCGet    bool
+	Auth            PACSAuthConfig
+	SearchMode      string
+	RetrieveMode    string
+	HealthMode      string
+}
+
+type StudyQuery struct {
+	PatientID   string
+	PatientName string
+	DateFrom    string
+	DateTo      string
+	Modalities  []string
+}
+
+type SearchAdapter interface {
+	SearchStudies(ctx context.Context, node PACSNodeResolvedConfig, query StudyQuery) ([]PhysicianResult, error)
+}
+
+type RetrieveAdapter interface {
+	RetrieveStudy(ctx context.Context, node PACSNodeResolvedConfig, studyInstanceUID string) error
+}
+
+type HealthAdapter interface {
+	Check(ctx context.Context, node PACSNodeResolvedConfig) error
+}
+
+type DICOMwebSearchAdapter struct{}
+type DIMSESearchAdapter struct{}
+type HybridSearchAdapter struct{}
+type DICOMwebRetrieveAdapter struct{}
+type DIMSERetrieveAdapter struct{}
+type HybridRetrieveAdapter struct{}
+type HTTPHealthAdapter struct{}
+type DIMSEHealthAdapter struct{}
+type MixedHealthAdapter struct{}
 
 type PACSAuthResponse struct {
 	Type                string `json:"type"`
@@ -1279,24 +1370,42 @@ func (a *App) handleConfig(appliedMigrations []string) http.HandlerFunc {
 		}
 
 		for _, node := range a.externalConfig.PACSNodes {
+			resolved := node.Resolved()
+			authResponse := PACSAuthResponse{
+				Type:                resolved.Auth.Type,
+				TokenURL:            resolved.Auth.TokenURL,
+				ClientIDEnv:         resolved.Auth.ClientIDEnv,
+				ClientSecretEnv:     resolved.Auth.ClientSecretEnv,
+				ClientIDPresent:     strings.TrimSpace(os.Getenv(resolved.Auth.ClientIDEnv)) != "",
+				ClientSecretPresent: strings.TrimSpace(os.Getenv(resolved.Auth.ClientSecretEnv)) != "",
+			}
 			resp.PACSNodes = append(resp.PACSNodes, PACSNodeResponse{
-				ID:              node.ID,
-				Name:            node.Name,
-				Protocol:        node.Protocol,
-				Priority:        node.Priority,
-				AET:             node.AET,
-				DICOMHost:       node.DICOMHost,
-				DICOMPort:       node.DICOMPort,
-				DICOMwebBaseURL: node.DICOMwebBaseURL,
-				SupportsCMove:   node.SupportsCMove,
-				SupportsCGet:    node.SupportsCGet,
-				Auth: PACSAuthResponse{
-					Type:                node.Auth.Type,
-					TokenURL:            node.Auth.TokenURL,
-					ClientIDEnv:         node.Auth.ClientIDEnv,
-					ClientSecretEnv:     node.Auth.ClientSecretEnv,
-					ClientIDPresent:     strings.TrimSpace(os.Getenv(node.Auth.ClientIDEnv)) != "",
-					ClientSecretPresent: strings.TrimSpace(os.Getenv(node.Auth.ClientSecretEnv)) != "",
+				ID:              resolved.ID,
+				Name:            resolved.Name,
+				Protocol:        resolved.Protocol,
+				Priority:        resolved.Priority,
+				AET:             resolved.AET,
+				DICOMHost:       resolved.DICOMHost,
+				DICOMPort:       resolved.DICOMPort,
+				DICOMwebBaseURL: resolved.DICOMwebBaseURL,
+				SupportsCMove:   resolved.SupportsCMove,
+				SupportsCGet:    resolved.SupportsCGet,
+				Auth:            authResponse,
+				Search: PACSNodeSearchResponse{
+					Mode:            resolved.SearchMode,
+					DICOMwebBaseURL: resolved.DICOMwebBaseURL,
+					Auth:            authResponse,
+				},
+				Retrieve: PACSNodeRetrieveResponse{
+					Mode:          resolved.RetrieveMode,
+					AET:           resolved.AET,
+					DICOMHost:     resolved.DICOMHost,
+					DICOMPort:     resolved.DICOMPort,
+					SupportsCMove: resolved.SupportsCMove,
+					SupportsCGet:  resolved.SupportsCGet,
+				},
+				Health: PACSNodeHealthResponse{
+					Mode: resolved.HealthMode,
 				},
 			})
 		}
@@ -2181,10 +2290,11 @@ func (a *App) remotePACSComponents(ctx context.Context) []ComponentHealth {
 
 	components := make([]ComponentHealth, 0, len(a.externalConfig.PACSNodes))
 	for _, node := range a.externalConfig.PACSNodes {
+		resolved := node.Resolved()
 		status := ComponentStatusUnknown
 		message := "health check skipped"
 
-		baseURL := strings.TrimSpace(node.DICOMwebBaseURL)
+		baseURL := strings.TrimSpace(resolved.DICOMwebBaseURL)
 		if baseURL != "" {
 			status = boolToComponentStatus(a.checkRemotePACS(ctx, node))
 			message = "dicomweb reachable"
@@ -2206,7 +2316,8 @@ func (a *App) remotePACSComponents(ctx context.Context) []ComponentHealth {
 }
 
 func (a *App) checkRemotePACS(parent context.Context, node PACSNodeConfig) bool {
-	baseURL := strings.TrimRight(strings.TrimSpace(node.DICOMwebBaseURL), "/")
+	resolved := node.Resolved()
+	baseURL := strings.TrimRight(strings.TrimSpace(resolved.DICOMwebBaseURL), "/")
 	if baseURL == "" {
 		return false
 	}
@@ -2218,6 +2329,7 @@ func (a *App) checkRemotePACS(parent context.Context, node PACSNodeConfig) bool 
 	if err != nil {
 		a.log("error", "remote_pacs_request_build_failed", map[string]any{
 			"node_id": node.ID,
+			"mode":    resolved.HealthMode,
 			"error":   err.Error(),
 		})
 		return false
@@ -2237,6 +2349,7 @@ func (a *App) checkRemotePACS(parent context.Context, node PACSNodeConfig) bool 
 	if !ok {
 		a.log("error", "remote_pacs_bad_status", map[string]any{
 			"node_id":     node.ID,
+			"mode":        resolved.HealthMode,
 			"status_code": res.StatusCode,
 		})
 	}
@@ -2343,6 +2456,118 @@ func systemHealthSignature(event SystemHealthEvent) string {
 		Components: event.Components,
 	})
 	return string(payload)
+}
+
+func (n PACSNodeConfig) Resolved() PACSNodeResolvedConfig {
+	resolved := PACSNodeResolvedConfig{
+		ID:              n.ID,
+		Name:            n.Name,
+		Protocol:        strings.TrimSpace(n.Protocol),
+		Priority:        n.Priority,
+		AET:             strings.TrimSpace(n.AET),
+		DICOMHost:       strings.TrimSpace(n.DICOMHost),
+		DICOMPort:       n.DICOMPort,
+		DICOMwebBaseURL: strings.TrimSpace(n.DICOMwebBaseURL),
+		SupportsCMove:   n.SupportsCMove,
+		SupportsCGet:    n.SupportsCGet,
+		Auth:            n.Auth,
+		SearchMode:      strings.TrimSpace(n.Protocol),
+		HealthMode:      "http",
+	}
+
+	if strings.TrimSpace(n.Search.Mode) != "" {
+		resolved.SearchMode = strings.TrimSpace(n.Search.Mode)
+	}
+	if strings.TrimSpace(n.Search.DICOMwebBaseURL) != "" {
+		resolved.DICOMwebBaseURL = strings.TrimSpace(n.Search.DICOMwebBaseURL)
+	}
+	if strings.TrimSpace(n.Search.Auth.Type) != "" {
+		resolved.Auth = n.Search.Auth
+	}
+
+	if strings.TrimSpace(n.Retrieve.Mode) != "" {
+		resolved.RetrieveMode = strings.TrimSpace(n.Retrieve.Mode)
+	}
+	if strings.TrimSpace(n.Retrieve.AET) != "" {
+		resolved.AET = strings.TrimSpace(n.Retrieve.AET)
+	}
+	if strings.TrimSpace(n.Retrieve.DICOMHost) != "" {
+		resolved.DICOMHost = strings.TrimSpace(n.Retrieve.DICOMHost)
+	}
+	if n.Retrieve.DICOMPort != 0 {
+		resolved.DICOMPort = n.Retrieve.DICOMPort
+	}
+	if n.Retrieve.SupportsCMove {
+		resolved.SupportsCMove = true
+	}
+	if n.Retrieve.SupportsCGet {
+		resolved.SupportsCGet = true
+	}
+
+	if resolved.RetrieveMode == "" {
+		if resolved.SupportsCMove {
+			resolved.RetrieveMode = "c_move"
+		} else if resolved.SupportsCGet {
+			resolved.RetrieveMode = "c_get"
+		}
+	}
+
+	if strings.TrimSpace(n.Health.Mode) != "" {
+		resolved.HealthMode = strings.TrimSpace(n.Health.Mode)
+	} else if resolved.SearchMode == "c_find" || resolved.RetrieveMode == "c_move" || resolved.RetrieveMode == "c_get" {
+		resolved.HealthMode = "mixed"
+	}
+
+	if resolved.Protocol == "" {
+		switch {
+		case resolved.SearchMode == "qido_rs" && (resolved.RetrieveMode == "c_move" || resolved.RetrieveMode == "c_get"):
+			resolved.Protocol = "hybrid"
+		case resolved.SearchMode == "qido_rs":
+			resolved.Protocol = "dicomweb"
+		case resolved.SearchMode == "c_find":
+			resolved.Protocol = "dimse"
+		default:
+			resolved.Protocol = "hybrid"
+		}
+	}
+
+	return resolved
+}
+
+func (a *DICOMwebSearchAdapter) SearchStudies(_ context.Context, _ PACSNodeResolvedConfig, _ StudyQuery) ([]PhysicianResult, error) {
+	return nil, errors.New("dicomweb search adapter not implemented")
+}
+
+func (a *DIMSESearchAdapter) SearchStudies(_ context.Context, _ PACSNodeResolvedConfig, _ StudyQuery) ([]PhysicianResult, error) {
+	return nil, errors.New("dimse search adapter not implemented")
+}
+
+func (a *HybridSearchAdapter) SearchStudies(_ context.Context, _ PACSNodeResolvedConfig, _ StudyQuery) ([]PhysicianResult, error) {
+	return nil, errors.New("hybrid search adapter not implemented")
+}
+
+func (a *DICOMwebRetrieveAdapter) RetrieveStudy(_ context.Context, _ PACSNodeResolvedConfig, _ string) error {
+	return errors.New("dicomweb retrieve adapter not implemented")
+}
+
+func (a *DIMSERetrieveAdapter) RetrieveStudy(_ context.Context, _ PACSNodeResolvedConfig, _ string) error {
+	return errors.New("dimse retrieve adapter not implemented")
+}
+
+func (a *HybridRetrieveAdapter) RetrieveStudy(_ context.Context, _ PACSNodeResolvedConfig, _ string) error {
+	return errors.New("hybrid retrieve adapter not implemented")
+}
+
+func (a *HTTPHealthAdapter) Check(_ context.Context, _ PACSNodeResolvedConfig) error {
+	return errors.New("http health adapter not implemented")
+}
+
+func (a *DIMSEHealthAdapter) Check(_ context.Context, _ PACSNodeResolvedConfig) error {
+	return errors.New("dimse health adapter not implemented")
+}
+
+func (a *MixedHealthAdapter) Check(_ context.Context, _ PACSNodeResolvedConfig) error {
+	return errors.New("mixed health adapter not implemented")
 }
 
 func loadExternalConfig(path string) (*ExternalConfig, error) {
@@ -2808,8 +3033,9 @@ func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient Pati
 	}
 
 	node := a.externalConfig.PACSNodes[0]
-	if strings.ToLower(node.Protocol) != "qido_rs" {
-		return patient, fmt.Errorf("patient qido flow requires qido_rs node, found %s", node.Protocol)
+	resolved := node.Resolved()
+	if strings.ToLower(resolved.SearchMode) != "qido_rs" {
+		return patient, fmt.Errorf("patient qido flow requires qido_rs search mode, found %s", resolved.SearchMode)
 	}
 
 	syncStartedAt := time.Now()
@@ -3355,13 +3581,14 @@ func writeSystemHealthSSEEvent(w io.Writer, eventName string, event SystemHealth
 }
 
 func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConfig, documentNumber string, filters PatientStudiesFilter) ([]PatientStudy, string, error) {
+	resolved := node.Resolved()
 	qidoStartedAt := time.Now()
 	token, err := a.fetchPACSBearerToken(ctx, node)
 	if err != nil {
 		return nil, "", fmt.Errorf("fetch pacs token for %s: %w", node.ID, err)
 	}
 
-	endpoint, err := url.Parse(strings.TrimRight(node.DICOMwebBaseURL, "/") + "/studies")
+	endpoint, err := url.Parse(strings.TrimRight(resolved.DICOMwebBaseURL, "/") + "/studies")
 	if err != nil {
 		return nil, "", fmt.Errorf("build qido url: %w", err)
 	}
@@ -3465,34 +3692,35 @@ func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConf
 }
 
 func (a *App) fetchPACSBearerToken(ctx context.Context, node PACSNodeConfig) (string, error) {
-	if node.Auth.Type == "" {
+	resolved := node.Resolved()
+	if resolved.Auth.Type == "" {
 		return "", nil
 	}
-	if node.Auth.Type != "keycloak_client_credentials" {
-		return "", fmt.Errorf("unsupported pacs auth type %q", node.Auth.Type)
+	if resolved.Auth.Type != "keycloak_client_credentials" {
+		return "", fmt.Errorf("unsupported pacs auth type %q", resolved.Auth.Type)
 	}
 
-	clientID := strings.TrimSpace(os.Getenv(node.Auth.ClientIDEnv))
-	clientSecret := strings.TrimSpace(os.Getenv(node.Auth.ClientSecretEnv))
+	clientID := strings.TrimSpace(os.Getenv(resolved.Auth.ClientIDEnv))
+	clientSecret := strings.TrimSpace(os.Getenv(resolved.Auth.ClientSecretEnv))
 	form := url.Values{}
 	form.Set("grant_type", "client_credentials")
 	form.Set("client_id", clientID)
 	form.Set("client_secret", clientSecret)
 
 	tokenStartedAt := time.Now()
-	tokenURL, err := url.Parse(node.Auth.TokenURL)
+	tokenURL, err := url.Parse(resolved.Auth.TokenURL)
 	if err != nil {
 		return "", fmt.Errorf("parse token url: %w", err)
 	}
 	a.log("info", "pacs_token_request_started", map[string]any{
 		"node_id":     node.ID,
-		"auth_type":   node.Auth.Type,
+		"auth_type":   resolved.Auth.Type,
 		"token_host":  tokenURL.Host,
 		"token_path":  tokenURL.Path,
-		"client_id_env": node.Auth.ClientIDEnv,
+		"client_id_env": resolved.Auth.ClientIDEnv,
 	})
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, node.Auth.TokenURL, strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, resolved.Auth.TokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		return "", fmt.Errorf("build token request: %w", err)
 	}
@@ -3522,7 +3750,7 @@ func (a *App) fetchPACSBearerToken(ctx context.Context, node PACSNodeConfig) (st
 
 	a.log("info", "pacs_token_request_completed", map[string]any{
 		"node_id":      node.ID,
-		"auth_type":    node.Auth.Type,
+		"auth_type":    resolved.Auth.Type,
 		"token_host":   tokenURL.Host,
 		"duration_ms":  time.Since(tokenStartedAt).Milliseconds(),
 	})
@@ -3757,10 +3985,11 @@ func (a *App) updateRetrieveJobStatus(ctx context.Context, jobID, status, errMsg
 }
 
 func (a *App) ensureOrthancModality(ctx context.Context, node PACSNodeConfig) error {
+	resolved := node.Resolved()
 	payload, err := json.Marshal(map[string]any{
-		"AET":            node.AET,
-		"Host":           node.DICOMHost,
-		"Port":           node.DICOMPort,
+		"AET":            resolved.AET,
+		"Host":           resolved.DICOMHost,
+		"Port":           resolved.DICOMPort,
 		"RetrieveMethod": "C-GET",
 	})
 	if err != nil {
@@ -3789,6 +4018,7 @@ func (a *App) ensureOrthancModality(ctx context.Context, node PACSNodeConfig) er
 }
 
 func (a *App) startOrthancCGet(ctx context.Context, node PACSNodeConfig, studyInstanceUID string) error {
+	resolved := node.Resolved()
 	payload, err := json.Marshal(map[string]any{
 		"Level": "Study",
 		"Resources": []map[string]string{
@@ -3800,7 +4030,7 @@ func (a *App) startOrthancCGet(ctx context.Context, node PACSNodeConfig, studyIn
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(a.cfg.OrthancURL, "/")+"/modalities/"+url.PathEscape(node.ID)+"/get", strings.NewReader(string(payload)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(a.cfg.OrthancURL, "/")+"/modalities/"+url.PathEscape(resolved.ID)+"/get", strings.NewReader(string(payload)))
 	if err != nil {
 		return err
 	}
@@ -3984,8 +4214,9 @@ func (a *App) searchPhysicianResultsFromSingleNode(ctx context.Context, physicia
 	}
 
 	node := a.externalConfig.PACSNodes[0]
-	if strings.ToLower(node.Protocol) != "qido_rs" {
-		return nil, fmt.Errorf("physician qido flow requires qido_rs node, found %s", node.Protocol)
+	resolved := node.Resolved()
+	if strings.ToLower(resolved.SearchMode) != "qido_rs" {
+		return nil, fmt.Errorf("physician qido flow requires qido_rs search mode, found %s", resolved.SearchMode)
 	}
 
 	searchStartedAt := time.Now()
@@ -4005,7 +4236,7 @@ func (a *App) searchPhysicianResultsFromSingleNode(ctx context.Context, physicia
 		return nil, fmt.Errorf("fetch pacs token for %s: %w", node.ID, err)
 	}
 
-	endpoint, err := url.Parse(strings.TrimRight(node.DICOMwebBaseURL, "/") + "/studies")
+	endpoint, err := url.Parse(strings.TrimRight(resolved.DICOMwebBaseURL, "/") + "/studies")
 	if err != nil {
 		return nil, fmt.Errorf("build qido url: %w", err)
 	}
@@ -4446,31 +4677,35 @@ func validateExternalConfig(cfg ExternalConfig) error {
 	}
 
 	for _, node := range cfg.PACSNodes {
+		resolved := node.Resolved()
 		if strings.TrimSpace(node.ID) == "" {
 			return errors.New("pacs node id is required")
 		}
 		if strings.TrimSpace(node.Name) == "" {
 			return fmt.Errorf("pacs node %q name is required", node.ID)
 		}
-		if strings.TrimSpace(node.Protocol) == "" {
+		if strings.TrimSpace(resolved.Protocol) == "" {
 			return fmt.Errorf("pacs node %q protocol is required", node.ID)
 		}
-		if strings.TrimSpace(node.DICOMwebBaseURL) == "" {
-			return fmt.Errorf("pacs node %q dicomweb_base_url is required", node.ID)
+		if resolved.SearchMode == "qido_rs" && strings.TrimSpace(resolved.DICOMwebBaseURL) == "" {
+			return fmt.Errorf("pacs node %q dicomweb_base_url is required for qido_rs search", node.ID)
+		}
+		if (resolved.RetrieveMode == "c_move" || resolved.RetrieveMode == "c_get") && (strings.TrimSpace(resolved.AET) == "" || strings.TrimSpace(resolved.DICOMHost) == "" || resolved.DICOMPort == 0) {
+			return fmt.Errorf("pacs node %q dimse retrieve requires aet, dicom_host and dicom_port", node.ID)
 		}
 
-		if node.Auth.Type == "keycloak_client_credentials" {
-			if strings.TrimSpace(node.Auth.TokenURL) == "" {
+		if resolved.Auth.Type == "keycloak_client_credentials" {
+			if strings.TrimSpace(resolved.Auth.TokenURL) == "" {
 				return fmt.Errorf("pacs node %q token_url is required", node.ID)
 			}
-			if strings.TrimSpace(node.Auth.ClientIDEnv) == "" || strings.TrimSpace(node.Auth.ClientSecretEnv) == "" {
+			if strings.TrimSpace(resolved.Auth.ClientIDEnv) == "" || strings.TrimSpace(resolved.Auth.ClientSecretEnv) == "" {
 				return fmt.Errorf("pacs node %q client env refs are required", node.ID)
 			}
-			if strings.TrimSpace(os.Getenv(node.Auth.ClientIDEnv)) == "" {
-				return fmt.Errorf("pacs node %q missing env value for %s", node.ID, node.Auth.ClientIDEnv)
+			if strings.TrimSpace(os.Getenv(resolved.Auth.ClientIDEnv)) == "" {
+				return fmt.Errorf("pacs node %q missing env value for %s", node.ID, resolved.Auth.ClientIDEnv)
 			}
-			if strings.TrimSpace(os.Getenv(node.Auth.ClientSecretEnv)) == "" {
-				return fmt.Errorf("pacs node %q missing env value for %s", node.ID, node.Auth.ClientSecretEnv)
+			if strings.TrimSpace(os.Getenv(resolved.Auth.ClientSecretEnv)) == "" {
+				return fmt.Errorf("pacs node %q missing env value for %s", node.ID, resolved.Auth.ClientSecretEnv)
 			}
 		}
 	}
@@ -4556,11 +4791,27 @@ func persistExternalConfig(ctx context.Context, db *sql.DB, cfg ExternalConfig) 
 	defer tx.Rollback()
 
 	for _, node := range cfg.PACSNodes {
+		resolved := node.Resolved()
 		authJSON, err := json.Marshal(map[string]any{
-			"type":              node.Auth.Type,
-			"token_url":         node.Auth.TokenURL,
-			"client_id_env":     node.Auth.ClientIDEnv,
-			"client_secret_env": node.Auth.ClientSecretEnv,
+			"type":              resolved.Auth.Type,
+			"token_url":         resolved.Auth.TokenURL,
+			"client_id_env":     resolved.Auth.ClientIDEnv,
+			"client_secret_env": resolved.Auth.ClientSecretEnv,
+			"search": map[string]any{
+				"mode":             resolved.SearchMode,
+				"dicomweb_base_url": resolved.DICOMwebBaseURL,
+			},
+			"retrieve": map[string]any{
+				"mode":           resolved.RetrieveMode,
+				"aet":            resolved.AET,
+				"dicom_host":     resolved.DICOMHost,
+				"dicom_port":     resolved.DICOMPort,
+				"supports_cmove": resolved.SupportsCMove,
+				"supports_cget":  resolved.SupportsCGet,
+			},
+			"health": map[string]any{
+				"mode": resolved.HealthMode,
+			},
 		})
 		if err != nil {
 			return fmt.Errorf("marshal pacs auth config for %s: %w", node.ID, err)
@@ -4589,16 +4840,16 @@ func persistExternalConfig(ctx context.Context, db *sql.DB, cfg ExternalConfig) 
 				updated_at = now()
 		`,
 			node.ID,
-			node.Name,
-			node.Protocol,
-			node.Priority,
-			node.AET,
-			node.DICOMHost,
-			node.DICOMPort,
-			node.DICOMwebBaseURL,
-			node.SupportsCMove,
-			node.SupportsCGet,
-			node.Auth.Type,
+			resolved.Name,
+			resolved.Protocol,
+			resolved.Priority,
+			resolved.AET,
+			resolved.DICOMHost,
+			resolved.DICOMPort,
+			resolved.DICOMwebBaseURL,
+			resolved.SupportsCMove,
+			resolved.SupportsCGet,
+			resolved.Auth.Type,
 			string(authJSON),
 		)
 		if err != nil {

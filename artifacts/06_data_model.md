@@ -33,6 +33,7 @@ Key fields:
 - `code`
 - `name`
 - `protocol`
+- `auth_config_json` should be able to carry capability-oriented metadata for `search`, `retrieve`, and `health`
 - `priority`
 - `enabled`
 - `ae_title`
@@ -44,6 +45,12 @@ Key fields:
 - `timeout_ms`
 - `auth_type`
 - `auth_config_json`
+
+Notes:
+
+- The relational schema still stores a flattened operational projection of each node.
+- The JSON/runtime config is evolving toward capability sections (`search`, `retrieve`, `health`) so a single node can be `hybrid`.
+- Postgres should keep the effective flattened fields needed by current workflows while preserving richer capability detail inside `auth_config_json` or a future dedicated JSON column.
 
 ### `his_config`
 

@@ -98,6 +98,7 @@ Proveer un portal operativo mínimo capaz de:
   - API interna para UI + endpoints de health/config.
   - Evaluación centralizada de componentes requeridos y opcionales para readiness operativa.
   - Stream SSE de cambios de salud del sistema para refresco automático de app vs mantenimiento.
+  - Adapters por capacidad para nodos `dicomweb`, `dimse` y `hybrid`.
 - **Orthanc (Cache PACS local)**:
   - DICOM SCP para recibir objetos (C-STORE).
   - DICOMweb (WADO-RS/QIDO-RS) para OHIF.
@@ -153,6 +154,11 @@ Proveer un portal operativo mínimo capaz de:
   - `QIDORSHandler` (dcm4chee-arc, Orthanc remoto).
   - `CFINDHandler` (legacy, vía dcmtk u otra librería/CLI).
   - `LocalCacheHandler` (consulta disponibilidad en Orthanc local).
+- `pacs/adapters`:
+  - `SearchAdapter`
+  - `RetrieveAdapter`
+  - `HealthAdapter`
+  - implementaciones `dicomweb`, `dimse`, `hybrid`
 - `scheduler/worker`:
   - Pool de workers por consulta; timeouts por nodo.
   - Cola de jobs de retrieve (persistida en Postgres).
