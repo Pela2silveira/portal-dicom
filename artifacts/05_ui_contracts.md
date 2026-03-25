@@ -125,6 +125,7 @@ Allow a patient to see only their authorized studies and open one selected study
 ### Allowed Actions
 
 - `Recuperar estudio` when `availabilityStatus = pending_retrieve`
+- once a retrieve is `queued` or `running`, the patient action must render as disabled `Recuperando` and must not enqueue duplicate jobs for the same study
 - `Ver estudio` when `availabilityStatus = available_local`
 - `Buscar` to call `POST /api/patient/search` with the current patient filters while keeping cached results visible
 - the patient result area must differentiate QIDO search feedback from per-study retrieve state without adding parallel UI state machines
@@ -245,6 +246,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - `Buscar`
 - `Recuperar estudio`
 - `Reintentar recuperacion` when the latest retrieve status is `failed`
+- while `retrieve_status` is `queued|running`, the action must stay disabled and the backend should reuse the active job instead of enqueuing duplicates
 - `Visualizar` only when the study is available in local Orthanc
 
 ### Visualizar Enablement Rule

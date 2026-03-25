@@ -1699,7 +1699,13 @@
 
                   const action = study.viewer_url
                     ? '<a class="action action-primary" href="' + escapeHTML(study.viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar estudio</a>'
-                    : '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '">Recuperar estudio</button>';
+                    : (study.retrieve_status === "running" || study.retrieve_status === "queued")
+                      ? '<button class="action action-secondary" type="button" disabled>Recuperando</button>'
+                      : study.retrieve_status === "done"
+                        ? '<button class="action action-secondary" type="button" disabled>Recuperado</button>'
+                        : study.retrieve_status === "failed"
+                          ? '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '">Reintentar recuperacion</button>'
+                          : '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '">Recuperar estudio</button>';
 
                   const statusChips =
                     '<div class="chip-row status-chips">' +

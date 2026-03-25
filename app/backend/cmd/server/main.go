@@ -363,6 +363,13 @@ type PhysicianRetrieveResponse struct {
 	ViewerURL        string `json:"viewer_url,omitempty"`
 }
 
+type retrieveJobSnapshot struct {
+	JobID            string
+	StudyInstanceUID string
+	Status           string
+	Error            string
+}
+
 type PhysicianSummary struct {
 	ID       string `json:"id"`
 	Username string `json:"username"`
@@ -1989,6 +1996,18 @@ func (a *App) deletePatientStudyAccessSlice(ctx context.Context, patientID strin
 }
 
 func (a *App) queuePatientRetrieve(ctx context.Context, patient PatientSummary, studyInstanceUID string) (PatientRetrieveResponse, error) {
+	activeJob, err := a.findActiveRetrieveJob(ctx, studyInstanceUID, "patient", patient.ID)
+	if err != nil {
+		return PatientRetrieveResponse{}, err
+	}
+	if activeJob != nil {
+		return PatientRetrieveResponse{
+			JobID:            activeJob.JobID,
+			StudyInstanceUID: activeJob.StudyInstanceUID,
+			Status:           activeJob.Status,
+		}, nil
+	}
+
 	_, sourceNodeID, err := a.getPatientSourceNode(ctx, patient.ID, studyInstanceUID)
 	if err != nil {
 		return PatientRetrieveResponse{}, err
@@ -2014,6 +2033,18 @@ func (a *App) queuePatientRetrieve(ctx context.Context, patient PatientSummary, 
 }
 
 func (a *App) queuePhysicianRetrieve(ctx context.Context, physician PhysicianSummary, studyInstanceUID string) (PhysicianRetrieveResponse, error) {
+	activeJob, err := a.findActiveRetrieveJob(ctx, studyInstanceUID, "physician", physician.ID)
+	if err != nil {
+		return PhysicianRetrieveResponse{}, err
+	}
+	if activeJob != nil {
+		return PhysicianRetrieveResponse{
+			JobID:            activeJob.JobID,
+			StudyInstanceUID: activeJob.StudyInstanceUID,
+			Status:           activeJob.Status,
+		}, nil
+	}
+
 	_, sourceNodeID, err := a.getPhysicianSourceNode(ctx, studyInstanceUID)
 	if err != nil {
 		return PhysicianRetrieveResponse{}, err
@@ -2036,6 +2067,27 @@ func (a *App) queuePhysicianRetrieve(ctx context.Context, physician PhysicianSum
 		StudyInstanceUID: studyInstanceUID,
 		Status:           "queued",
 	}, nil
+}
+
+func (a *App) findActiveRetrieveJob(ctx context.Context, studyUID, actorType, actorID string) (*retrieveJobSnapshot, error) {
+	var snapshot retrieveJobSnapshot
+	err := a.db.QueryRowContext(ctx, `
+		SELECT id::text, study_instance_uid, status, COALESCE(error, '')
+		FROM retrieve_jobs
+		WHERE study_instance_uid = $1
+		  AND requested_by_actor_type = $2
+		  AND requested_by_actor_id = $3::uuid
+		  AND status IN ('queued', 'running')
+		ORDER BY created_at DESC, id DESC
+		LIMIT 1
+	`, studyUID, actorType, actorID).Scan(&snapshot.JobID, &snapshot.StudyInstanceUID, &snapshot.Status, &snapshot.Error)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find active retrieve job: %w", err)
+	}
+	return &snapshot, nil
 }
 
 func (a *App) getRetrieveJobEvent(ctx context.Context, jobID string) (RetrieveJobEvent, error) {
