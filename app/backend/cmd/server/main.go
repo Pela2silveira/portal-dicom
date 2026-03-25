@@ -983,6 +983,7 @@ type PatientStudy struct {
 	StudyDescription   string   `json:"study_description"`
 	ModalitiesInStudy  []string `json:"modalities_in_study"`
 	Locations          []string `json:"locations,omitempty"`
+	AndesPrestacionID  string   `json:"andes_prestacion_id,omitempty"`
 	AndesPrestacion    string   `json:"andes_prestacion,omitempty"`
 	AndesProfessional  string   `json:"andes_professional,omitempty"`
 	AvailabilityStatus string   `json:"availability_status"`
@@ -1089,6 +1090,7 @@ type PhysicianResult struct {
 	Modalities       []string `json:"modalities"`
 	Locations        []string `json:"locations"`
 	SourceNodeID     string   `json:"source_node_id,omitempty"`
+	AndesPrestacionID string  `json:"andes_prestacion_id,omitempty"`
 	AndesPrestacion  string   `json:"andes_prestacion,omitempty"`
 	AndesProfessional string  `json:"andes_professional,omitempty"`
 	CacheStatus      string   `json:"cache_status"`
@@ -4118,6 +4120,7 @@ func (a *App) replacePatientStudyAccessSlice(ctx context.Context, patientID stri
 			"modalities_in_study": study.ModalitiesInStudy,
 			"locations":           study.Locations,
 			"source_node_id":      study.SourceNodeID,
+			"andes_prestacion_id": study.AndesPrestacionID,
 			"andes_prestacion":    study.AndesPrestacion,
 			"andes_professional":  study.AndesProfessional,
 		})
@@ -5748,6 +5751,7 @@ func (a *App) enrichPatientStudiesWithAndes(ctx context.Context, patientID strin
 	}
 	for i := range studies {
 		if summary, ok := summaries[studies[i].StudyInstanceUID]; ok {
+			studies[i].AndesPrestacionID = summary.PrestacionID
 			studies[i].AndesPrestacion = summary.PrestacionFSN
 			studies[i].AndesProfessional = summary.Professional
 		}
@@ -5810,6 +5814,7 @@ func (a *App) enrichPhysicianResultsWithAndes(ctx context.Context, results []Phy
 			if !ok {
 				continue
 			}
+			results[index].AndesPrestacionID = summary.PrestacionID
 			results[index].AndesPrestacion = summary.PrestacionFSN
 			results[index].AndesProfessional = summary.Professional
 		}
@@ -5879,6 +5884,7 @@ func (a *App) listPatientStudies(ctx context.Context, patientID, documentNumber 
 			ModalitiesInStudy []string `json:"modalities_in_study"`
 			Locations         []string `json:"locations"`
 			SourceNodeID      string   `json:"source_node_id"`
+			AndesPrestacionID string   `json:"andes_prestacion_id"`
 			AndesPrestacion   string   `json:"andes_prestacion"`
 			AndesProfessional string   `json:"andes_professional"`
 		}
@@ -5894,6 +5900,7 @@ func (a *App) listPatientStudies(ctx context.Context, patientID, documentNumber 
 			StudyDescription:   source.StudyDescription,
 			ModalitiesInStudy:  source.ModalitiesInStudy,
 			Locations:          source.Locations,
+			AndesPrestacionID:  source.AndesPrestacionID,
 			AndesPrestacion:    source.AndesPrestacion,
 			AndesProfessional:  source.AndesProfessional,
 			AvailabilityStatus: availabilityStatus,
