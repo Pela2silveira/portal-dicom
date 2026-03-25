@@ -869,6 +869,50 @@
         color: var(--muted);
       }
 
+      .sync-status {
+        display: none;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 14px;
+        padding: 12px 14px;
+        border: 1px solid rgba(0, 168, 224, 0.24);
+        background: rgba(0, 168, 224, 0.08);
+        color: var(--ink);
+      }
+
+      .sync-status.active {
+        display: flex;
+      }
+
+      .sync-status::before {
+        content: "";
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 0 0 rgba(0, 168, 224, 0.45);
+        animation: syncPulse 1.4s ease infinite;
+        flex-shrink: 0;
+      }
+
+      .sync-status.error {
+        border-color: rgba(180, 35, 24, 0.24);
+        background: rgba(180, 35, 24, 0.08);
+        color: var(--danger);
+      }
+
+      .sync-status.error::before {
+        background: var(--danger);
+        animation: none;
+        box-shadow: none;
+      }
+
+      @keyframes syncPulse {
+        0% { box-shadow: 0 0 0 0 rgba(0, 168, 224, 0.45); }
+        70% { box-shadow: 0 0 0 10px rgba(0, 168, 224, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(0, 168, 224, 0); }
+      }
+
       @media (min-width: 760px) {
         .workspace-grid {
           grid-template-columns: 0.95fr 1.05fr;
@@ -1181,6 +1225,7 @@
 
             <section class="workspace-card workspace-card-primary">
               <h4>Resultados</h4>
+              <div class="sync-status" id="patient-sync-status" aria-live="polite"></div>
               <div class="study-list" id="patient-study-list">
                 <div class="empty-state">Ingrese por el flujo paciente para cargar estudios desde la API del portal.</div>
               </div>
@@ -1282,6 +1327,7 @@
       const patientCalendarPrev = document.getElementById("patient-calendar-prev");
       const patientCalendarNext = document.getElementById("patient-calendar-next");
       const patientApplyFiltersButton = document.getElementById("patient-apply-filters");
+      const patientSyncStatus = document.getElementById("patient-sync-status");
       const patientStudyList = document.getElementById("patient-study-list");
       const patientFullNameValue = document.getElementById("patient-full-name-value");
       const patientDocumentValue = document.getElementById("patient-document-value");
@@ -1305,6 +1351,7 @@
       let activePatientDocument = "";
       let activePhysicianUsername = "";
       let patientMailCodeReady = false;
+      let patientSyncPollHandle = null;
       const patientDateFilter = (() => {
         const now = new Date();
         return {
@@ -1333,9 +1380,12 @@
       }
 
       function resetLanding() {
+        clearPatientSyncPoll();
         hero.classList.remove("hidden");
         patientWorkspace.classList.add("hidden");
         physicianWorkspace.classList.add("hidden");
+        patientSyncStatus.classList.remove("active", "error");
+        patientSyncStatus.textContent = "";
       }
 
       function escapeHTML(value) {
@@ -1363,6 +1413,37 @@
       function syncPatientContinueState() {
         const hasCode = patientMailCode.value.trim() !== "";
         patientValidateButton.disabled = !(patientMailCodeReady && hasCode);
+      }
+
+      function clearPatientSyncPoll() {
+        if (patientSyncPollHandle) {
+          window.clearTimeout(patientSyncPollHandle);
+          patientSyncPollHandle = null;
+        }
+      }
+
+      function renderPatientSyncStatus(sync) {
+        const status = sync?.status || "idle";
+        patientSyncStatus.classList.remove("active", "error");
+        patientSyncStatus.textContent = "";
+
+        if (status === "queued" || status === "running") {
+          patientSyncStatus.classList.add("active");
+          patientSyncStatus.textContent = sync.message || "Buscando estudios en los PACS remotos...";
+          clearPatientSyncPoll();
+          patientSyncPollHandle = window.setTimeout(() => {
+            if (activePatientDocument) {
+              loadPatientStudies(activePatientDocument, { requestSync: false }).catch(() => {});
+            }
+          }, 1500);
+          return;
+        }
+
+        clearPatientSyncPoll();
+        if (status === "failed") {
+          patientSyncStatus.classList.add("active", "error");
+          patientSyncStatus.textContent = sync.message || "No se pudo completar la búsqueda remota.";
+        }
       }
 
       function chipClassForStatus(status) {
@@ -1529,6 +1610,7 @@
       }
 
       function renderPatientStudies(payload) {
+        renderPatientSyncStatus(payload.sync);
         patientFullNameValue.textContent = payload.patient.full_name || "-";
         patientDocumentValue.textContent = payload.patient.document_number;
         patientBirthDateValue.textContent = payload.patient.birth_date || "-";
@@ -1698,10 +1780,12 @@
           .join("");
       }
 
-      async function loadPatientStudies(documentNumber) {
+      async function loadPatientStudies(documentNumber, options = {}) {
         activePatientDocument = documentNumber;
+        const requestSync = options.requestSync !== false;
 
         const params = new URLSearchParams({ document: documentNumber });
+        if (requestSync) params.set("sync", "1");
         if (patientDateFilter.from) params.set("date_from", patientDateFilter.from);
         if (patientDateFilter.to) {
           params.set("date_to", patientDateFilter.to);
@@ -1881,7 +1965,7 @@
         }
 
         try {
-          await loadPatientStudies(activePatientDocument);
+          await loadPatientStudies(activePatientDocument, { requestSync: true });
         } catch (error) {
           patientStudyList.innerHTML =
             '<div class="empty-state">No se pudieron cargar los estudios del paciente.</div>';
@@ -1904,7 +1988,7 @@
 
         try {
           await triggerPatientRetrieve(studyInstanceUID);
-          await loadPatientStudies(activePatientDocument);
+          await loadPatientStudies(activePatientDocument, { requestSync: false });
         } catch (error) {
           button.disabled = false;
           button.textContent = "Recuperar";
@@ -2013,7 +2097,7 @@
         window.setTimeout(async () => {
           showWorkspace("patient");
           try {
-            await loadPatientStudies(documentValue);
+            await loadPatientStudies(documentValue, { requestSync: true });
           } catch (error) {
             patientSummary.textContent = "Paciente " + documentValue;
             patientStudyList.innerHTML =

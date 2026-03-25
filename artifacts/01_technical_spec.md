@@ -207,15 +207,17 @@ Proveer un portal operativo mínimo capaz de:
 4. El portal abre OHIF directamente sobre ese estudio.
 5. El paciente no navega la study list nativa de OHIF.
 6. La primera implementación funcional expone `GET /api/patient/studies?document=<dni>` como contrato inicial del portal-owned list.
-7. En la carga inicial sin filtros, el backend ejecuta `QIDO-RS /studies?PatientID=<dni>` contra el único nodo PACS configurado, sincroniza `patient_study_access`, marca como `available_local` los estudios ya presentes en Orthanc y deja el resto como `pending_retrieve`.
-8. El flujo debe dejar trazas estructuradas de observabilidad para:
+7. `GET /api/patient/studies` devuelve resultados cacheados y un estado de sync (`idle|queued|running|done|failed`) para el conjunto de filtros actual.
+8. Cuando la UI solicita actualización o la cache del paciente todavía está vacía, el backend encola la búsqueda remota en `search_requests`/`search_node_runs` y un worker Go ejecuta `QIDO-RS /studies?PatientID=<dni>` en background.
+9. El worker actualiza `patient_study_access`, marca como `available_local` los estudios ya presentes en Orthanc y deja el resto como `pending_retrieve`.
+10. El flujo debe dejar trazas estructuradas de observabilidad para:
    - solicitud de token al PACS remoto;
    - request QIDO;
    - cantidad de estudios sincronizados;
    - cantidad de estudios ya disponibles localmente;
    - duración total del sync.
-9. Estas métricas no se persisten en PostgreSQL en esta etapa; se resuelven mediante logs estructurados y futuros endpoints de stats en memoria.
-10. Cuando el estudio queda `pending_retrieve`, la UI del paciente ofrece un botón `Retrieve` que llama `POST /api/patient/retrieve` y recarga la lista al completar.
+11. Estas métricas no se persisten en PostgreSQL en esta etapa; se resuelven mediante logs estructurados y futuros endpoints de stats en memoria.
+12. Cuando el estudio queda `pending_retrieve`, la UI del paciente ofrece un botón `Retrieve` que llama `POST /api/patient/retrieve` y recarga la lista al completar.
 11. Si QIDO no encuentra estudios, el endpoint debe responder `200` con `studies: []`; la UI no debe tratarlo como error técnico.
 12. El CTA de recarga del paciente debe expresar “Actualizar lista” o equivalente, no “Aplicar filtros”, para dejar claro que también reintenta el sync.
 

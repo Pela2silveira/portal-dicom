@@ -46,6 +46,7 @@ type App struct {
 	externalConfig *ExternalConfig
 	configLoadedAt time.Time
 	identitySource PatientIdentitySource
+	patientSearchQueue chan string
 }
 
 var ErrPatientIdentityNotFound = errors.New("patient identity not found")
@@ -262,7 +263,14 @@ type PatientStudiesResponse struct {
 	DocumentNumber string               `json:"document_number"`
 	Patient        PatientSummary       `json:"patient"`
 	Filters        PatientStudiesFilter `json:"filters"`
+	Sync           PatientSyncStatus    `json:"sync"`
 	Studies        []PatientStudy       `json:"studies"`
+}
+
+type PatientSyncStatus struct {
+	RequestID string `json:"request_id,omitempty"`
+	Status    string `json:"status"`
+	Message   string `json:"message,omitempty"`
 }
 
 type PatientSummary struct {
@@ -508,7 +516,10 @@ func main() {
 		externalConfig: externalConfig,
 		configLoadedAt: time.Now().UTC(),
 		identitySource: buildPatientIdentitySource(*externalConfig),
+		patientSearchQueue: make(chan string, 32),
 	}
+
+	app.startPatientSearchWorker()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", app.handleHealth)
@@ -646,6 +657,56 @@ func (a *App) handleConfig(appliedMigrations []string) http.HandlerFunc {
 	}
 }
 
+func (a *App) startPatientSearchWorker() {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := a.recoverQueuedPatientSearches(ctx); err != nil {
+			a.log("error", "patient_search_recovery_failed", map[string]any{"error": err.Error()})
+		}
+	}()
+
+	go func() {
+		for requestID := range a.patientSearchQueue {
+			a.processPatientSearchRequest(requestID)
+		}
+	}()
+}
+
+func (a *App) recoverQueuedPatientSearches(ctx context.Context) error {
+	rows, err := a.db.QueryContext(ctx, `
+		SELECT id::text
+		FROM search_requests
+		WHERE actor_type = 'patient'
+		  AND status IN ('queued', 'running')
+		ORDER BY created_at ASC
+	`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var requestID string
+		if err := rows.Scan(&requestID); err != nil {
+			return err
+		}
+		a.enqueuePatientSearch(requestID)
+	}
+
+	return rows.Err()
+}
+
+func (a *App) enqueuePatientSearch(requestID string) {
+	select {
+	case a.patientSearchQueue <- requestID:
+	default:
+		go func() {
+			a.patientSearchQueue <- requestID
+		}()
+	}
+}
+
 func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -739,6 +800,7 @@ func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
 		DateTo:   strings.TrimSpace(r.URL.Query().Get("date_to")),
 		Modality: strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("modality"))),
 	}
+	requestSync := r.URL.Query().Get("sync") == "1"
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
@@ -753,17 +815,15 @@ func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if filters.DateFrom == "" && filters.DateTo == "" && filters.Modality == "" {
-		patient, err = a.syncPatientStudiesFromSingleNode(ctx, patient, documentNumber)
-		if err != nil {
-			a.log("error", "patient_qido_sync_failed", map[string]any{
-				"document_number": documentNumber,
-				"patient_id":      patient.ID,
-				"error":           err.Error(),
-			})
-			http.Error(w, "failed to load patient studies from remote pacs", http.StatusBadGateway)
-			return
-		}
+	syncState, err := a.ensurePatientSearchState(ctx, patient, documentNumber, filters, requestSync)
+	if err != nil {
+		a.log("error", "patient_search_state_failed", map[string]any{
+			"document_number": documentNumber,
+			"patient_id":      patient.ID,
+			"error":           err.Error(),
+		})
+		http.Error(w, "failed to prepare patient search", http.StatusInternalServerError)
+		return
 	}
 
 	studies, err := a.listPatientStudies(ctx, patient.ID, filters)
@@ -781,11 +841,170 @@ func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
 		DocumentNumber: documentNumber,
 		Patient:        patient,
 		Filters:        filters,
+		Sync:           syncState,
 		Studies:        studies,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (a *App) patientHasStudyCache(ctx context.Context, patientID string) (bool, error) {
+	var exists bool
+	err := a.db.QueryRowContext(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM patient_study_access
+			WHERE patient_id = $1::uuid
+		)
+	`, patientID).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
+func hasPatientFilters(filters PatientStudiesFilter) bool {
+	return strings.TrimSpace(filters.DateFrom) != "" ||
+		strings.TrimSpace(filters.DateTo) != "" ||
+		strings.TrimSpace(filters.Modality) != ""
+}
+
+func (a *App) ensurePatientSearchState(ctx context.Context, patient PatientSummary, documentNumber string, filters PatientStudiesFilter, requestSync bool) (PatientSyncStatus, error) {
+	hasCache, err := a.patientHasStudyCache(ctx, patient.ID)
+	if err != nil {
+		return PatientSyncStatus{}, err
+	}
+
+	if requestSync {
+		return a.ensurePatientSearchRequest(ctx, patient, documentNumber, filters)
+	}
+
+	state, err := a.getPatientSearchState(ctx, patient.ID, filters)
+	if err != nil {
+		return PatientSyncStatus{}, err
+	}
+	if !hasCache && state.Status == "idle" {
+		return a.ensurePatientSearchRequest(ctx, patient, documentNumber, filters)
+	}
+
+	return state, nil
+}
+
+func patientSearchQueryJSON(documentNumber string, filters PatientStudiesFilter) (string, error) {
+	payload, err := json.Marshal(map[string]any{
+		"document_number": documentNumber,
+		"date_from":       filters.DateFrom,
+		"date_to":         filters.DateTo,
+		"modality":        filters.Modality,
+	})
+	if err != nil {
+		return "", err
+	}
+	return string(payload), nil
+}
+
+func (a *App) ensurePatientSearchRequest(ctx context.Context, patient PatientSummary, documentNumber string, filters PatientStudiesFilter) (PatientSyncStatus, error) {
+	queryJSON, err := patientSearchQueryJSON(documentNumber, filters)
+	if err != nil {
+		return PatientSyncStatus{}, err
+	}
+
+	var existing PatientSyncStatus
+	err = a.db.QueryRowContext(ctx, `
+		SELECT id::text, status
+		FROM search_requests
+		WHERE actor_type = 'patient'
+		  AND patient_id = $1::uuid
+		  AND query_json = $2::jsonb
+		  AND status IN ('queued', 'running')
+		ORDER BY created_at DESC, id DESC
+		LIMIT 1
+	`, patient.ID, queryJSON).Scan(&existing.RequestID, &existing.Status)
+	if err == nil {
+		existing.Message = patientSyncMessage(existing.Status)
+		return existing, nil
+	}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return PatientSyncStatus{}, err
+	}
+
+	var requestID string
+	err = a.db.QueryRowContext(ctx, `
+		INSERT INTO search_requests (
+			actor_type, patient_id, query_json, status
+		) VALUES (
+			'patient', $1::uuid, $2::jsonb, 'queued'
+		)
+		RETURNING id::text
+	`, patient.ID, queryJSON).Scan(&requestID)
+	if err != nil {
+		return PatientSyncStatus{}, err
+	}
+
+	node := a.externalConfig.PACSNodes[0]
+	if _, err := a.db.ExecContext(ctx, `
+		INSERT INTO search_node_runs (
+			search_request_id, node_id, status
+		) VALUES (
+			$1::uuid, (SELECT id FROM pacs_nodes WHERE code = $2), 'queued'
+		)
+	`, requestID, node.ID); err != nil {
+		return PatientSyncStatus{}, err
+	}
+
+	a.enqueuePatientSearch(requestID)
+
+	return PatientSyncStatus{
+		RequestID: requestID,
+		Status:    "queued",
+		Message:   patientSyncMessage("queued"),
+	}, nil
+}
+
+func (a *App) getPatientSearchState(ctx context.Context, patientID string, filters PatientStudiesFilter) (PatientSyncStatus, error) {
+	queryJSON, err := json.Marshal(map[string]any{
+		"date_from": filters.DateFrom,
+		"date_to":   filters.DateTo,
+		"modality":  filters.Modality,
+	})
+	if err != nil {
+		return PatientSyncStatus{}, err
+	}
+
+	var state PatientSyncStatus
+	err = a.db.QueryRowContext(ctx, `
+		SELECT id::text, status
+		FROM search_requests
+		WHERE actor_type = 'patient'
+		  AND patient_id = $1::uuid
+		  AND query_json->>'date_from' = ($2::jsonb)->>'date_from'
+		  AND query_json->>'date_to' = ($2::jsonb)->>'date_to'
+		  AND query_json->>'modality' = ($2::jsonb)->>'modality'
+		ORDER BY created_at DESC, id DESC
+		LIMIT 1
+	`, patientID, string(queryJSON)).Scan(&state.RequestID, &state.Status)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return PatientSyncStatus{Status: "idle"}, nil
+		}
+		return PatientSyncStatus{}, err
+	}
+	state.Message = patientSyncMessage(state.Status)
+	return state, nil
+}
+
+func patientSyncMessage(status string) string {
+	switch status {
+	case "queued":
+		return "Buscando estudios en los PACS remotos..."
+	case "running":
+		return "Actualizando estudios desde los PACS remotos..."
+	case "failed":
+		return "No se pudo completar la búsqueda remota."
+	default:
+		return ""
+	}
 }
 
 func (a *App) handlePatientRetrieve(w http.ResponseWriter, r *http.Request) {
@@ -1267,7 +1486,7 @@ func (a *App) ensurePatientRecord(ctx context.Context, documentNumber string) (P
 	return patient, nil
 }
 
-func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient PatientSummary, documentNumber string) (PatientSummary, error) {
+func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient PatientSummary, documentNumber string, filters PatientStudiesFilter) (PatientSummary, error) {
 	if len(a.externalConfig.PACSNodes) != 1 {
 		return patient, fmt.Errorf("patient qido flow requires exactly one pacs node, found %d", len(a.externalConfig.PACSNodes))
 	}
@@ -1282,36 +1501,163 @@ func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient Pati
 		"document_number": documentNumber,
 		"patient_id":      patient.ID,
 		"node_id":         node.ID,
+		"sync_filters":    filters,
 	})
 
-	remoteStudies, _, err := a.fetchPatientStudiesFromQIDO(ctx, node, documentNumber)
+	remoteStudies, _, err := a.fetchPatientStudiesFromQIDO(ctx, node, documentNumber, filters)
 	if err != nil {
 		return patient, err
 	}
 
-	if _, err := a.db.ExecContext(ctx, `
-		DELETE FROM patient_study_access
-		WHERE patient_id = $1::uuid
-	`, patient.ID); err != nil {
-		return patient, fmt.Errorf("clear patient study access: %w", err)
+	if err := a.replacePatientStudyAccessSlice(ctx, patient.ID, node.ID, filters, remoteStudies); err != nil {
+		return patient, err
 	}
 
 	availableLocalCount := 0
 	for _, study := range remoteStudies {
+		if study.ViewerURL != "" {
+			availableLocalCount++
+		}
+	}
+
+	a.log("info", "patient_qido_sync_completed", map[string]any{
+		"document_number":     documentNumber,
+		"patient_id":          patient.ID,
+		"node_id":             node.ID,
+		"studies_synced":      len(remoteStudies),
+		"studies_local_ready": availableLocalCount,
+		"duration_ms":         time.Since(syncStartedAt).Milliseconds(),
+	})
+
+	return patient, nil
+}
+
+func (a *App) processPatientSearchRequest(requestID string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	var (
+		patientID       string
+		documentNumber  string
+		status          string
+		queryJSONRaw    []byte
+	)
+	err := a.db.QueryRowContext(ctx, `
+		SELECT sr.patient_id::text, p.document_number, sr.status, sr.query_json
+		FROM search_requests sr
+		JOIN patients p ON p.id = sr.patient_id
+		WHERE sr.id = $1::uuid
+		  AND sr.actor_type = 'patient'
+	`, requestID).Scan(&patientID, &documentNumber, &status, &queryJSONRaw)
+	if err != nil {
+		a.log("error", "patient_search_load_failed", map[string]any{
+			"request_id": requestID,
+			"error":      err.Error(),
+		})
+		return
+	}
+
+	if status == "done" {
+		return
+	}
+
+	var payload struct {
+		DateFrom string `json:"date_from"`
+		DateTo   string `json:"date_to"`
+		Modality string `json:"modality"`
+	}
+	if len(queryJSONRaw) > 0 {
+		if err := json.Unmarshal(queryJSONRaw, &payload); err != nil {
+			a.log("error", "patient_search_decode_failed", map[string]any{
+				"request_id": requestID,
+				"error":      err.Error(),
+			})
+			return
+		}
+	}
+
+	if _, err := a.db.ExecContext(ctx, `
+		UPDATE search_requests
+		SET status = 'running', finished_at = NULL
+		WHERE id = $1::uuid
+	`, requestID); err != nil {
+		a.log("error", "patient_search_mark_running_failed", map[string]any{
+			"request_id": requestID,
+			"error":      err.Error(),
+		})
+		return
+	}
+	if _, err := a.db.ExecContext(ctx, `
+		UPDATE search_node_runs
+		SET status = 'running', started_at = now(), finished_at = NULL, error = NULL
+		WHERE search_request_id = $1::uuid
+	`, requestID); err != nil {
+		a.log("error", "patient_search_node_running_failed", map[string]any{
+			"request_id": requestID,
+			"error":      err.Error(),
+		})
+		return
+	}
+
+	patient := PatientSummary{ID: patientID, DocumentNumber: documentNumber}
+	filters := PatientStudiesFilter{
+		DateFrom: payload.DateFrom,
+		DateTo:   payload.DateTo,
+		Modality: strings.ToUpper(strings.TrimSpace(payload.Modality)),
+	}
+
+	startedAt := time.Now()
+	if _, err := a.syncPatientStudiesFromSingleNode(ctx, patient, documentNumber, filters); err != nil {
+		_, _ = a.db.ExecContext(ctx, `
+			UPDATE search_requests
+			SET status = 'failed', finished_at = now()
+			WHERE id = $1::uuid
+		`, requestID)
+		_, _ = a.db.ExecContext(ctx, `
+			UPDATE search_node_runs
+			SET status = 'failed', finished_at = now(), error = $2
+			WHERE search_request_id = $1::uuid
+		`, requestID, err.Error())
+		a.log("error", "patient_search_failed", map[string]any{
+			"request_id": requestID,
+			"patient_id": patientID,
+			"error":      err.Error(),
+		})
+		return
+	}
+
+	latency := int(time.Since(startedAt).Milliseconds())
+	_, _ = a.db.ExecContext(ctx, `
+		UPDATE search_requests
+		SET status = 'done', finished_at = now()
+		WHERE id = $1::uuid
+	`, requestID)
+	_, _ = a.db.ExecContext(ctx, `
+		UPDATE search_node_runs
+		SET status = 'done', finished_at = now(), latency_ms = $2, error = NULL
+		WHERE search_request_id = $1::uuid
+	`, requestID, latency)
+}
+
+func (a *App) replacePatientStudyAccessSlice(ctx context.Context, patientID, sourceNodeID string, filters PatientStudiesFilter, studies []PatientStudy) error {
+	if err := a.deletePatientStudyAccessSlice(ctx, patientID, filters); err != nil {
+		return fmt.Errorf("clear patient study access slice: %w", err)
+	}
+
+	for _, study := range studies {
 		sourceJSON, err := json.Marshal(map[string]any{
 			"study_date":          study.StudyDate,
 			"study_description":   study.StudyDescription,
 			"modalities_in_study": study.ModalitiesInStudy,
-			"source_node_id":      node.ID,
+			"source_node_id":      sourceNodeID,
 		})
 		if err != nil {
-			return patient, fmt.Errorf("marshal patient qido study: %w", err)
+			return fmt.Errorf("marshal patient qido study: %w", err)
 		}
 
 		availabilityStatus := "pending_retrieve"
 		if study.ViewerURL != "" {
 			availabilityStatus = "available_local"
-			availableLocalCount++
 		}
 
 		if _, err := a.db.ExecContext(ctx, `
@@ -1321,26 +1667,55 @@ func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient Pati
 			) VALUES (
 				$1::uuid, $2, 'patient_document_qido_match', $3, NULL, now(), now(), now(), $4::jsonb
 			)
+			ON CONFLICT (patient_id, study_instance_uid) DO UPDATE SET
+				authorization_basis = EXCLUDED.authorization_basis,
+				availability_status = EXCLUDED.availability_status,
+				last_seen_at = now(),
+				last_authorized_at = now(),
+				source_json = EXCLUDED.source_json
 		`,
-			patient.ID,
+			patientID,
 			study.StudyInstanceUID,
 			availabilityStatus,
 			string(sourceJSON),
 		); err != nil {
-			return patient, fmt.Errorf("insert qido-backed patient study access: %w", err)
+			return fmt.Errorf("insert qido-backed patient study access: %w", err)
 		}
 	}
 
-	a.log("info", "patient_qido_sync_completed", map[string]any{
-		"document_number":      documentNumber,
-		"patient_id":           patient.ID,
-		"node_id":              node.ID,
-		"studies_synced":       len(remoteStudies),
-		"studies_local_ready":  availableLocalCount,
-		"duration_ms":          time.Since(syncStartedAt).Milliseconds(),
-	})
+	return nil
+}
 
-	return patient, nil
+func (a *App) deletePatientStudyAccessSlice(ctx context.Context, patientID string, filters PatientStudiesFilter) error {
+	query := `
+		DELETE FROM patient_study_access
+		WHERE patient_id = $1::uuid
+	`
+	args := []any{patientID}
+	position := 2
+
+	if filters.DateFrom != "" {
+		query += fmt.Sprintf(` AND REPLACE(COALESCE(source_json->>'study_date', ''), '-', '') >= REPLACE($%d, '-', '')`, position)
+		args = append(args, filters.DateFrom)
+		position++
+	}
+	if filters.DateTo != "" {
+		query += fmt.Sprintf(` AND REPLACE(COALESCE(source_json->>'study_date', ''), '-', '') <= REPLACE($%d, '-', '')`, position)
+		args = append(args, filters.DateTo)
+		position++
+	}
+	if filters.Modality != "" {
+		query += fmt.Sprintf(` AND EXISTS (
+			SELECT 1
+			FROM jsonb_array_elements_text(COALESCE(source_json->'modalities_in_study', '[]'::jsonb)) AS modality
+			WHERE UPPER(modality) = $%d
+		)`, position)
+		args = append(args, filters.Modality)
+		position++
+	}
+
+	_, err := a.db.ExecContext(ctx, query, args...)
+	return err
 }
 
 func (a *App) performPatientRetrieve(ctx context.Context, patient PatientSummary, studyInstanceUID string) (PatientRetrieveResponse, error) {
@@ -1488,7 +1863,7 @@ func (a *App) performPhysicianRetrieve(ctx context.Context, physician PhysicianS
 	}, nil
 }
 
-func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConfig, documentNumber string) ([]PatientStudy, string, error) {
+func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConfig, documentNumber string, filters PatientStudiesFilter) ([]PatientStudy, string, error) {
 	qidoStartedAt := time.Now()
 	token, err := a.fetchPACSBearerToken(ctx, node)
 	if err != nil {
@@ -1502,6 +1877,9 @@ func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConf
 
 	query := endpoint.Query()
 	query.Set("PatientID", documentNumber)
+	if filters.DateFrom != "" || filters.DateTo != "" {
+		query.Set("StudyDate", buildQIDODateRange(filters.DateFrom, filters.DateTo))
+	}
 	query.Set("limit", "50")
 	query.Add("includefield", "StudyInstanceUID")
 	query.Add("includefield", "StudyDate")

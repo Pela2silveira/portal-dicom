@@ -126,7 +126,7 @@ Allow a patient to see only their authorized studies and open one selected study
 
 - `Recuperar estudio` when `availabilityStatus = pending_retrieve`
 - `Ver estudio` when `availabilityStatus = available_local`
-- `Buscar` to reload studies with the current patient filters
+- `Buscar` to enqueue a remote refresh with the current patient filters while keeping cached results visible
 
 ### Explicitly Forbidden Actions
 
@@ -144,6 +144,7 @@ Allow a patient to see only their authorized studies and open one selected study
 
 - `GET /api/patient/studies`
   - returns only studies authorized for the active patient session
+  - includes sync state for the current filter set (`idle|queued|running|done|failed`)
 - `POST /api/patient/retrieve`
   - receives `document_number` + `study_instance_uid`
   - triggers PACS-to-PACS retrieve through Orthanc REST
