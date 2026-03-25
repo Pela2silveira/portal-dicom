@@ -70,6 +70,163 @@ flowchart LR
     Orthanc -. C-MOVE / C-GET / C-STORE .- RemotePACS2
 ```
 
+## Publishing behind an external Nginx
+
+The current project can be published behind a second, external Nginx if that external layer behaves as a transparent edge reverse proxy.
+
+Recommended responsibility split:
+
+- External Nginx:
+  - public DNS and TLS termination
+  - client-facing security headers if needed at the edge
+  - reverse proxy to the internal portal Nginx
+- Internal project Nginx:
+  - portal routing
+  - maintenance-mode gating through `/api/health`
+  - routing for `/api/`, `/ohif/`, `/stone-webviewer/`, and `/dicom-web/`
+  - Orthanc route restrictions required by the current app design
+
+### Important constraints
+
+- Do not publish the app under a subpath such as `/portal/` unless the app is explicitly adapted for path-prefix awareness.
+- Do not cache `/api/`, `/ohif/`, `/stone-webviewer/`, or `/dicom-web/` at the external proxy.
+- Keep SSE endpoints unbuffered.
+- Keep long read timeouts for DICOM ZIP downloads and viewer traffic.
+- Forward `Host`, `X-Forwarded-For`, and `X-Forwarded-Proto`.
+- Prefer a plain pass-through to the internal Nginx instead of duplicating the app-routing logic at the edge.
+
+### Functional example
+
+Assumptions:
+
+- external hostname: `imagenes.example.gob.ar`
+- external Nginx forwards to the internal project Nginx at `http://127.0.0.1:8080`
+- TLS certificates are already available on the edge host
+
+Example external Nginx config:
+
+```nginx
+upstream portal_app {
+    server 127.0.0.1:8080;
+    keepalive 32;
+}
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
+server {
+    listen 80;
+    server_name imagenes.example.gob.ar;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name imagenes.example.gob.ar;
+
+    ssl_certificate     /etc/letsencrypt/live/imagenes.example.gob.ar/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/imagenes.example.gob.ar/privkey.pem;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:TLSCache:10m;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    client_max_body_size 10m;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+    add_header X-Frame-Options SAMEORIGIN always;
+
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+
+    proxy_connect_timeout 5s;
+    proxy_send_timeout 180s;
+    proxy_read_timeout 180s;
+
+    location /api/system/events {
+        proxy_pass http://portal_app;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_send_timeout 180s;
+        proxy_read_timeout 180s;
+        add_header X-Accel-Buffering no;
+    }
+
+    location ~ ^/api/retrieve/jobs/.+/events$ {
+        proxy_pass http://portal_app;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_send_timeout 180s;
+        proxy_read_timeout 180s;
+        add_header X-Accel-Buffering no;
+    }
+
+    location = /api/patient/download {
+        proxy_pass http://portal_app;
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_send_timeout 600s;
+        proxy_read_timeout 600s;
+    }
+
+    location = /api/physician/download {
+        proxy_pass http://portal_app;
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_send_timeout 600s;
+        proxy_read_timeout 600s;
+    }
+
+    location /ohif/ {
+        proxy_pass http://portal_app;
+        proxy_send_timeout 180s;
+        proxy_read_timeout 180s;
+    }
+
+    location /stone-webviewer/ {
+        proxy_pass http://portal_app;
+        proxy_send_timeout 180s;
+        proxy_read_timeout 180s;
+    }
+
+    location /dicom-web/ {
+        proxy_pass http://portal_app;
+        proxy_send_timeout 180s;
+        proxy_read_timeout 180s;
+    }
+
+    location / {
+        proxy_pass http://portal_app;
+        proxy_send_timeout 180s;
+        proxy_read_timeout 180s;
+    }
+}
+```
+
+### Why this works with the current project
+
+- The internal project Nginx still owns the maintenance fallback behavior.
+- The external Nginx does not rewrite application paths.
+- SSE remains usable because buffering is disabled on the edge too.
+- DICOM ZIP downloads keep longer timeouts and disabled buffering.
+- Stone Viewer, OHIF, backend API, and Orthanc-backed viewer routes continue to work through the same public host.
+
+### Current non-goals for the external proxy
+
+- no subpath publishing support
+- no static asset caching strategy for viewer bundles
+- no duplicated health-gating logic at the edge
+- no direct exposure of Orthanc admin routes
+
 ## Step 1: create and activate the virtual environment
 
 From the repository root:
