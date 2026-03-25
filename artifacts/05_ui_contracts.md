@@ -85,6 +85,7 @@ Allow a patient to see only their authorized studies and open one selected study
   values: `today`, `week`, `month`, `year`, `custom`, or empty for all dates
   behavior: the dropdown presets must set the patient date range automatically
   default: `month`
+  visual rule: the visible preset selector must always match the active internal date range
 - `dateRange`
   behavior: a calendar range picker inside an inline dropdown allows first click = start date and second click = end date, with the selected interval highlighted
   contract: portal-facing filtering uses normalized ISO dates (`YYYY-MM-DD`) even if upstream DICOM metadata arrives as `YYYYMMDD`
