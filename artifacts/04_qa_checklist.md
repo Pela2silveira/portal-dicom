@@ -37,6 +37,7 @@
 - [Ready] **One-command startup**: `docker compose up` brings up `nginx`, `backend`, `postgres`, `orthanc`, `ohif`.
 - [Ready] **DB migrations at startup**: schema bootstraps automatically; config loader upserts nodes + HIS config.
 - [Ready] **Health endpoint**: `/api/health` reports `db_ok` and `orthanc_ok`.
+- [Ready] **Maintenance fallback**: when backend health is degraded or the upstream is unavailable, Nginx serves a static maintenance page for `/` instead of surfacing a raw upstream error.
 - [Ready] **Logs accessible via compose**: `docker compose logs` is the primary inspection path; backend logs are JSON.
 - [Missing] **Retention automation**: backend cron for Orthanc purge (7 days) + DB cleanup (30 days) not implemented (Milestone 7 pending).
 - [Missing] **SSE proxy correctness**: Nginx config must explicitly disable buffering for SSE routes and set correct headers/timeouts (otherwise intermittent UI failures).

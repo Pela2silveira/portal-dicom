@@ -34,6 +34,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Remote dcm4chee integration details must be externalized as configuration.
 - Nginx is exposed only on `http://localhost:8080` for the MVP.
 - Nginx is the only public HTTP entrypoint.
+- If backend dependencies are unavailable, Nginx must serve a static maintenance page for the landing instead of exposing upstream failures.
 - Nginx must proxy only the Orthanc DICOMweb paths needed by OHIF and must not expose Orthanc admin REST endpoints.
 - The public landing page is part of the MVP and is served directly by Nginx.
 - The landing page brand is `Portal de Imágenes`.
@@ -62,9 +63,10 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Professional access is allowed only if the Mongo document exists, `habilitado == true`, `profesionalMatriculado == true`, and it exposes a professional registration under `formacionGrado[].matriculacion[]` with `baja.fecha == null`.
 - The professional summary shown in the portal must expose `nombre y apellido`, `DNI`, and `matrícula`.
 - Physician workflow should be asynchronous and must expose remote PACS context, local cache presence, and retrieve state before opening OHIF.
-- The first load of the physician panel must come from Orthanc local cache for the current calendar week, queried live at login without requiring prior recent-query seed data.
+- The first load of the physician panel must come from Orthanc local cache for the configured initial relative period, queried live at login without requiring prior recent-query seed data.
 - The physician panel now exposes a first real `Retrieve` action backed by `POST /api/physician/retrieve`, which enqueues a background job reusing Orthanc `C-GET` and recalculates local state from `cached_studies`, `retrieve_jobs`, and Orthanc.
-- The current physician panel now switches to real remote QIDO search whenever the operator applies filters; the no-filter state must query Orthanc local for the current calendar week.
+- The current physician panel now switches to real remote QIDO search whenever the operator applies filters; the no-filter state must query Orthanc local for the configured initial relative period.
+- If backend dependencies fail at startup, the backend must stay running in degraded mode, expose `/api/health` as `503`, and retry the Mongo identity providers every 1 minute instead of exiting the process.
 - The database must cache patient identity anchors, alternate identifiers from HIS, known authorized study UIDs, physician recent searches, and future session state.
 - Physician credentials must not be stored in clear text; only session state, auth events, and encrypted provider-issued auth material are allowed.
 - Observability metrics should not be persisted in PostgreSQL for now; use structured logs and optional in-memory stats instead.

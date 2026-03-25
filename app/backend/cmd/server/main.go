@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -77,6 +78,232 @@ type ProfessionalIdentitySource interface {
 
 type patientIdentitySourceCloser interface {
 	Close(ctx context.Context) error
+}
+
+type dependencyHealthReporter interface {
+	Healthy() bool
+}
+
+type UnavailablePatientIdentitySource struct {
+	provider string
+	err      error
+}
+
+func (s *UnavailablePatientIdentitySource) ProviderName() string {
+	if strings.TrimSpace(s.provider) == "" {
+		return "unavailable"
+	}
+	return s.provider
+}
+
+func (s *UnavailablePatientIdentitySource) ResolveByDocument(_ context.Context, _ string) (PatientIdentity, error) {
+	return PatientIdentity{}, fmt.Errorf("%s unavailable: %w", s.ProviderName(), s.err)
+}
+
+func (s *UnavailablePatientIdentitySource) Healthy() bool {
+	return false
+}
+
+type UnavailableProfessionalIdentitySource struct {
+	provider string
+	err      error
+}
+
+func (s *UnavailableProfessionalIdentitySource) ProviderName() string {
+	if strings.TrimSpace(s.provider) == "" {
+		return "unavailable"
+	}
+	return s.provider
+}
+
+func (s *UnavailableProfessionalIdentitySource) ResolveByUsername(_ context.Context, _ string) (ProfessionalIdentity, error) {
+	return ProfessionalIdentity{}, fmt.Errorf("%s unavailable: %w", s.ProviderName(), s.err)
+}
+
+func (s *UnavailableProfessionalIdentitySource) Healthy() bool {
+	return false
+}
+
+type RetryingPatientIdentitySource struct {
+	provider     string
+	logger       *log.Logger
+	retryEvery   time.Duration
+	build        func() (PatientIdentitySource, error)
+	current      atomic.Value
+	stopCh       chan struct{}
+	stopOnce     sync.Once
+	refreshMu    sync.Mutex
+}
+
+func NewRetryingPatientIdentitySource(provider string, logger *log.Logger, retryEvery time.Duration, build func() (PatientIdentitySource, error)) *RetryingPatientIdentitySource {
+	s := &RetryingPatientIdentitySource{
+		provider:   provider,
+		logger:     logger,
+		retryEvery: retryEvery,
+		build:      build,
+		stopCh:     make(chan struct{}),
+	}
+	s.current.Store(PatientIdentitySource(&UnavailablePatientIdentitySource{
+		provider: provider,
+		err:      errors.New("provider not initialized"),
+	}))
+	s.refresh()
+	go s.retryLoop()
+	return s
+}
+
+func (s *RetryingPatientIdentitySource) ProviderName() string {
+	return s.provider
+}
+
+func (s *RetryingPatientIdentitySource) ResolveByDocument(ctx context.Context, documentNumber string) (PatientIdentity, error) {
+	return s.current.Load().(PatientIdentitySource).ResolveByDocument(ctx, documentNumber)
+}
+
+func (s *RetryingPatientIdentitySource) Healthy() bool {
+	if reporter, ok := s.current.Load().(PatientIdentitySource).(dependencyHealthReporter); ok {
+		return reporter.Healthy()
+	}
+	return true
+}
+
+func (s *RetryingPatientIdentitySource) Close(ctx context.Context) error {
+	s.stopOnce.Do(func() {
+		close(s.stopCh)
+	})
+	current := s.current.Load().(PatientIdentitySource)
+	if closer, ok := current.(patientIdentitySourceCloser); ok {
+		return closer.Close(ctx)
+	}
+	return nil
+}
+
+func (s *RetryingPatientIdentitySource) retryLoop() {
+	ticker := time.NewTicker(s.retryEvery)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			s.refresh()
+		case <-s.stopCh:
+			return
+		}
+	}
+}
+
+func (s *RetryingPatientIdentitySource) refresh() {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+
+	next, err := s.build()
+	if err != nil {
+		s.current.Store(PatientIdentitySource(&UnavailablePatientIdentitySource{
+			provider: s.provider,
+			err:      err,
+		}))
+		s.logger.Printf(`{"level":"error","msg":"patient_identity_source_retry_failed","provider":%q,"error":%q}`, s.provider, err.Error())
+		return
+	}
+
+	prev := s.current.Load().(PatientIdentitySource)
+	s.current.Store(next)
+	if closer, ok := prev.(patientIdentitySourceCloser); ok {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = closer.Close(closeCtx)
+	}
+	s.logger.Printf(`{"level":"info","msg":"patient_identity_source_ready","provider":%q}`, s.provider)
+}
+
+type RetryingProfessionalIdentitySource struct {
+	provider   string
+	logger     *log.Logger
+	retryEvery time.Duration
+	build      func() (ProfessionalIdentitySource, error)
+	current    atomic.Value
+	stopCh     chan struct{}
+	stopOnce   sync.Once
+	refreshMu  sync.Mutex
+}
+
+func NewRetryingProfessionalIdentitySource(provider string, logger *log.Logger, retryEvery time.Duration, build func() (ProfessionalIdentitySource, error)) *RetryingProfessionalIdentitySource {
+	s := &RetryingProfessionalIdentitySource{
+		provider:   provider,
+		logger:     logger,
+		retryEvery: retryEvery,
+		build:      build,
+		stopCh:     make(chan struct{}),
+	}
+	s.current.Store(ProfessionalIdentitySource(&UnavailableProfessionalIdentitySource{
+		provider: provider,
+		err:      errors.New("provider not initialized"),
+	}))
+	s.refresh()
+	go s.retryLoop()
+	return s
+}
+
+func (s *RetryingProfessionalIdentitySource) ProviderName() string {
+	return s.provider
+}
+
+func (s *RetryingProfessionalIdentitySource) ResolveByUsername(ctx context.Context, username string) (ProfessionalIdentity, error) {
+	return s.current.Load().(ProfessionalIdentitySource).ResolveByUsername(ctx, username)
+}
+
+func (s *RetryingProfessionalIdentitySource) Healthy() bool {
+	if reporter, ok := s.current.Load().(ProfessionalIdentitySource).(dependencyHealthReporter); ok {
+		return reporter.Healthy()
+	}
+	return true
+}
+
+func (s *RetryingProfessionalIdentitySource) Close(ctx context.Context) error {
+	s.stopOnce.Do(func() {
+		close(s.stopCh)
+	})
+	current := s.current.Load().(ProfessionalIdentitySource)
+	if closer, ok := current.(patientIdentitySourceCloser); ok {
+		return closer.Close(ctx)
+	}
+	return nil
+}
+
+func (s *RetryingProfessionalIdentitySource) retryLoop() {
+	ticker := time.NewTicker(s.retryEvery)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			s.refresh()
+		case <-s.stopCh:
+			return
+		}
+	}
+}
+
+func (s *RetryingProfessionalIdentitySource) refresh() {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+
+	next, err := s.build()
+	if err != nil {
+		s.current.Store(ProfessionalIdentitySource(&UnavailableProfessionalIdentitySource{
+			provider: s.provider,
+			err:      err,
+		}))
+		s.logger.Printf(`{"level":"error","msg":"professional_identity_source_retry_failed","provider":%q,"error":%q}`, s.provider, err.Error())
+		return
+	}
+
+	prev := s.current.Load().(ProfessionalIdentitySource)
+	s.current.Store(next)
+	if closer, ok := prev.(patientIdentitySourceCloser); ok {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = closer.Close(closeCtx)
+	}
+	s.logger.Printf(`{"level":"info","msg":"professional_identity_source_ready","provider":%q}`, s.provider)
 }
 
 type PatientIdentity struct {
@@ -426,13 +653,14 @@ func mongoPacienteToPatientIdentity(documentNumber string, doc MongoPacienteDocu
 }
 
 type HealthResponse struct {
-	Status     string `json:"status"`
-	AppEnv     string `json:"app_env"`
-	DBOK       bool   `json:"db_ok"`
-	OrthancOK  bool   `json:"orthanc_ok"`
-	ConfigOK   bool   `json:"config_ok"`
-	CheckedAt  string `json:"checked_at"`
-	ConfigPath string `json:"config_path"`
+	Status               string `json:"status"`
+	AppEnv               string `json:"app_env"`
+	DBOK                 bool   `json:"db_ok"`
+	OrthancOK            bool   `json:"orthanc_ok"`
+	ConfigOK             bool   `json:"config_ok"`
+	IdentityProvidersOK  bool   `json:"identity_providers_ok"`
+	CheckedAt            string `json:"checked_at"`
+	ConfigPath           string `json:"config_path"`
 }
 
 type PatientStudiesResponse struct {
@@ -685,42 +913,83 @@ func main() {
 
 	logger := log.New(os.Stdout, "", 0)
 
-	if cfg.PostgresDSN == "" {
-		logger.Fatal(`missing required env var "POSTGRES_DSN"`)
-	}
-	if cfg.OrthancURL == "" {
-		logger.Fatal(`missing required env var "ORTHANC_URL"`)
+	var startupIssues []map[string]any
+
+	recordStartupIssue := func(component string, err error) {
+		if err == nil {
+			return
+		}
+		startupIssues = append(startupIssues, map[string]any{
+			"component": component,
+			"error":     err.Error(),
+		})
 	}
 
-	db, err := sql.Open("pgx", cfg.PostgresDSN)
-	if err != nil {
-		logger.Fatal(err)
+	var db *sql.DB
+	var err error
+	if cfg.PostgresDSN == "" {
+		recordStartupIssue("postgres", errors.New(`missing required env var "POSTGRES_DSN"`))
+	} else {
+		db, err = sql.Open("pgx", cfg.PostgresDSN)
+		if err != nil {
+			recordStartupIssue("postgres", fmt.Errorf("open postgres: %w", err))
+		}
 	}
-	defer db.Close()
+	if db != nil {
+		defer db.Close()
+	}
+
+	if cfg.OrthancURL == "" {
+		recordStartupIssue("orthanc", errors.New(`missing required env var "ORTHANC_URL"`))
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	if err := db.PingContext(ctx); err != nil {
-		logger.Fatal(err)
+	if db != nil {
+		if err := db.PingContext(ctx); err != nil {
+			recordStartupIssue("postgres", fmt.Errorf("ping postgres: %w", err))
+		}
 	}
 
-	appliedMigrations, err := runMigrations(ctx, db, cfg.MigrationsDir)
+	var appliedMigrations []string
+	if db != nil {
+		appliedMigrations, err = runMigrations(ctx, db, cfg.MigrationsDir)
+		if err != nil {
+			recordStartupIssue("migrations", err)
+		}
+	}
+
+	var externalConfig *ExternalConfig
+	externalConfig, err = loadExternalConfig(cfg.ConfigPath)
 	if err != nil {
-		logger.Fatal(err)
+		recordStartupIssue("config", err)
 	}
 
-	externalConfig, err := loadExternalConfig(cfg.ConfigPath)
-	if err != nil {
-		logger.Fatal(err)
+	if externalConfig != nil {
+		if err := validateExternalConfig(*externalConfig); err != nil {
+			recordStartupIssue("config", err)
+			externalConfig = nil
+		}
 	}
 
-	if err := validateExternalConfig(*externalConfig); err != nil {
-		logger.Fatal(err)
+	if db != nil && externalConfig != nil {
+		if err := persistExternalConfig(ctx, db, *externalConfig); err != nil {
+			recordStartupIssue("config_persist", err)
+		}
 	}
 
-	if err := persistExternalConfig(ctx, db, *externalConfig); err != nil {
-		logger.Fatal(err)
+	identitySource := PatientIdentitySource(&UnavailablePatientIdentitySource{
+		provider: "config_unavailable",
+		err:      errors.New("external config not loaded"),
+	})
+	professionalIdentitySource := ProfessionalIdentitySource(&UnavailableProfessionalIdentitySource{
+		provider: "config_unavailable",
+		err:      errors.New("external config not loaded"),
+	})
+	if externalConfig != nil {
+		identitySource = buildPatientIdentitySource(*externalConfig, logger)
+		professionalIdentitySource = buildProfessionalIdentitySource(*externalConfig, logger)
 	}
 
 	app := &App{
@@ -732,8 +1001,8 @@ func main() {
 		logger:         logger,
 		externalConfig: externalConfig,
 		configLoadedAt: time.Now().UTC(),
-		identitySource: buildPatientIdentitySource(*externalConfig),
-		professionalIdentitySource: buildProfessionalIdentitySource(*externalConfig),
+		identitySource: identitySource,
+		professionalIdentitySource: professionalIdentitySource,
 		patientSearchQueue:         make(chan string, 32),
 		retrieveQueue:              make(chan string, 32),
 		retrieveEventSubscribers: make(map[string]map[chan RetrieveJobEvent]struct{}),
@@ -780,7 +1049,16 @@ func main() {
 		"config_path":        cfg.ConfigPath,
 		"migrations_dir":     cfg.MigrationsDir,
 		"migrations_applied": len(appliedMigrations),
-		"pacs_nodes_loaded":  len(externalConfig.PACSNodes),
+		"pacs_nodes_loaded":  lenPACSNodes(externalConfig),
+	})
+
+	for _, issue := range startupIssues {
+		app.log("error", "startup_dependency_unavailable", issue)
+	}
+
+	app.log("info", "startup_completed", map[string]any{
+		"degraded":             len(startupIssues) > 0,
+		"startup_issue_count":  len(startupIssues),
 	})
 
 	server := &http.Server{
@@ -804,16 +1082,17 @@ func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	resp := HealthResponse{
-		Status:     "ok",
-		AppEnv:     a.cfg.AppEnv,
-		DBOK:       a.checkDB(ctx),
-		OrthancOK:  a.checkOrthanc(ctx),
-		ConfigOK:   a.checkConfig(),
-		CheckedAt:  time.Now().UTC().Format(time.RFC3339),
-		ConfigPath: a.cfg.ConfigPath,
+		Status:              "ok",
+		AppEnv:              a.cfg.AppEnv,
+		DBOK:                a.checkDB(ctx),
+		OrthancOK:           a.checkOrthanc(ctx),
+		ConfigOK:            a.checkConfig(),
+		IdentityProvidersOK: a.checkIdentityProviders(),
+		CheckedAt:           time.Now().UTC().Format(time.RFC3339),
+		ConfigPath:          a.cfg.ConfigPath,
 	}
 
-	if !resp.DBOK || !resp.OrthancOK || !resp.ConfigOK {
+	if !resp.DBOK || !resp.OrthancOK || !resp.ConfigOK || !resp.IdentityProvidersOK {
 		resp.Status = "degraded"
 	}
 
@@ -831,6 +1110,7 @@ func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"db_ok":       resp.DBOK,
 		"orthanc_ok":  resp.OrthancOK,
 		"config_ok":   resp.ConfigOK,
+		"identity_providers_ok": resp.IdentityProvidersOK,
 		"status_code": statusCode,
 	})
 }
@@ -1622,6 +1902,10 @@ func (a *App) handlePhysicianRetrieve(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) checkDB(ctx context.Context) bool {
+	if a.db == nil {
+		a.log("error", "db_unconfigured", map[string]any{})
+		return false
+	}
 	if err := a.db.PingContext(ctx); err != nil {
 		a.log("error", "db_ping_failed", map[string]any{"error": err.Error()})
 		return false
@@ -1630,6 +1914,10 @@ func (a *App) checkDB(ctx context.Context) bool {
 }
 
 func (a *App) checkOrthanc(ctx context.Context) bool {
+	if strings.TrimSpace(a.cfg.OrthancURL) == "" {
+		a.log("error", "orthanc_unconfigured", map[string]any{})
+		return false
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.cfg.OrthancURL+"/system", nil)
 	if err != nil {
 		a.log("error", "orthanc_request_build_failed", map[string]any{"error": err.Error()})
@@ -1655,6 +1943,31 @@ func (a *App) checkOrthanc(ctx context.Context) bool {
 	}
 
 	return ok
+}
+
+func (a *App) checkIdentityProviders() bool {
+	patientOK := true
+	if reporter, ok := a.identitySource.(dependencyHealthReporter); ok {
+		patientOK = reporter.Healthy()
+	}
+
+	professionalOK := true
+	if reporter, ok := a.professionalIdentitySource.(dependencyHealthReporter); ok {
+		professionalOK = reporter.Healthy()
+	}
+
+	if !patientOK {
+		a.log("error", "patient_identity_provider_unhealthy", map[string]any{
+			"provider": a.identitySource.ProviderName(),
+		})
+	}
+	if !professionalOK {
+		a.log("error", "professional_identity_provider_unhealthy", map[string]any{
+			"provider": a.professionalIdentitySource.ProviderName(),
+		})
+	}
+
+	return patientOK && professionalOK
 }
 
 func (a *App) checkConfig() bool {
@@ -1693,15 +2006,38 @@ func loadExternalConfig(path string) (*ExternalConfig, error) {
 	return &cfg, nil
 }
 
-func buildPatientIdentitySource(cfg ExternalConfig) PatientIdentitySource {
+func lenPACSNodes(cfg *ExternalConfig) int {
+	if cfg == nil {
+		return 0
+	}
+	return len(cfg.PACSNodes)
+}
+
+func buildPatientIdentitySource(cfg ExternalConfig, logger *log.Logger) PatientIdentitySource {
 	if !strings.EqualFold(strings.TrimSpace(cfg.HIS.Provider), "his_mongo_direct") {
 		return &LocalSeedPatientIdentitySource{}
 	}
 
+	return NewRetryingPatientIdentitySource("his_mongo_direct", logger, time.Minute, func() (PatientIdentitySource, error) {
+		return connectMongoPatientIdentitySource()
+	})
+}
+
+func buildProfessionalIdentitySource(cfg ExternalConfig, logger *log.Logger) ProfessionalIdentitySource {
+	if !strings.EqualFold(strings.TrimSpace(cfg.HIS.Provider), "his_mongo_direct") {
+		return &LocalSeedProfessionalIdentitySource{}
+	}
+
+	return NewRetryingProfessionalIdentitySource("his_mongo_direct", logger, time.Minute, func() (ProfessionalIdentitySource, error) {
+		return connectMongoProfessionalIdentitySource()
+	})
+}
+
+func connectMongoPatientIdentitySource() (PatientIdentitySource, error) {
 	mongoURI := strings.TrimSpace(os.Getenv("HIS_MONGO_URI"))
 	mongoDatabase := strings.TrimSpace(os.Getenv("HIS_MONGO_DATABASE"))
 	if mongoURI == "" || mongoDatabase == "" {
-		log.Fatal("missing required mongo env vars for his_mongo_direct provider")
+		return nil, errors.New("missing required mongo env vars for his_mongo_direct provider")
 	}
 
 	connectTimeout := durationFromEnv("HIS_MONGO_CONNECT_TIMEOUT_MS", 5000*time.Millisecond)
@@ -1712,11 +2048,12 @@ func buildPatientIdentitySource(cfg ExternalConfig) PatientIdentitySource {
 
 	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
 	if err != nil {
-		log.Fatalf("connect mongo his provider: %v", err)
+		return nil, fmt.Errorf("connect mongo his provider: %w", err)
 	}
 
 	if err := client.Ping(ctx, nil); err != nil {
-		log.Fatalf("ping mongo his provider: %v", err)
+		_ = client.Disconnect(context.Background())
+		return nil, fmt.Errorf("ping mongo his provider: %w", err)
 	}
 
 	return &MongoPatientIdentitySource{
@@ -1724,18 +2061,14 @@ func buildPatientIdentitySource(cfg ExternalConfig) PatientIdentitySource {
 		collection:     client.Database(mongoDatabase).Collection("paciente"),
 		connectTimeout: connectTimeout,
 		queryTimeout:   queryTimeout,
-	}
+	}, nil
 }
 
-func buildProfessionalIdentitySource(cfg ExternalConfig) ProfessionalIdentitySource {
-	if !strings.EqualFold(strings.TrimSpace(cfg.HIS.Provider), "his_mongo_direct") {
-		return &LocalSeedProfessionalIdentitySource{}
-	}
-
+func connectMongoProfessionalIdentitySource() (ProfessionalIdentitySource, error) {
 	mongoURI := strings.TrimSpace(os.Getenv("HIS_MONGO_URI"))
 	mongoDatabase := strings.TrimSpace(os.Getenv("HIS_MONGO_DATABASE"))
 	if mongoURI == "" || mongoDatabase == "" {
-		log.Fatal("missing required mongo env vars for his_mongo_direct provider")
+		return nil, errors.New("missing required mongo env vars for his_mongo_direct provider")
 	}
 
 	connectTimeout := durationFromEnv("HIS_MONGO_CONNECT_TIMEOUT_MS", 5000*time.Millisecond)
@@ -1746,11 +2079,12 @@ func buildProfessionalIdentitySource(cfg ExternalConfig) ProfessionalIdentitySou
 
 	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
 	if err != nil {
-		log.Fatalf("connect mongo professional provider: %v", err)
+		return nil, fmt.Errorf("connect mongo professional provider: %w", err)
 	}
 
 	if err := client.Ping(ctx, nil); err != nil {
-		log.Fatalf("ping mongo professional provider: %v", err)
+		_ = client.Disconnect(context.Background())
+		return nil, fmt.Errorf("ping mongo professional provider: %w", err)
 	}
 
 	return &MongoProfessionalIdentitySource{
@@ -1758,7 +2092,7 @@ func buildProfessionalIdentitySource(cfg ExternalConfig) ProfessionalIdentitySou
 		collection:     client.Database(mongoDatabase).Collection("profesional"),
 		connectTimeout: connectTimeout,
 		queryTimeout:   queryTimeout,
-	}
+	}, nil
 }
 
 func nullTime(value time.Time) any {

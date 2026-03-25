@@ -17,6 +17,7 @@
   - `/dicom-web:` proxy **solo** a endpoints DICOMweb de Orthanc (deny explícito al resto)
   - `/dicomweb:` alias de compatibilidad a `/dicom-web/`
   - `/portal-assets:` assets estáticos propios del portal
+  - fallback de mantenimiento para `/` cuando `/api/health` esté degradado o el backend no responda
 - Backend “skeleton” (Go) con `/api/health` y logs JSON.
 - Orthanc configurado (DICOM + DICOMweb) accesible **solo** vía Nginx HTTP; DICOM port `4242` publicado según compose.
 - OHIF configurado y pinneado a `ohif/app:v3.11.1`, consumiendo DICOMweb en `/dicom-web` (a través de Nginx).
@@ -83,7 +84,7 @@
 - Superficie profesional:
   - grilla de resultados
   - acciones Retrieve / Visualizar
-  - carga inicial desde Orthanc local con estudios en cache de la semana actual
+  - carga inicial desde Orthanc local con estudios en cache para la ventana relativa configurada
 
 **Exit criteria (testable)**
 - Navegación: `/` → superficie paciente/profesional sin pasar por OHIF.

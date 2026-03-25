@@ -15,6 +15,8 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 * **Backend en Go:** servicio agregador para consultar nodos remotos, gestionar retrieves y exponer endpoints internos del portal.
 * **Base de datos de aplicación:** PostgreSQL para almacenar configuración operativa, jobs de retrieve, auditoría técnica y metadatos locales.
 * **Nginx:** servir contenido estático y actuar como reverse proxy para backend y visor.
+* **Fallback de mantenimiento:** si el backend no está operativo, Nginx debe responder la landing del portal con una página estática de mantenimiento y contacto institucional.
+* **Arranque degradado del backend:** si Postgres, Mongo, Orthanc o la carga de configuración fallan al inicio, el backend no debe abortar el proceso; debe quedar levantado, exponer `/api/health` degradado y permitir que Nginx sirva mantenimiento.
 * **Landing pública del portal:** página inicial servida por Nginx con branding **RedImagenesNQN** e identidad visual inspirada en **ANDES**.
 * **Experiencia de ingreso pública:** selector visual de perfil `Paciente` / `Profesional`.
 * **Responsive móvil:** la landing pública y las superficies del portal deben ser utilizables en teléfonos y tablets, con layout adaptativo y controles táctiles cómodos.
@@ -47,10 +49,12 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 * **Objetivo de integración posterior:** autenticación contra **LDAP provincial** y segundo factor **MFA** para médicos.
 * **Alcance funcional futuro:** acceso a una consola propia del portal con búsqueda manual mediante filtros, estado federado por PACS remoto, disponibilidad local, estado de retrieve y apertura puntual en el visor.
 * **Feature flag operativa de auth profesional:** el backend debe permitir alternar rápidamente entre el modo transitorio actual y el modo institucional futuro mediante `professional.fake_auth` en `config.json`, con default `true`.
+* **Ventana inicial del panel profesional:** el backend debe permitir definir en `config.json` el período relativo usado para la carga inicial del profesional sin filtros mediante `professional.initial_cache_period`.
 * **Semántica del modo falso profesional:** con `professional.fake_auth = true`, el backend mantiene la validación operativa actual contra Mongo `profesional`; con `false`, el acceso profesional queda reservado para la futura autenticación institucional `LDAP provincial + MFA`.
 * **Restricción funcional actual:** sólo se permite el ingreso si el profesional existe, `habilitado == true`, `profesionalMatriculado == true` y tiene una matrícula profesional en Mongo.
 * **Criterio de matrícula profesional:** el backend debe leer `formacionGrado[].matriculacion[]` y tomar la primera entrada con `baja.fecha == null`, usando `matriculaNumero` como número visible.
 * **Demográficos visibles del profesional:** `nombre y apellido`, `DNI` y `número de matrícula`.
+* **Reconexión del provider Mongo:** cuando `his.provider = his_mongo_direct` y la conexión inicial falle, el backend debe reintentar la conexión al menos cada 1 minuto sin requerir reinicio del contenedor.
 
 ### 3.2 Flujo público visible en MVP: Ingreso de Pacientes
 * **UI visible en MVP:** formulario visual con `Documento`, acción `Enviar código` e ingreso de `Código por mail`.
@@ -146,7 +150,7 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 * La experiencia debe ser responsive y usable en móvil, al menos para consulta y validación rápida.
 * El contrato explícito de esta superficie queda definido en `artifacts/05_ui_contracts.md`.
 * En el mock actual del portal, el ingreso profesional debe aterrizar primero en esta superficie y no redirigir directamente a la home general de OHIF.
-* La primera implementación funcional de esta superficie consume `GET /api/physician/results?username=<dni>` y, sin filtros, debe mostrar siempre los estudios locales en cache de la semana actual consultando Orthanc local en vivo.
+* La primera implementación funcional de esta superficie consume `GET /api/physician/results?username=<dni>` y, sin filtros, debe mostrar siempre los estudios locales en cache consultando Orthanc local en vivo para la ventana relativa definida por `professional.initial_cache_period`.
 * El primer avance operativo de esta superficie expone `POST /api/physician/retrieve`, reutiliza Orthanc REST para `C-GET` y recalcula `cache_status` / `retrieve_status` desde Postgres y Orthanc local antes de habilitar `Visualizar`.
 * Con filtros cargados, `GET /api/physician/results` debe consultar QIDO-RS del nodo remoto configurado y persistir esa búsqueda como reciente para reutilización posterior.
 * El filtro `patient_name` del profesional debe comportarse como búsqueda fuzzy por términos normalizados, no como coincidencia literal exacta.

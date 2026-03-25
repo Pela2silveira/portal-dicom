@@ -25,6 +25,9 @@
 - Si `patient.fake_auth` no está presente en `config.json`, el backend debe asumir `true` para preservar compatibilidad con el MVP actual.
 - El modo de auth profesional debe poder alternarse por config (`professional.fake_auth`) para desacoplar la validación transitoria actual del objetivo futuro `LDAP provincial + MFA`.
 - Si `professional.fake_auth` no está presente en `config.json`, el backend debe asumir `true` para preservar compatibilidad con el MVP actual.
+- La carga inicial del panel profesional sin filtros debe usar una ventana relativa configurable mediante `professional.initial_cache_period`.
+- Si las dependencias del backend no están disponibles al arranque, el proceso debe permanecer vivo en modo degradado y publicar `/api/health` con `503` para habilitar el fallback de mantenimiento en Nginx.
+- Cuando `his.provider = his_mongo_direct` no pueda conectarse a Mongo al inicio, el backend debe reintentar la conexión cada 1 minuto sin reinicio.
 - Las fechas de estudio que llegan desde DICOM/QIDO deben normalizarse a `YYYY-MM-DD` antes de persistirse o filtrarse en superficies del portal.
 - El flujo visible de profesional en la landing usa `DNI + contraseña` como experiencia UI.
 - La landing y las superficies propias del portal deben ser **responsive** para dispositivos móviles.
@@ -101,6 +104,7 @@ Proveer un portal operativo mínimo capaz de:
   - Sirve landing pública, UI operativa y OHIF.
   - Proxy a backend y a Orthanc DICOMweb.
   - Debe separar assets propios del portal de los assets raíz del contenedor OHIF.
+  - Debe servir una página estática de mantenimiento para `/` cuando el backend responda health degradado o no esté disponible.
 
 ### Sistemas externos
 - **PACS remotos**: dcm4chee, Orthanc remoto, legacy DICOM (sin REST).
@@ -245,7 +249,7 @@ Proveer un portal operativo mínimo capaz de:
 6. La primera implementación funcional expone `GET /api/physician/results?username=<dni>` como contrato inicial del panel del profesional.
 7. El primer avance operativo expone `POST /api/physician/retrieve` para disparar `C-GET` vía Orthanc REST desde la misma grilla.
 8. La grilla del profesional debe recalcular `cacheStatus`, `retrieveStatus` y `viewer_url` a partir de `cached_studies`, `retrieve_jobs` y verificación real en Orthanc.
-9. Sin filtros, `GET /api/physician/results` debe consultar Orthanc local en vivo y devolver todos los estudios en cache de la semana calendario actual.
+9. Sin filtros, `GET /api/physician/results` debe consultar Orthanc local en vivo y devolver todos los estudios en cache para la ventana relativa configurada en `professional.initial_cache_period`.
 10. Cuando el profesional aplica filtros, `GET /api/physician/results` debe ejecutar QIDO-RS contra el nodo remoto configurado y persistir el resultado como búsqueda reciente.
 11. El filtro `patient_name` del profesional debe resolverse como búsqueda fuzzy por términos normalizados; no debe requerir coincidencia literal exacta.
 
