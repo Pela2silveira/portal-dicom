@@ -30,6 +30,7 @@
 - Docker Compose debe usar un endpoint separado de liveness (`/api/livez`) para la salud del contenedor y dejar `/api/health` como readiness operativa.
 - Cuando `his.provider = his_mongo_direct` no pueda conectarse a Mongo al inicio, el backend debe reintentar la conexión cada 1 minuto sin reinicio.
 - La salud operativa del provider Mongo debe evaluarse también después del arranque; si pierde conectividad luego de estar disponible, `/api/health` debe volver a `503`.
+- `/api/health` debe publicar además el detalle de componentes `required` y `optional`, para distinguir indisponibilidad total de degradación parcial.
 - Las fechas de estudio que llegan desde DICOM/QIDO deben normalizarse a `YYYY-MM-DD` antes de persistirse o filtrarse en superficies del portal.
 - El flujo visible de profesional en la landing usa `DNI + contraseña` como experiencia UI.
 - La landing y las superficies propias del portal deben ser **responsive** para dispositivos móviles.
@@ -93,6 +94,7 @@ Proveer un portal operativo mínimo capaz de:
   - Conectores a PACS remotos (QIDO-RS / C-FIND).
   - Orquestación de retrieve (C-MOVE/C-GET).
   - API interna para UI + endpoints de health/config.
+  - Evaluación centralizada de componentes requeridos y opcionales para readiness operativa.
 - **Orthanc (Cache PACS local)**:
   - DICOM SCP para recibir objetos (C-STORE).
   - DICOMweb (WADO-RS/QIDO-RS) para OHIF.

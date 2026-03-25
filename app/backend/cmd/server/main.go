@@ -54,6 +54,29 @@ type App struct {
 	retrieveEventSubscribers map[string]map[chan RetrieveJobEvent]struct{}
 }
 
+type ComponentSeverity string
+
+const (
+	ComponentSeverityRequired ComponentSeverity = "required"
+	ComponentSeverityOptional ComponentSeverity = "optional"
+)
+
+type ComponentStatus string
+
+const (
+	ComponentStatusHealthy     ComponentStatus = "healthy"
+	ComponentStatusUnavailable ComponentStatus = "unavailable"
+	ComponentStatusUnknown     ComponentStatus = "unknown"
+)
+
+type ComponentHealth struct {
+	Name     string            `json:"name"`
+	Category string            `json:"category"`
+	Severity ComponentSeverity `json:"severity"`
+	Status   ComponentStatus   `json:"status"`
+	Message  string            `json:"message,omitempty"`
+}
+
 type RetrieveJobEvent struct {
 	JobID            string `json:"job_id"`
 	StudyInstanceUID string `json:"study_instance_uid"`
@@ -690,14 +713,15 @@ func mongoPacienteToPatientIdentity(documentNumber string, doc MongoPacienteDocu
 }
 
 type HealthResponse struct {
-	Status               string `json:"status"`
-	AppEnv               string `json:"app_env"`
-	DBOK                 bool   `json:"db_ok"`
-	OrthancOK            bool   `json:"orthanc_ok"`
-	ConfigOK             bool   `json:"config_ok"`
-	IdentityProvidersOK  bool   `json:"identity_providers_ok"`
-	CheckedAt            string `json:"checked_at"`
-	ConfigPath           string `json:"config_path"`
+	Status              string            `json:"status"`
+	AppEnv              string            `json:"app_env"`
+	DBOK                bool              `json:"db_ok"`
+	OrthancOK           bool              `json:"orthanc_ok"`
+	ConfigOK            bool              `json:"config_ok"`
+	IdentityProvidersOK bool              `json:"identity_providers_ok"`
+	CheckedAt           string            `json:"checked_at"`
+	ConfigPath          string            `json:"config_path"`
+	Components          []ComponentHealth `json:"components"`
 }
 
 type PatientStudiesResponse struct {
@@ -1119,23 +1143,22 @@ func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
 
+	components := a.collectComponentHealth(ctx)
+
 	resp := HealthResponse{
-		Status:              "ok",
+		Status:              overallHealthStatus(components),
 		AppEnv:              a.cfg.AppEnv,
-		DBOK:                a.checkDB(ctx),
-		OrthancOK:           a.checkOrthanc(ctx),
-		ConfigOK:            a.checkConfig(),
-		IdentityProvidersOK: a.checkIdentityProviders(),
+		DBOK:                componentHealthy(components, "postgres"),
+		OrthancOK:           componentHealthy(components, "orthanc"),
+		ConfigOK:            componentHealthy(components, "config"),
+		IdentityProvidersOK: componentHealthy(components, "mongo_identity"),
 		CheckedAt:           time.Now().UTC().Format(time.RFC3339),
 		ConfigPath:          a.cfg.ConfigPath,
-	}
-
-	if !resp.DBOK || !resp.OrthancOK || !resp.ConfigOK || !resp.IdentityProvidersOK {
-		resp.Status = "degraded"
+		Components:          components,
 	}
 
 	statusCode := http.StatusOK
-	if resp.Status != "ok" {
+	if resp.Status == "unavailable" {
 		statusCode = http.StatusServiceUnavailable
 	}
 
@@ -1144,12 +1167,12 @@ func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 
 	a.log("info", "health_checked", map[string]any{
-		"status":      resp.Status,
-		"db_ok":       resp.DBOK,
-		"orthanc_ok":  resp.OrthancOK,
-		"config_ok":   resp.ConfigOK,
+		"status":                resp.Status,
+		"db_ok":                 resp.DBOK,
+		"orthanc_ok":            resp.OrthancOK,
+		"config_ok":             resp.ConfigOK,
 		"identity_providers_ok": resp.IdentityProvidersOK,
-		"status_code": statusCode,
+		"status_code":           statusCode,
 	})
 }
 
@@ -1996,7 +2019,63 @@ func (a *App) checkOrthanc(ctx context.Context) bool {
 	return ok
 }
 
-func (a *App) checkIdentityProviders() bool {
+func (a *App) checkConfig() bool {
+	if a.externalConfig == nil {
+		return false
+	}
+
+	info, err := os.Stat(a.cfg.ConfigPath)
+	if err != nil {
+		a.log("error", "config_missing", map[string]any{"error": err.Error()})
+		return false
+	}
+
+	return !info.IsDir()
+}
+
+func (a *App) collectComponentHealth(ctx context.Context) []ComponentHealth {
+	components := []ComponentHealth{
+		{
+			Name:     "backend",
+			Category: "core_required",
+			Severity: ComponentSeverityRequired,
+			Status:   ComponentStatusHealthy,
+			Message:  "process alive",
+		},
+		{
+			Name:     "config",
+			Category: "core_required",
+			Severity: ComponentSeverityRequired,
+			Status:   boolToComponentStatus(a.checkConfig()),
+		},
+		{
+			Name:     "postgres",
+			Category: "core_required",
+			Severity: ComponentSeverityRequired,
+			Status:   boolToComponentStatus(a.checkDB(ctx)),
+		},
+		{
+			Name:     "orthanc",
+			Category: "core_required",
+			Severity: ComponentSeverityRequired,
+			Status:   boolToComponentStatus(a.checkOrthanc(ctx)),
+		},
+	}
+
+	if mongoComponent, ok := a.mongoIdentityComponent(); ok {
+		components = append(components, mongoComponent)
+	}
+
+	components = append(components, a.remotePACSComponents(ctx)...)
+
+	return components
+}
+
+func (a *App) mongoIdentityComponent() (ComponentHealth, bool) {
+	if a.identitySource.ProviderName() != "his_mongo_direct" && a.professionalIdentitySource.ProviderName() != "his_mongo_direct" {
+		return ComponentHealth{}, false
+	}
+
 	patientOK := true
 	if reporter, ok := a.identitySource.(dependencyHealthReporter); ok {
 		patientOK = reporter.Healthy()
@@ -2018,21 +2097,125 @@ func (a *App) checkIdentityProviders() bool {
 		})
 	}
 
-	return patientOK && professionalOK
+	status := ComponentStatusHealthy
+	message := "patient and professional identity available"
+	if !patientOK || !professionalOK {
+		status = ComponentStatusUnavailable
+		message = "patient or professional identity unavailable"
+	}
+
+	return ComponentHealth{
+		Name:     "mongo_identity",
+		Category: "feature_required",
+		Severity: ComponentSeverityRequired,
+		Status:   status,
+		Message:  message,
+	}, true
 }
 
-func (a *App) checkConfig() bool {
+func (a *App) remotePACSComponents(ctx context.Context) []ComponentHealth {
 	if a.externalConfig == nil {
+		return nil
+	}
+
+	components := make([]ComponentHealth, 0, len(a.externalConfig.PACSNodes))
+	for _, node := range a.externalConfig.PACSNodes {
+		status := ComponentStatusUnknown
+		message := "health check skipped"
+
+		baseURL := strings.TrimSpace(node.DICOMwebBaseURL)
+		if baseURL != "" {
+			status = boolToComponentStatus(a.checkRemotePACS(ctx, node))
+			message = "dicomweb reachable"
+			if status != ComponentStatusHealthy {
+				message = "dicomweb unreachable"
+			}
+		}
+
+		components = append(components, ComponentHealth{
+			Name:     "remote_pacs:" + node.ID,
+			Category: "optional",
+			Severity: ComponentSeverityOptional,
+			Status:   status,
+			Message:  message,
+		})
+	}
+
+	return components
+}
+
+func (a *App) checkRemotePACS(parent context.Context, node PACSNodeConfig) bool {
+	baseURL := strings.TrimRight(strings.TrimSpace(node.DICOMwebBaseURL), "/")
+	if baseURL == "" {
 		return false
 	}
 
-	info, err := os.Stat(a.cfg.ConfigPath)
+	ctx, cancel := context.WithTimeout(parent, 1500*time.Millisecond)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/studies?limit=1", nil)
 	if err != nil {
-		a.log("error", "config_missing", map[string]any{"error": err.Error()})
+		a.log("error", "remote_pacs_request_build_failed", map[string]any{
+			"node_id": node.ID,
+			"error":   err.Error(),
+		})
 		return false
 	}
 
-	return !info.IsDir()
+	res, err := a.httpClient.Do(req)
+	if err != nil {
+		a.log("error", "remote_pacs_unreachable", map[string]any{
+			"node_id": node.ID,
+			"error":   err.Error(),
+		})
+		return false
+	}
+	defer res.Body.Close()
+
+	ok := res.StatusCode >= 200 && res.StatusCode < 300
+	if !ok {
+		a.log("error", "remote_pacs_bad_status", map[string]any{
+			"node_id":     node.ID,
+			"status_code": res.StatusCode,
+		})
+	}
+
+	return ok
+}
+
+func componentHealthy(components []ComponentHealth, name string) bool {
+	for _, component := range components {
+		if component.Name == name {
+			return component.Status == ComponentStatusHealthy
+		}
+	}
+	return false
+}
+
+func overallHealthStatus(components []ComponentHealth) string {
+	optionalDegraded := false
+	for _, component := range components {
+		if component.Status == ComponentStatusUnknown {
+			continue
+		}
+		if component.Severity == ComponentSeverityRequired && component.Status != ComponentStatusHealthy {
+			return "unavailable"
+		}
+		if component.Severity == ComponentSeverityOptional && component.Status != ComponentStatusHealthy {
+			optionalDegraded = true
+		}
+	}
+	if optionalDegraded {
+		return "degraded"
+	}
+	return "ok"
+}
+
+func boolToComponentStatus(ok bool) ComponentStatus {
+	if ok {
+		return ComponentStatusHealthy
+	}
+	return ComponentStatusUnavailable
 }
 
 func loadExternalConfig(path string) (*ExternalConfig, error) {
