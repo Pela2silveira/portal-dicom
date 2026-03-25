@@ -288,7 +288,7 @@
 - **Claves candidatas ya acordadas para PACS**: `documento` y string de `_id` provenientes del documento `paciente` de Mongo.
 - **Estado actual del backend**: `PatientIdentitySource` ya soporta `his_mongo_direct`, usa la colección `paciente` y persiste resoluciones exitosas en Postgres.
 - **Estado actual del acceso paciente**: `Enviar código` ya prevalida existencia de paciente y mail activo antes del futuro envío real del correo.
-- **Estado actual de búsqueda paciente**: `GET /api/patient/studies` encola búsquedas remotas en `search_requests`/`search_node_runs` y un worker Go procesa el QIDO en background.
+- **Estado actual de búsqueda paciente**: `POST /api/patient/search` encola búsquedas remotas en `search_requests`/`search_node_runs`, `GET /api/patient/search?request_id=...` reporta estado, y `GET /api/patient/studies` queda como lectura pura de resultados cacheados.
 - **Compatibilidad de schema dev**: bases creadas con la migración inicial requieren una migración adicional para `patients.gender_identity`.
 - **Milestone 8 (parcialmente bloqueado)**: requiere decidir controles mínimos para entornos no-localhost (`X-Portal-Key`, allowlist IP, o similar).
 

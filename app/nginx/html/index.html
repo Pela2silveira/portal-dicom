@@ -1368,6 +1368,7 @@
       const resetButtons = document.querySelectorAll("[data-reset]");
       let activePatientDocument = "";
       let activePhysicianUsername = "";
+      let activePatientSearchRequestID = "";
       let patientMailCodeReady = false;
       let patientSyncPollHandle = null;
       const patientDateFilter = (() => {
@@ -1404,6 +1405,7 @@
         physicianWorkspace.classList.add("hidden");
         patientSyncStatus.classList.remove("active", "error");
         patientSyncStatus.textContent = "";
+        activePatientSearchRequestID = "";
       }
 
       function escapeHTML(value) {
@@ -1442,6 +1444,9 @@
 
       function renderPatientSyncStatus(sync) {
         const status = sync?.status || "idle";
+        if (sync?.request_id) {
+          activePatientSearchRequestID = sync.request_id;
+        }
         patientSyncStatus.classList.remove("active", "error");
         patientSyncStatus.textContent = "";
 
@@ -1450,8 +1455,8 @@
           patientSyncStatus.textContent = sync.message || "Buscando estudios en los PACS remotos...";
           clearPatientSyncPoll();
           patientSyncPollHandle = window.setTimeout(() => {
-            if (activePatientDocument) {
-              loadPatientStudies(activePatientDocument, { requestSync: false }).catch(() => {});
+            if (activePatientDocument && activePatientSearchRequestID) {
+              loadPatientSearchStatus(activePatientSearchRequestID).catch(() => {});
             }
           }, 1500);
           return;
@@ -1808,12 +1813,10 @@
           .join("");
       }
 
-      async function loadPatientStudies(documentNumber, options = {}) {
+      async function loadPatientStudies(documentNumber) {
         activePatientDocument = documentNumber;
-        const requestSync = options.requestSync !== false;
 
         const params = new URLSearchParams({ document: documentNumber });
-        if (requestSync) params.set("sync", "1");
         if (patientDateFilter.from) params.set("date_from", patientDateFilter.from);
         if (patientDateFilter.to) {
           params.set("date_to", patientDateFilter.to);
@@ -1835,6 +1838,48 @@
 
         const payload = await response.json();
         renderPatientStudies(payload);
+      }
+
+      async function startPatientSearch(documentNumber) {
+        const response = await fetch("/api/patient/search", {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            document_number: documentNumber,
+            date_from: patientDateFilter.from || "",
+            date_to: patientDateFilter.to || (patientDateFilter.from || ""),
+            modality: patientFilterModality.value || ""
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error("patient search request failed");
+        }
+
+        return response.json();
+      }
+
+      async function loadPatientSearchStatus(requestID) {
+        const response = await fetch("/api/patient/search?request_id=" + encodeURIComponent(requestID), {
+          headers: { Accept: "application/json" }
+        });
+
+        if (!response.ok) {
+          throw new Error("patient search status request failed");
+        }
+
+        const payload = await response.json();
+        renderPatientSyncStatus(payload);
+        if (payload.status === "done" || payload.status === "failed") {
+          activePatientSearchRequestID = "";
+          if (activePatientDocument) {
+            await loadPatientStudies(activePatientDocument);
+          }
+        }
+        return payload;
       }
 
       async function loadPhysicianResults(username) {
@@ -1993,7 +2038,11 @@
         }
 
         try {
-          await loadPatientStudies(activePatientDocument, { requestSync: true });
+          const [_, sync] = await Promise.all([
+            loadPatientStudies(activePatientDocument),
+            startPatientSearch(activePatientDocument)
+          ]);
+          renderPatientSyncStatus(sync);
         } catch (error) {
           patientStudyList.innerHTML =
             '<div class="empty-state">No se pudieron cargar los estudios del paciente.</div>';
@@ -2016,7 +2065,7 @@
 
         try {
           await triggerPatientRetrieve(studyInstanceUID);
-          await loadPatientStudies(activePatientDocument, { requestSync: false });
+          await loadPatientStudies(activePatientDocument);
         } catch (error) {
           button.disabled = false;
           button.textContent = "Recuperar";
@@ -2125,7 +2174,11 @@
         window.setTimeout(async () => {
           showWorkspace("patient");
           try {
-            await loadPatientStudies(documentValue, { requestSync: true });
+            const [_, sync] = await Promise.all([
+              loadPatientStudies(documentValue),
+              startPatientSearch(documentValue)
+            ]);
+            renderPatientSyncStatus(sync);
           } catch (error) {
             patientSummary.textContent = "Paciente " + documentValue;
             patientStudyList.innerHTML =

@@ -289,6 +289,13 @@ type PatientStudiesFilter struct {
 	Modality string `json:"modality,omitempty"`
 }
 
+type PatientSearchRequest struct {
+	DocumentNumber string `json:"document_number"`
+	DateFrom       string `json:"date_from,omitempty"`
+	DateTo         string `json:"date_to,omitempty"`
+	Modality       string `json:"modality,omitempty"`
+}
+
 type PatientStudy struct {
 	StudyInstanceUID   string   `json:"study_instance_uid"`
 	StudyDate          string   `json:"study_date"`
@@ -526,6 +533,7 @@ func main() {
 	mux.HandleFunc("/api/health", app.handleHealth)
 	mux.HandleFunc("/api/config", app.handleConfig(appliedMigrations))
 	mux.HandleFunc("/api/patient/send-code", app.handlePatientSendCode)
+	mux.HandleFunc("/api/patient/search", app.handlePatientSearch)
 	mux.HandleFunc("/api/patient/studies", app.handlePatientStudies)
 	mux.HandleFunc("/api/patient/retrieve", app.handlePatientRetrieve)
 	mux.HandleFunc("/api/physician/results", app.handlePhysicianResults)
@@ -774,6 +782,94 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (a *App) handlePatientSearch(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		a.handlePatientSearchStart(w, r)
+	case http.MethodGet:
+		a.handlePatientSearchStatus(w, r)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (a *App) handlePatientSearchStart(w http.ResponseWriter, r *http.Request) {
+	var reqBody PatientSearchRequest
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		http.Error(w, "invalid json body", http.StatusBadRequest)
+		return
+	}
+
+	reqBody.DocumentNumber = strings.TrimSpace(reqBody.DocumentNumber)
+	if reqBody.DocumentNumber == "" {
+		http.Error(w, "document_number is required", http.StatusBadRequest)
+		return
+	}
+	if err := validateDocumentNumber(reqBody.DocumentNumber); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	filters := PatientStudiesFilter{
+		DateFrom: strings.TrimSpace(reqBody.DateFrom),
+		DateTo:   strings.TrimSpace(reqBody.DateTo),
+		Modality: strings.ToUpper(strings.TrimSpace(reqBody.Modality)),
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	patient, err := a.ensurePatientRecord(ctx, reqBody.DocumentNumber)
+	if err != nil {
+		a.log("error", "patient_search_prepare_failed", map[string]any{
+			"document_number": reqBody.DocumentNumber,
+			"error":           err.Error(),
+		})
+		http.Error(w, "failed to prepare patient search", http.StatusInternalServerError)
+		return
+	}
+
+	state, err := a.ensurePatientSearchRequest(ctx, patient, reqBody.DocumentNumber, filters)
+	if err != nil {
+		a.log("error", "patient_search_enqueue_failed", map[string]any{
+			"document_number": reqBody.DocumentNumber,
+			"patient_id":      patient.ID,
+			"error":           err.Error(),
+		})
+		http.Error(w, "failed to enqueue patient search", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, state)
+}
+
+func (a *App) handlePatientSearchStatus(w http.ResponseWriter, r *http.Request) {
+	requestID := strings.TrimSpace(r.URL.Query().Get("request_id"))
+	if requestID == "" {
+		http.Error(w, "request_id is required", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	state, err := a.getPatientSearchStateByRequestID(ctx, requestID)
+	if err != nil {
+		a.log("error", "patient_search_status_failed", map[string]any{
+			"request_id": requestID,
+			"error":      err.Error(),
+		})
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "patient search request not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "failed to load patient search status", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, state)
+}
+
 func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -795,7 +891,6 @@ func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
 		DateTo:   strings.TrimSpace(r.URL.Query().Get("date_to")),
 		Modality: strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("modality"))),
 	}
-	requestSync := r.URL.Query().Get("sync") == "1"
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
@@ -810,7 +905,7 @@ func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	syncState, err := a.ensurePatientSearchState(ctx, patient, documentNumber, filters, requestSync)
+	syncState, err := a.getPatientSearchState(ctx, patient.ID, filters)
 	if err != nil {
 		a.log("error", "patient_search_state_failed", map[string]any{
 			"document_number": documentNumber,
@@ -842,48 +937,6 @@ func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
-}
-
-func (a *App) patientHasStudyCache(ctx context.Context, patientID string) (bool, error) {
-	var exists bool
-	err := a.db.QueryRowContext(ctx, `
-		SELECT EXISTS (
-			SELECT 1
-			FROM patient_study_access
-			WHERE patient_id = $1::uuid
-		)
-	`, patientID).Scan(&exists)
-	if err != nil {
-		return false, err
-	}
-	return exists, nil
-}
-
-func hasPatientFilters(filters PatientStudiesFilter) bool {
-	return strings.TrimSpace(filters.DateFrom) != "" ||
-		strings.TrimSpace(filters.DateTo) != "" ||
-		strings.TrimSpace(filters.Modality) != ""
-}
-
-func (a *App) ensurePatientSearchState(ctx context.Context, patient PatientSummary, documentNumber string, filters PatientStudiesFilter, requestSync bool) (PatientSyncStatus, error) {
-	hasCache, err := a.patientHasStudyCache(ctx, patient.ID)
-	if err != nil {
-		return PatientSyncStatus{}, err
-	}
-
-	if requestSync {
-		return a.ensurePatientSearchRequest(ctx, patient, documentNumber, filters)
-	}
-
-	state, err := a.getPatientSearchState(ctx, patient.ID, filters)
-	if err != nil {
-		return PatientSyncStatus{}, err
-	}
-	if !hasCache && state.Status == "idle" {
-		return a.ensurePatientSearchRequest(ctx, patient, documentNumber, filters)
-	}
-
-	return state, nil
 }
 
 func patientSearchQueryJSON(documentNumber string, filters PatientStudiesFilter) (string, error) {
@@ -983,6 +1036,21 @@ func (a *App) getPatientSearchState(ctx context.Context, patientID string, filte
 		if errors.Is(err, sql.ErrNoRows) {
 			return PatientSyncStatus{Status: "idle"}, nil
 		}
+		return PatientSyncStatus{}, err
+	}
+	state.Message = patientSyncMessage(state.Status)
+	return state, nil
+}
+
+func (a *App) getPatientSearchStateByRequestID(ctx context.Context, requestID string) (PatientSyncStatus, error) {
+	var state PatientSyncStatus
+	err := a.db.QueryRowContext(ctx, `
+		SELECT id::text, status
+		FROM search_requests
+		WHERE id = $1::uuid
+		  AND actor_type = 'patient'
+	`, requestID).Scan(&state.RequestID, &state.Status)
+	if err != nil {
 		return PatientSyncStatus{}, err
 	}
 	state.Message = patientSyncMessage(state.Status)

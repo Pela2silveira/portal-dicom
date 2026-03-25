@@ -207,9 +207,9 @@ Proveer un portal operativo mínimo capaz de:
 3. El paciente selecciona un estudio en el portal.
 4. El portal abre OHIF directamente sobre ese estudio.
 5. El paciente no navega la study list nativa de OHIF.
-6. La primera implementación funcional expone `GET /api/patient/studies?document=<dni>` como contrato inicial del portal-owned list.
-7. `GET /api/patient/studies` devuelve resultados cacheados y un estado de sync (`idle|queued|running|done|failed`) para el conjunto de filtros actual.
-8. Cuando la UI solicita actualización o la cache del paciente todavía está vacía, el backend encola la búsqueda remota en `search_requests`/`search_node_runs` y un worker Go ejecuta `QIDO-RS /studies?PatientID=<dni>` en background.
+6. La implementación actual expone `POST /api/patient/search` para encolar la búsqueda remota del paciente.
+7. `GET /api/patient/search?request_id=<uuid>` devuelve el estado (`queued|running|done|failed`) del worker para ese conjunto de filtros.
+8. `GET /api/patient/studies?document=<dni>` queda como contrato de lectura del portal-owned list: devuelve resultados cacheados y el último estado de sync del conjunto de filtros actual, sin disparar side effects.
 9. El worker actualiza `patient_study_access`, marca como `available_local` los estudios ya presentes en Orthanc y deja el resto como `pending_retrieve`.
 10. El flujo debe dejar trazas estructuradas de observabilidad para:
    - solicitud de token al PACS remoto;

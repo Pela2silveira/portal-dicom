@@ -126,7 +126,7 @@ Allow a patient to see only their authorized studies and open one selected study
 
 - `Recuperar estudio` when `availabilityStatus = pending_retrieve`
 - `Ver estudio` when `availabilityStatus = available_local`
-- `Buscar` to enqueue a remote refresh with the current patient filters while keeping cached results visible
+- `Buscar` to call `POST /api/patient/search` with the current patient filters while keeping cached results visible
 - the patient result area must differentiate QIDO search feedback from per-study retrieve state without adding parallel UI state machines
 
 ### Explicitly Forbidden Actions
@@ -147,6 +147,11 @@ Allow a patient to see only their authorized studies and open one selected study
   - returns only studies authorized for the active patient session
   - includes sync state for the current filter set (`idle|queued|running|done|failed`)
   - includes per-study `retrieve_status` resolved from `retrieve_jobs`
+- `POST /api/patient/search`
+  - receives `document_number` plus the current patient filters
+  - enqueues background QIDO work and returns `request_id`
+- `GET /api/patient/search?request_id=...`
+  - returns the current worker status for the patient search
 - `POST /api/patient/retrieve`
   - receives `document_number` + `study_instance_uid`
   - triggers PACS-to-PACS retrieve through Orthanc REST

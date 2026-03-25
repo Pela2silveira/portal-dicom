@@ -47,7 +47,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - OHIF is a viewer surface, not the primary search or access surface.
 - Patient access must use a portal-owned study list filtered to authorized patient studies.
 - Patient access must not rely on the native OHIF study list.
-- The patient surface is now backed by `GET /api/patient/studies`, which returns cached rows plus patient sync state and uses in-process Go workers backed by `search_requests`/`search_node_runs` to execute remote QIDO in background.
+- The patient surface now separates search orchestration from result reads: `POST /api/patient/search` enqueues background QIDO work, `GET /api/patient/search?request_id=...` reports worker state, and `GET /api/patient/studies` remains a read contract over cached rows plus current sync state.
 - The patient surface now exposes a manual `Retrieve` action backed by `POST /api/patient/retrieve`.
 - The current patient retrieve implementation uses Orthanc REST to `PUT /modalities/{id}` and `POST /modalities/{id}/get`, polling Orthanc until the study becomes local.
 - The current viewer handoff must open OHIF with a specific `StudyInstanceUID` instead of `/ohif/` root, so patient access does not land on the general study list after retrieve.
