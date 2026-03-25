@@ -25,6 +25,7 @@
 
 ## Integration
 - [Ready] **Orthanc ↔ backend orchestration**: backend coordinates retrieve via Orthanc REST (`PUT /modalities/{id}`, `POST /modalities/{id}/get`) and polls Orthanc for presence.
+- [Ready] **Retrieve proxy timeout budget**: Nginx `/api/` upstream timeout must allow long-running patient/professional retrieves instead of aborting them around 60s.
 - [Ready] **PACS REST auth approach**: Keycloak `client_credentials` specified; backend uses `Authorization: Bearer <token>`.
 - [Ready] **Externalized PACS node config**: per-node protocol (QIDO-RS / C-FIND), timeouts, and retrieve preference (C-MOVE/C-GET) are modeled.
 - [Missing] **Second PACS node for repeatable validation**: required to test federated search/dedup deterministically (recommend simulated remote Orthanc in compose/CI).

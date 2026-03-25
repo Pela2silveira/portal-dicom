@@ -545,6 +545,7 @@ Problema: Orthanc puede recibir instancias progresivamente.
 - El job transiciona `queued → running → done/failed`.
 - Al completar, el estudio queda disponible en Orthanc y OHIF puede abrirlo desde el caché local.
 - El backend no debe cortar artificialmente el `C-GET` a Orthanc con el timeout corto general del cliente HTTP.
+- El proxy Nginx frente a `/api/` debe tolerar retrieves largos y no cancelar `POST /api/patient/retrieve` ni `POST /api/physician/retrieve` con timeouts cortos de upstream.
 
 ### Visualización
 - OHIF consume exclusivamente `/dicomweb`/`/dicom-web` (Orthanc local).
