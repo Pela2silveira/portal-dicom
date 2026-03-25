@@ -2129,7 +2129,7 @@
                           ? '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '">Reintentar recuperacion</button>'
                           : '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '">Recuperar estudio</button>';
                   const downloadAction = study.download_url
-                    ? '<a class="action ghost" href="' + escapeHTML(study.download_url) + '" rel="noopener noreferrer">Descargar DICOM</a>'
+                    ? '<a class="action action-primary" href="' + escapeHTML(study.download_url) + '" rel="noopener noreferrer">Descargar DICOM</a>'
                     : "";
 
                   const statusChips =
@@ -2222,7 +2222,7 @@
               ? '<a class="action action-primary" href="' + escapeHTML(result.viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar</a>'
               : '<button class="action ghost" type="button">Visualizar cuando esté listo</button>';
             const downloadAction = result.download_url
-              ? '<a class="action ghost" href="' + escapeHTML(result.download_url) + '" rel="noopener noreferrer">Descargar DICOM</a>'
+              ? '<a class="action action-primary" href="' + escapeHTML(result.download_url) + '" rel="noopener noreferrer">Descargar DICOM</a>'
               : "";
             let retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '">Recuperar estudio</button>';
             if (result.retrieve_status === "done" && result.viewer_url) {
