@@ -129,6 +129,7 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 * **Handoff actual al visor:** el portal debe abrir OHIF con `StudyInstanceUID` explícito para evitar que el paciente caiga en la study list general.
 * **Listado de estudios:** la study list nativa de OHIF es una decisión de UX y no debe considerarse un mecanismo de restricción de acceso.
 * **Pacientes:** no deben usar la study list nativa de OHIF. Deben ver una lista propia del portal con sus estudios autorizados.
+* **Descarga de estudio:** tanto paciente como profesional deben poder descargar el estudio completo local en formato `ZIP DICOM` desde Orthanc cuando ya esté disponible en caché local.
 * **Médicos:** no deben depender de la study list nativa de OHIF como workflow principal. Deben usar un panel propio del portal con búsqueda, estado federado y retrieve.
 
 ## 6.1 Superficies de UI futuras

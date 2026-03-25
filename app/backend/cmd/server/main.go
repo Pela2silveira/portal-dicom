@@ -780,6 +780,7 @@ type PatientStudy struct {
 	RetrieveStatus     string   `json:"retrieve_status"`
 	AuthorizationBasis string   `json:"authorization_basis"`
 	ViewerURL          string   `json:"viewer_url,omitempty"`
+	DownloadURL        string   `json:"download_url,omitempty"`
 }
 
 type PatientRetrieveRequest struct {
@@ -873,6 +874,7 @@ type PhysicianResult struct {
 	RetrieveStatus   string   `json:"retrieve_status"`
 	PartialFilter    bool     `json:"partial_filter"`
 	ViewerURL        string   `json:"viewer_url,omitempty"`
+	DownloadURL      string   `json:"download_url,omitempty"`
 }
 
 type ConfigResponse struct {
@@ -1188,10 +1190,12 @@ func main() {
 	mux.HandleFunc("/api/patient/send-code", app.handlePatientSendCode)
 	mux.HandleFunc("/api/patient/search", app.handlePatientSearch)
 	mux.HandleFunc("/api/patient/studies", app.handlePatientStudies)
+	mux.HandleFunc("/api/patient/download", app.handlePatientDownload)
 	mux.HandleFunc("/api/patient/retrieve", app.handlePatientRetrieve)
 	mux.HandleFunc("/api/physician/login", app.handlePhysicianLogin)
 	mux.HandleFunc("/api/retrieve/jobs/", app.handleRetrieveJobEvents)
 	mux.HandleFunc("/api/physician/results", app.handlePhysicianResults)
+	mux.HandleFunc("/api/physician/download", app.handlePhysicianDownload)
 	mux.HandleFunc("/api/physician/retrieve", app.handlePhysicianRetrieve)
 
 	if closer, ok := app.identitySource.(patientIdentitySourceCloser); ok {
@@ -1597,7 +1601,7 @@ func (a *App) handlePatientSearchStart(w http.ResponseWriter, r *http.Request) {
 		Modality: strings.ToUpper(strings.TrimSpace(reqBody.Modality)),
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
 
 	patient, err := a.ensurePatientRecord(ctx, reqBody.DocumentNumber)
@@ -1673,7 +1677,7 @@ func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
 		Modality: strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("modality"))),
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
 
 	patient, err := a.ensurePatientRecord(ctx, documentNumber)
@@ -1697,7 +1701,7 @@ func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	studies, err := a.listPatientStudies(ctx, patient.ID, filters)
+	studies, err := a.listPatientStudies(ctx, patient.ID, documentNumber, filters)
 	if err != nil {
 		a.log("error", "patient_studies_query_failed", map[string]any{
 			"document_number": documentNumber,
@@ -1718,6 +1722,52 @@ func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (a *App) handlePatientDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	documentNumber := strings.TrimSpace(r.URL.Query().Get("document"))
+	studyInstanceUID := strings.TrimSpace(r.URL.Query().Get("study_instance_uid"))
+	if documentNumber == "" || studyInstanceUID == "" {
+		http.Error(w, "missing required query params", http.StatusBadRequest)
+		return
+	}
+	if err := validateDocumentNumber(documentNumber); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	patient, err := a.ensurePatientRecord(ctx, documentNumber)
+	if err != nil {
+		http.Error(w, "failed to authorize patient download", http.StatusInternalServerError)
+		return
+	}
+
+	authorized, err := a.patientStudyAvailableLocal(ctx, patient.ID, studyInstanceUID)
+	if err != nil {
+		http.Error(w, "failed to validate patient study", http.StatusInternalServerError)
+		return
+	}
+	if !authorized {
+		http.Error(w, "study not available for patient download", http.StatusNotFound)
+		return
+	}
+
+	if err := a.streamStudyArchiveByUID(ctx, w, studyInstanceUID); err != nil {
+		a.log("error", "patient_download_failed", map[string]any{
+			"patient_id":         patient.ID,
+			"study_instance_uid": studyInstanceUID,
+			"error":              err.Error(),
+		})
+		http.Error(w, "failed to download study archive", http.StatusBadGateway)
+	}
 }
 
 func patientSearchQueryJSON(documentNumber string, filters PatientStudiesFilter) (string, error) {
@@ -2030,6 +2080,48 @@ func (a *App) handlePhysicianResults(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (a *App) handlePhysicianDownload(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	username := normalizeProfessionalDocumentInput(r.URL.Query().Get("username"))
+	studyInstanceUID := strings.TrimSpace(r.URL.Query().Get("study_instance_uid"))
+	if username == "" || studyInstanceUID == "" {
+		http.Error(w, "missing required query params", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	physician, err := a.ensurePhysicianRecord(ctx, username)
+	if err != nil {
+		http.Error(w, "failed to authorize physician download", http.StatusInternalServerError)
+		return
+	}
+
+	isLocal, _, err := a.findOrthancStudy(ctx, studyInstanceUID)
+	if err != nil {
+		http.Error(w, "failed to validate physician study", http.StatusInternalServerError)
+		return
+	}
+	if !isLocal {
+		http.Error(w, "study not available for physician download", http.StatusNotFound)
+		return
+	}
+
+	if err := a.streamStudyArchiveByUID(ctx, w, studyInstanceUID); err != nil {
+		a.log("error", "physician_download_failed", map[string]any{
+			"physician_id":       physician.ID,
+			"study_instance_uid": studyInstanceUID,
+			"error":              err.Error(),
+		})
+		http.Error(w, "failed to download study archive", http.StatusBadGateway)
+	}
 }
 
 func (a *App) handlePhysicianLogin(w http.ResponseWriter, r *http.Request) {
@@ -3812,6 +3904,7 @@ func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConf
 		if cached {
 			study.AvailabilityStatus = "available_local"
 			study.ViewerURL = buildOHIFViewerURL(studyUID)
+			study.DownloadURL = buildPatientDownloadURL(documentNumber, studyUID)
 		}
 
 		if patientName == "" {
@@ -3963,6 +4056,66 @@ func (a *App) findOrthancStudy(ctx context.Context, studyUID string) (bool, stri
 	}
 
 	return true, ids[0], nil
+}
+
+func (a *App) patientStudyAvailableLocal(ctx context.Context, patientID, studyUID string) (bool, error) {
+	var availabilityStatus string
+	err := a.db.QueryRowContext(ctx, `
+		SELECT availability_status
+		FROM patient_study_access
+		WHERE patient_id = $1::uuid
+		  AND study_instance_uid = $2
+	`, patientID, studyUID).Scan(&availabilityStatus)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return availabilityStatus == "available_local", nil
+}
+
+func (a *App) streamStudyArchiveByUID(ctx context.Context, w http.ResponseWriter, studyUID string) error {
+	isLocal, orthancStudyID, err := a.findOrthancStudy(ctx, studyUID)
+	if err != nil {
+		return err
+	}
+	if !isLocal || strings.TrimSpace(orthancStudyID) == "" {
+		return errors.New("study is not available in orthanc")
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(a.cfg.OrthancURL, "/")+"/studies/"+url.PathEscape(orthancStudyID)+"/archive", nil)
+	if err != nil {
+		return err
+	}
+	if a.cfg.OrthancUser != "" {
+		req.SetBasicAuth(a.cfg.OrthancUser, a.cfg.OrthancPass)
+	}
+
+	res, err := a.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+		return fmt.Errorf("orthanc archive bad status %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	filename := "study-" + sanitizeDownloadToken(studyUID) + ".zip"
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	if res.Header.Get("Content-Length") != "" {
+		w.Header().Set("Content-Length", res.Header.Get("Content-Length"))
+	}
+	_, err = io.Copy(w, res.Body)
+	return err
+}
+
+func sanitizeDownloadToken(value string) string {
+	replacer := strings.NewReplacer("/", "_", "\\", "_", " ", "_", "\"", "", "'", "")
+	return replacer.Replace(strings.TrimSpace(value))
 }
 
 func (a *App) getPatientSourceNode(ctx context.Context, patientID, studyInstanceUID string) (PACSNodeConfig, string, error) {
@@ -4472,6 +4625,9 @@ func (a *App) searchPhysicianResultsFromSingleNode(ctx context.Context, physicia
 		result.CacheStatus = cacheStatus
 		result.RetrieveStatus = retrieveStatus
 		result.ViewerURL = viewerURL
+		if viewerURL != "" {
+			result.DownloadURL = buildPhysicianDownloadURL(physician.Username, studyUID)
+		}
 		results = append(results, result)
 	}
 
@@ -4655,6 +4811,12 @@ func (a *App) listPhysicianCachedResultsForInitialPeriod(ctx context.Context) ([
 			RetrieveStatus:   retrieveStatus,
 			PartialFilter:    false,
 			ViewerURL:        viewerURL,
+			DownloadURL: func() string {
+				if viewerURL == "" {
+					return ""
+				}
+				return buildPhysicianDownloadURL(physician.Username, studyUID)
+			}(),
 		})
 	}
 
@@ -4692,7 +4854,7 @@ func (a *App) cachedStudyLocations(ctx context.Context, studyUID string) ([]stri
 	return locations, nil
 }
 
-func (a *App) listPatientStudies(ctx context.Context, patientID string, filters PatientStudiesFilter) ([]PatientStudy, error) {
+func (a *App) listPatientStudies(ctx context.Context, patientID, documentNumber string, filters PatientStudiesFilter) ([]PatientStudy, error) {
 	query := `
 		SELECT
 			study_instance_uid,
@@ -4777,6 +4939,9 @@ func (a *App) listPatientStudies(ctx context.Context, patientID string, filters 
 		}
 		study.RetrieveStatus = retrieveStatus
 		study.ViewerURL = viewerURL
+		if viewerURL != "" {
+			study.DownloadURL = buildPatientDownloadURL(documentNumber, studyUID)
+		}
 
 		studies = append(studies, study)
 	}
@@ -4816,6 +4981,14 @@ func digitsOnly(value string) string {
 
 func buildOHIFViewerURL(studyInstanceUID string) string {
 	return "/ohif/viewer?StudyInstanceUIDs=" + url.QueryEscape(strings.TrimSpace(studyInstanceUID))
+}
+
+func buildPatientDownloadURL(documentNumber, studyInstanceUID string) string {
+	return "/api/patient/download?document=" + url.QueryEscape(strings.TrimSpace(documentNumber)) + "&study_instance_uid=" + url.QueryEscape(strings.TrimSpace(studyInstanceUID))
+}
+
+func buildPhysicianDownloadURL(username, studyInstanceUID string) string {
+	return "/api/physician/download?username=" + url.QueryEscape(strings.TrimSpace(username)) + "&study_instance_uid=" + url.QueryEscape(strings.TrimSpace(studyInstanceUID))
 }
 
 func validateExternalConfig(cfg ExternalConfig) error {
