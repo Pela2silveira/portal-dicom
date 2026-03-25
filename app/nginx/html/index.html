@@ -605,6 +605,10 @@
         grid-area: modality;
       }
 
+      .professional-filter-block-source {
+        grid-area: source;
+      }
+
       .professional-filter-action {
         grid-area: action;
       }
@@ -686,7 +690,8 @@
           grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
           grid-template-areas:
             "data date"
-            "modality action";
+            "modality source"
+            "action action";
         }
 
         .filter-action .action {
@@ -697,8 +702,8 @@
 
       @media (min-width: 1400px) {
         .professional-filter-layout {
-          grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(220px, 0.9fr) auto;
-          grid-template-areas: "data date modality action";
+          grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(220px, 0.85fr) minmax(220px, 0.85fr) auto;
+          grid-template-areas: "data date modality source action";
         }
       }
 
@@ -1528,7 +1533,7 @@
                     </select>
                   </div>
                 </div>
-                <div class="field-group-grouped field-group-grouped-single professional-filter-block-modality">
+                <div class="field-group-grouped field-group-grouped-single professional-filter-block-source">
                   <label for="physician-search-source">Origen de busqueda</label>
                   <div class="field-group">
                     <select id="physician-search-source">
@@ -2454,7 +2459,6 @@
                   (result.locations || []).map(location => '<div class="chip success">Hospital: ' + escapeHTML(location) + '</div>').join("") +
                   modalities +
                   '<div class="chip">' + escapeHTML(result.study_instance_uid) + '</div>' +
-                  '<div class="chip info">Filtro parcial: ' + escapeHTML(result.partial_filter ? "si" : "no") + '</div>' +
                 '</div>' +
                 '<div class="inline-actions">' +
                   retrieveAction +
