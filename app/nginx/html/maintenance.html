@@ -39,6 +39,21 @@
         box-shadow: 0 20px 60px rgba(16, 46, 53, 0.08);
       }
 
+      .artwork {
+        margin: 0 0 28px;
+        padding: 16px;
+        border: 1px solid var(--line);
+        background:
+          radial-gradient(circle at 20% 18%, rgba(0, 168, 224, 0.1), transparent 30%),
+          linear-gradient(180deg, #fbfdfd 0%, #f2f7f8 100%);
+      }
+
+      .artwork svg {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
       .eyebrow {
         margin: 0 0 10px;
         color: var(--accent);
@@ -77,6 +92,35 @@
   </head>
   <body>
     <main class="maintenance-card">
+      <div class="artwork" aria-hidden="true">
+        <svg viewBox="0 0 640 250" role="img">
+          <rect x="0" y="170" width="640" height="80" fill="#edf4f6"></rect>
+          <path d="M0 195 C90 168, 165 172, 255 195 S450 220, 640 182" fill="none" stroke="#c9dadd" stroke-width="3"></path>
+          <path d="M128 160 C164 136, 216 126, 271 132 C323 138, 365 160, 388 188" fill="#ffffff" stroke="#17343b" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"></path>
+          <path d="M388 188 C416 177, 447 178, 472 190 C494 201, 507 220, 504 234" fill="#ffffff" stroke="#17343b" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"></path>
+          <path d="M252 131 C257 103, 274 77, 304 58 C322 46, 341 41, 357 41" fill="none" stroke="#17343b" stroke-width="5" stroke-linecap="round"></path>
+          <path d="M288 80 L309 36" fill="none" stroke="#17343b" stroke-width="5" stroke-linecap="round"></path>
+          <path d="M313 62 L347 24" fill="none" stroke="#17343b" stroke-width="5" stroke-linecap="round"></path>
+          <path d="M339 48 L383 22" fill="none" stroke="#17343b" stroke-width="5" stroke-linecap="round"></path>
+          <path d="M362 42 L412 29" fill="none" stroke="#17343b" stroke-width="5" stroke-linecap="round"></path>
+          <circle cx="194" cy="145" r="5" fill="#17343b"></circle>
+          <path d="M175 155 C183 161, 191 164, 201 164" fill="none" stroke="#17343b" stroke-width="4" stroke-linecap="round"></path>
+          <path d="M160 185 L149 237" fill="none" stroke="#17343b" stroke-width="5" stroke-linecap="round"></path>
+          <path d="M203 188 L193 238" fill="none" stroke="#17343b" stroke-width="5" stroke-linecap="round"></path>
+          <path d="M376 198 L367 239" fill="none" stroke="#17343b" stroke-width="5" stroke-linecap="round"></path>
+          <path d="M420 202 L412 239" fill="none" stroke="#17343b" stroke-width="5" stroke-linecap="round"></path>
+          <path d="M506 225 C534 213, 555 196, 571 171" fill="none" stroke="#17343b" stroke-width="5" stroke-linecap="round"></path>
+          <path d="M571 171 C583 153, 587 135, 584 116" fill="none" stroke="#17343b" stroke-width="5" stroke-linecap="round"></path>
+          <path d="M584 116 L560 103" fill="none" stroke="#17343b" stroke-width="5" stroke-linecap="round"></path>
+          <path d="M560 103 L544 118" fill="none" stroke="#17343b" stroke-width="5" stroke-linecap="round"></path>
+          <path d="M544 118 L565 131" fill="none" stroke="#17343b" stroke-width="5" stroke-linecap="round"></path>
+          <path d="M560 103 C579 92, 597 86, 615 86" fill="none" stroke="#00a8e0" stroke-width="5" stroke-linecap="round" stroke-dasharray="8 8"></path>
+          <path d="M621 76 H639 V96 H621 Z" fill="none" stroke="#00a8e0" stroke-width="5" stroke-linejoin="round"></path>
+          <path d="M621 81 H612 L606 86 L612 91 H621" fill="none" stroke="#00a8e0" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"></path>
+          <path d="M83 203 C104 189, 124 184, 148 186" fill="none" stroke="#7ea4ab" stroke-width="4" stroke-linecap="round"></path>
+          <path d="M55 212 C74 201, 95 197, 114 198" fill="none" stroke="#7ea4ab" stroke-width="4" stroke-linecap="round"></path>
+        </svg>
+      </div>
       <p class="eyebrow">Portal de Imagenes</p>
       <h1>La app esta en mantenimiento.</h1>
       <p>Sepan disculpar las molestias.</p>
