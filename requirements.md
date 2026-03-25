@@ -187,7 +187,7 @@ El entorno de desarrollo del MVP debe incluir:
 ### 7.1.1 Estado operativo actual del stack
 * La imagen del visor usada debe ser `ohif/app` con tag fijo, evitando `latest`.
 * El stack actual utiliza `ohif/app:v3.11.1`.
-* Nginx publica el portal y el visor sobre `http://localhost:8080`.
+* Nginx publica el portal y el visor sobre `http://localhost:8081`.
 * El HTTP admin de Orthanc puede estar disponible sólo para localhost cuando se requiera operación local.
 
 ### 7.2 Persistencia esperada en PostgreSQL

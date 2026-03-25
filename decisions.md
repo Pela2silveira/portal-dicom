@@ -33,7 +33,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - With `professional.fake_auth = true`, the backend keeps the current transitional professional access validation against Mongo `profesional`; with `false`, professional login is reserved for future `LDAP provincial + MFA`.
 - Patient demographic identity shown in the portal must prefer HIS/Mongo data and must not be overwritten by DICOM `PatientName` values observed during QIDO synchronization.
 - Remote dcm4chee integration details must be externalized as configuration.
-- Nginx is exposed only on `http://localhost:8080` for the MVP.
+- Nginx is exposed only on `http://localhost:8081` for the MVP.
 - Nginx is the only public HTTP entrypoint.
 - If backend dependencies are unavailable, Nginx must serve a static maintenance page for the landing instead of exposing upstream failures.
 - Nginx must proxy the Orthanc DICOMweb paths needed by OHIF and the minimum Orthanc routes required by Stone Web Viewer; broader Orthanc admin navigation must remain blocked.

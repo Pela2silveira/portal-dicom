@@ -37,7 +37,7 @@ flowchart LR
     User[Browser]
 
     subgraph Local["Docker Compose stack"]
-        Nginx["nginx\n:8080"]
+        Nginx["nginx\n:8081"]
         Landing["Portal landing\nstatic UI"]
         Backend["backend\nGo API"]
         OHIF["ohif\nviewer"]
@@ -100,14 +100,14 @@ Recommended responsibility split:
 Assumptions:
 
 - external hostname: `imagenes.example.gob.ar`
-- external Nginx forwards to the internal project Nginx at `http://127.0.0.1:8080`
+- external Nginx forwards to the internal project Nginx at `http://127.0.0.1:8081`
 - TLS certificates are already available on the edge host
 
 Example external Nginx config:
 
 ```nginx
 upstream portal_app {
-    server 127.0.0.1:8080;
+    server 127.0.0.1:8081;
     keepalive 32;
 }
 

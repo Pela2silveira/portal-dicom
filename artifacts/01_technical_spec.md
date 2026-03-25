@@ -1,6 +1,6 @@
 # Especificación Técnica de Implementación (MVP) — Portal DICOM Agregador + Caché + Viewers
 
-> **Objetivo del MVP:** entregar un portal web operativo mínimo que agregue búsquedas sobre PACS remotos, coordine **retrieve** hacia un **Orthanc local (caché)** y visualice **exclusivamente desde la caché** en **Stone Web Viewer** y **OHIF**, todo levantable con **Docker Compose** y expuesto por **Nginx** en `http://localhost:8080`.
+> **Objetivo del MVP:** entregar un portal web operativo mínimo que agregue búsquedas sobre PACS remotos, coordine **retrieve** hacia un **Orthanc local (caché)** y visualice **exclusivamente desde la caché** en **Stone Web Viewer** y **OHIF**, todo levantable con **Docker Compose** y expuesto por **Nginx** en `http://localhost:8081`.
 
 ## 0) Estado, decisiones confirmadas y supuestos
 
@@ -292,7 +292,7 @@ Proveer un portal operativo mínimo capaz de:
 - La restricción futura debe validarse en backend/proxy por sesión activa del portal y `StudyInstanceUID` permitido.
 
 ### 6.2 Puertos (propuesta)
-- Nginx: `8080` en desarrollo local; opcionalmente `80/443` en otros entornos.
+- Nginx: `8081` en desarrollo local; opcionalmente `80/443` en otros entornos.
 - Orthanc DICOM (C-STORE/Move SCP): `4242` **publicado** hacia red donde están PACS remotos (si aplica).
 - Orthanc HTTP: **no publicado** directamente por Nginx; el admin REST puede ligarse solo a localhost para operación local.
 - Postgres: no publicado de forma pública; en desarrollo puede ligarse solo a `127.0.0.1`.
@@ -524,7 +524,7 @@ Problema: Orthanc puede recibir instancias progresivamente.
   - Build o imagen oficial OHIF.
   - Config para DICOMweb en `/dicomweb` proxied a Orthanc.
 - `nginx`
-  - Publica `8080` en desarrollo local.
+  - Publica `8081` en desarrollo local.
   - Config:
     - `/api` → backend
     - `/ohif` → ohif
@@ -560,9 +560,9 @@ Problema: Orthanc puede recibir instancias progresivamente.
 ### Infraestructura
 - `docker compose up` levanta `orthanc`, `backend`, `postgres`, `nginx`, `ohif` sin pasos manuales adicionales.
 - Nginx es el único punto de entrada HTTP (backend/orthanc no expuestos directamente por HTTP).
-- `http://localhost:8080/` muestra la landing del portal.
-- `http://localhost:8080/ohif/` redirige a la landing pública.
-- `http://localhost:8080/ohif/viewer?StudyInstanceUIDs=<uid>` carga OHIF para un estudio puntual.
+- `http://localhost:8081/` muestra la landing del portal.
+- `http://localhost:8081/ohif/` redirige a la landing pública.
+- `http://localhost:8081/ohif/viewer?StudyInstanceUIDs=<uid>` carga OHIF para un estudio puntual.
 
 ### Búsqueda
 - Ejecutar una búsqueda dispara consultas concurrentes a **≥2** nodos configurados (cuando existan).

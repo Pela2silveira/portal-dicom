@@ -1,7 +1,7 @@
 # MVP QA Gap Checklist — Portal DICOM Agregador + Caché (Orthanc) + OHIF
 
 ## Security
-- [Ready] **Single public HTTP entrypoint**: only Nginx exposed on `http://localhost:8080`; backend/Orthanc HTTP not directly exposed.
+- [Ready] **Single public HTTP entrypoint**: only Nginx exposed on `http://localhost:8081`; backend/Orthanc HTTP not directly exposed.
 - [Ready] **Orthanc admin REST not exposed**: Nginx denies non‑DICOMweb Orthanc routes (explicit 403/404).
 - [Ready] **DICOMweb-only viewer data path**: OHIF configured to consume only `/dicom-web/` (Orthanc local) and never remote PACS.
 - [Ready] **Secrets not committed**: config uses `*_secret_ref` / env/file refs; runtime `config.json` is local-only and ignored.

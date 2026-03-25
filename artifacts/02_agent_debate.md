@@ -209,7 +209,7 @@
    - Use a Go native DIMSE library (less shelling out, but higher integration risk).
 
 9. **Decision name:** TLS for MVP Entry Point  
-   **Recommended option:** **HTTP only on localhost for MVP** (per decision log `http://localhost:8080`), but document a **staging/on-prem TLS profile** (Nginx terminates TLS) as a follow-up.  
+   **Recommended option:** **HTTP only on localhost for MVP** (per decision log `http://localhost:8081`), but document a **staging/on-prem TLS profile** (Nginx terminates TLS) as a follow-up.  
    **Why this option is recommended:** Matches the current human decision and avoids certificate friction, while keeping a clear path for secure deployment.  
    **Alternatives to consider:**  
    - Enable TLS immediately with self-signed certs (more realistic, more overhead).  

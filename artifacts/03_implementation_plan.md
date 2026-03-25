@@ -30,9 +30,9 @@
 
 **Exit criteria (testable)**
 - `docker compose up` levanta todo sin pasos manuales.
-- `GET http://localhost:8080/api/health` ⇒ 200 y reporta `db_ok` + `orthanc_ok`.
-- `GET http://localhost:8080/` carga la landing pública con logo y favicon propios.
-- `GET http://localhost:8080/ohif/` carga UI de OHIF.
+- `GET http://localhost:8081/api/health` ⇒ 200 y reporta `db_ok` + `orthanc_ok`.
+- `GET http://localhost:8081/` carga la landing pública con logo y favicon propios.
+- `GET http://localhost:8081/ohif/` carga UI de OHIF.
 - Verificación negativa: URLs de Orthanc admin REST (p.ej. `/instances`, `/studies` si no son DICOMweb) **no** son accesibles vía Nginx (403/404), mientras que DICOMweb sí (p.ej. `/dicom-web/studies` responde según Orthanc).
 
 ---
@@ -317,7 +317,7 @@ El slice mínimo **ya implementado** que demuestra valor real hoy es:
 
 **Definición de “Done” del slice actual**
 - Un usuario puede:
-  - abrir `http://localhost:8080/`
+  - abrir `http://localhost:8081/`
   - ver la landing pública con branding y flujos paciente/profesional
   - consultar estudios de paciente contra nodo remoto real
   - disparar retrieve y esperar a `done`
