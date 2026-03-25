@@ -3864,7 +3864,7 @@ func writeRetrieveSSEEvent(w io.Writer, eventName string, event RetrieveJobEvent
 	return nil
 }
 
-func writeSystemHealthSSEEvent(w io.Writer, eventName string, event SystemHealthEvent) error {
+func writeSystemHealthSSEEvent(w io.Writer, eventName string, event any) error {
 	payload, err := json.Marshal(event)
 	if err != nil {
 		return err
