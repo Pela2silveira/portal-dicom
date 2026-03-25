@@ -47,6 +47,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - The login panel should avoid redundant internal banners or badges that restate the access context without changing the next action.
 - Institutional links may appear in the footer as secondary navigation, provided they do not compete visually with the access form. The current shared footer keeps `Salud Neuquén` and the Android app link available across login, patient, and physician surfaces.
 - Institutional logos such as ANDES and RedTICS may appear in the footer as secondary brand references and should remain non-interactive.
+- The portal favicon must be served by the portal/Nginx surface itself, including a stable `/favicon.ico` entrypoint, and must not depend on OHIF asset routing.
 - Future real implementation validates patient identity before exposing the list.
 
 ### Screen Model
