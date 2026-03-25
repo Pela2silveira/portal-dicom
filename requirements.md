@@ -27,6 +27,7 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 * **Landing pública del portal:** página inicial servida por Nginx con branding **RedImagenesNQN** e identidad visual inspirada en **ANDES**.
 * **Experiencia de ingreso pública:** selector visual de perfil `Paciente` / `Profesional`.
 * **Responsive móvil:** la landing pública y las superficies del portal deben ser utilizables en teléfonos y tablets, con layout adaptativo y controles táctiles cómodos.
+* **Protección de entradas:** todo campo editable del portal debe aplicar saneamiento/normalización acorde a su tipo en frontend y repetir validación defensiva equivalente en backend antes de tocar búsquedas, retrieves, autenticación o descargas.
 * **Integración con HIS:** el sistema debe permitir configurar credenciales, API keys, URLs base y parámetros necesarios para futuras consultas al HIS.
 * **Excepción transitoria para identidad de paciente:** mientras no esté disponible la API REST del HIS, el backend podrá consultar una base MongoDB de forma directa únicamente para lectura de identidad de paciente y resolución de identificadores.
 * **Colección inicial Mongo:** el adapter temporal consulta la colección `paciente` y normaliza `_id`, `documento`, datos demográficos y el primer email activo si existe.

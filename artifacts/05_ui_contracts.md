@@ -18,6 +18,8 @@ These contracts are intentionally separate from the viewers. Stone Web Viewer an
 - Hiding the native OHIF study list is a UX choice and is not a security control.
 - Real access control, when implemented, must be enforced in the backend and image proxy by active portal session and allowed `StudyInstanceUID`.
 - All portal-owned surfaces must be responsive and usable on mobile for consultation workflows.
+- Every editable input in the portal UI must apply immediate client-side normalization/sanitization appropriate to its type before values enter local state or request payloads.
+- Frontend input protection is a UX safeguard only; every backend route must revalidate and normalize the same fields server-side before using them in queries, workflow orchestration, or downstream requests.
 
 ## Patient Contract
 

@@ -101,6 +101,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Search result streaming uses SSE, not WebSocket.
 - The minimum MVP search fields are `patient_id`, `patient_name`, `date_from`, `date_to`, and `modalities`.
 - The physician `patient_name` filter must behave as a fuzzy normalized term search, not as an exact literal match.
+- Every editable portal input must have a declared normalization/sanitization rule in the UI contract and an equivalent backend-side defensive validation rule; no handler should trust browser-normalized values alone.
 - If a remote node cannot support a given filter, the backend should still query the node with supported filters and mark the result as partially filtered.
 - The operator result list must show `PatientName`, `PatientID`, `StudyDate`, `StudyTime`, `ModalitiesInStudy`, `StudyDescription`, `source nodes`, and `cache status`.
 - Deduplicated study metadata should prefer the highest-priority remote node; cache state is shown separately from study metadata.

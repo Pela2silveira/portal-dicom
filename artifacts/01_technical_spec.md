@@ -20,6 +20,7 @@
 - La identidad visual de la landing toma como referencia la app **ANDES**.
 - El flujo visible de paciente en la landing usa `Documento + código por mail` como experiencia UI.
 - El campo `Documento` del flujo paciente debe validarse tanto en frontend como en backend con formato numérico acotado antes de tocar búsquedas, retrieve o futuros pasos de verificación.
+- Toda entrada editable del portal debe tener una regla explícita de normalización/saneamiento en frontend según su tipo (`numérico`, `texto libre acotado`, `selector`, `fecha`) y la misma semántica debe revalidarse en backend antes de usar el dato.
 - El paso `Enviar código` debe consultar backend antes del envío real del mail para distinguir tres resultados: `ready_to_send`, `missing_active_email` y `patient_not_found`.
 - Cuando `ready_to_send` y exista email registrado, el mensaje visible debe incluir el correo ofuscado, preservando sólo los primeros 3 caracteres antes de `@`.
 - El modo de auth paciente debe poder alternarse por config (`patient.fake_auth`) para conmutar rápido entre demos y validación real por correo sin cambiar endpoints ni UI principal.
