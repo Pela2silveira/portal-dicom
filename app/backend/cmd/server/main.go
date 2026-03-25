@@ -792,6 +792,7 @@ type PatientStudy struct {
 	ViewerURL          string   `json:"viewer_url,omitempty"`
 	OHIFViewerURL      string   `json:"ohif_viewer_url,omitempty"`
 	DownloadURL        string   `json:"download_url,omitempty"`
+	SourceNodeID       string   `json:"-"`
 }
 
 type PatientRetrieveRequest struct {
@@ -3326,30 +3327,101 @@ func (a *App) ensurePatientRecord(ctx context.Context, documentNumber string) (P
 }
 
 func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient PatientSummary, documentNumber string, filters PatientStudiesFilter) (PatientSummary, error) {
-	if len(a.externalConfig.PACSNodes) != 1 {
-		return patient, fmt.Errorf("patient qido flow requires exactly one pacs node, found %d", len(a.externalConfig.PACSNodes))
+	nodes := make([]PACSNodeConfig, 0, len(a.externalConfig.PACSNodes))
+	for _, node := range a.externalConfig.PACSNodes {
+		if strings.EqualFold(node.Resolved().SearchMode, "qido_rs") {
+			nodes = append(nodes, node)
+		}
 	}
-
-	node := a.externalConfig.PACSNodes[0]
-	resolved := node.Resolved()
-	if strings.ToLower(resolved.SearchMode) != "qido_rs" {
-		return patient, fmt.Errorf("patient qido flow requires qido_rs search mode, found %s", resolved.SearchMode)
+	if len(nodes) == 0 {
+		return patient, errors.New("patient qido flow requires at least one qido_rs pacs node")
 	}
+	sort.SliceStable(nodes, func(i, j int) bool {
+		left := nodes[i].Resolved()
+		right := nodes[j].Resolved()
+		if left.Priority == right.Priority {
+			return nodes[i].ID < nodes[j].ID
+		}
+		return left.Priority < right.Priority
+	})
 
 	syncStartedAt := time.Now()
 	a.log("info", "patient_qido_sync_started", map[string]any{
 		"document_number": documentNumber,
 		"patient_id":      patient.ID,
-		"node_id":         node.ID,
+		"node_count":      len(nodes),
 		"sync_filters":    filters,
 	})
 
-	remoteStudies, _, err := a.fetchPatientStudiesFromQIDO(ctx, node, patient, filters)
-	if err != nil {
-		return patient, err
+	studyByUID := make(map[string]PatientStudy)
+	successfulNodeCount := 0
+	failedNodeCount := 0
+	var lastErr error
+
+	for _, node := range nodes {
+		remoteStudies, _, err := a.fetchPatientStudiesFromQIDO(ctx, node, patient, filters)
+		if err != nil {
+			failedNodeCount++
+			lastErr = err
+			a.log("error", "patient_qido_node_failed", map[string]any{
+				"document_number": documentNumber,
+				"patient_id":      patient.ID,
+				"node_id":         node.ID,
+				"error":           err.Error(),
+			})
+			continue
+		}
+		successfulNodeCount++
+		for _, study := range remoteStudies {
+			existing, ok := studyByUID[study.StudyInstanceUID]
+			if !ok {
+				studyByUID[study.StudyInstanceUID] = study
+				continue
+			}
+			if existing.StudyDate == "" && study.StudyDate != "" {
+				existing.StudyDate = study.StudyDate
+			}
+			if existing.StudyDescription == "" && study.StudyDescription != "" {
+				existing.StudyDescription = study.StudyDescription
+			}
+			if len(existing.ModalitiesInStudy) == 0 && len(study.ModalitiesInStudy) > 0 {
+				existing.ModalitiesInStudy = study.ModalitiesInStudy
+			}
+			if existing.AuthorizationBasis == "" && study.AuthorizationBasis != "" {
+				existing.AuthorizationBasis = study.AuthorizationBasis
+			}
+			if existing.SourceNodeID == "" && study.SourceNodeID != "" {
+				existing.SourceNodeID = study.SourceNodeID
+			}
+			if existing.AvailabilityStatus != "available_local" && study.AvailabilityStatus == "available_local" {
+				existing.AvailabilityStatus = study.AvailabilityStatus
+				existing.ViewerURL = study.ViewerURL
+				existing.OHIFViewerURL = study.OHIFViewerURL
+				existing.DownloadURL = study.DownloadURL
+			}
+			studyByUID[study.StudyInstanceUID] = existing
+		}
 	}
 
-	if err := a.replacePatientStudyAccessSlice(ctx, patient.ID, node.ID, filters, remoteStudies); err != nil {
+	if successfulNodeCount == 0 {
+		if lastErr == nil {
+			lastErr = errors.New("patient qido search failed on all nodes")
+		}
+		return patient, lastErr
+	}
+
+	remoteStudies := make([]PatientStudy, 0, len(studyByUID))
+	for _, study := range studyByUID {
+		remoteStudies = append(remoteStudies, study)
+	}
+	sort.Slice(remoteStudies, func(i, j int) bool {
+		if remoteStudies[i].StudyDate == remoteStudies[j].StudyDate {
+			return remoteStudies[i].StudyInstanceUID < remoteStudies[j].StudyInstanceUID
+		}
+		return remoteStudies[i].StudyDate > remoteStudies[j].StudyDate
+	})
+
+	if err := a.replacePatientStudyAccessSlice(ctx, patient.ID, filters, remoteStudies); err != nil {
 		return patient, err
 	}
 
@@ -3363,7 +3435,9 @@ func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient Pati
 	a.log("info", "patient_qido_sync_completed", map[string]any{
 		"document_number":     documentNumber,
 		"patient_id":          patient.ID,
-		"node_id":             node.ID,
+		"node_count":          len(nodes),
+		"successful_nodes":    successfulNodeCount,
+		"failed_nodes":        failedNodeCount,
 		"studies_synced":      len(remoteStudies),
 		"studies_local_ready": availableLocalCount,
 		"duration_ms":         time.Since(syncStartedAt).Milliseconds(),
@@ -3652,7 +3726,7 @@ func (a *App) processRetrieveJob(jobID string) {
 	})
 }
 
-func (a *App) replacePatientStudyAccessSlice(ctx context.Context, patientID, sourceNodeID string, filters PatientStudiesFilter, studies []PatientStudy) error {
+func (a *App) replacePatientStudyAccessSlice(ctx context.Context, patientID string, filters PatientStudiesFilter, studies []PatientStudy) error {
 	if err := a.deletePatientStudyAccessSlice(ctx, patientID, filters); err != nil {
 		return fmt.Errorf("clear patient study access slice: %w", err)
 	}
@@ -3662,7 +3736,7 @@ func (a *App) replacePatientStudyAccessSlice(ctx context.Context, patientID, sou
 			"study_date":          study.StudyDate,
 			"study_description":   study.StudyDescription,
 			"modalities_in_study": study.ModalitiesInStudy,
-			"source_node_id":      sourceNodeID,
+			"source_node_id":      study.SourceNodeID,
 		})
 		if err != nil {
 			return fmt.Errorf("marshal patient qido study: %w", err)
@@ -4093,6 +4167,7 @@ func (a *App) fetchPatientStudiesFromQIDOIdentifier(ctx context.Context, node PA
 			ModalitiesInStudy:  dicomStringList(item, "00080061"),
 			AvailabilityStatus: "pending_retrieve",
 			AuthorizationBasis: authorizationBasis,
+			SourceNodeID:       node.ID,
 		}
 
 		cached, err := a.isStudyAvailableLocal(ctx, studyUID)

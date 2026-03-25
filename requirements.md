@@ -35,6 +35,7 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 * **Colección inicial Mongo:** el adapter temporal consulta la colección `paciente` y normaliza `_id`, `documento`, datos demográficos y el primer email activo si existe.
 * **Persistencia local de éxito:** toda resolución exitosa de identidad de paciente desde Mongo debe persistirse en Postgres (`patients` + `patient_identifiers`) para reutilización operativa posterior.
 * **Búsqueda remota por identificadores alternativos:** el flujo de búsqueda del paciente debe consultar QIDO remoto usando el DNI canónico y, cuando exista, el string del `_id` Mongo persistido como `mongo_object_id`, deduplicando resultados por `StudyInstanceUID`.
+* **Búsqueda paciente multi-PACS:** cuando existan varios nodos con `search.mode = qido_rs`, el flujo paciente debe consultar todos los nodos elegibles y consolidar los estudios en una única lista autorizada.
 * **Configuración de PACS remotos:** el sistema debe permitir cargar detalles de conexión para nodos dcm4chee remotos.
 * **Capacidades por nodo PACS:** la configuración de cada nodo debe distinguir al menos `search`, `retrieve` y `health`, para soportar combinaciones `dicomweb`, `dimse` e `hybrid`.
 * **Health remoto por capacidad:** el modo `health` de un nodo debe poder definirse al menos como `auth_qido` o `dimse_c_echo`.

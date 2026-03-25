@@ -483,6 +483,7 @@ Problema: Orthanc puede recibir instancias progresivamente.
 - `patient_identifiers`
   - identificadores alternativos resueltos desde HIS u otros dominios
   - el flujo paciente reutiliza al menos `document_number` y `mongo_object_id` para búsquedas remotas QIDO
+- el flujo paciente puede consultar múltiples nodos `qido_rs` y consolidar resultados por `StudyInstanceUID`
 - `patient_sessions`
   - estado de sesión y verificación futura de código por mail
 - `patient_study_access`
