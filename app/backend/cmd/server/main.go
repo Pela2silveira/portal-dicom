@@ -295,6 +295,7 @@ type PatientStudy struct {
 	StudyDescription   string   `json:"study_description"`
 	ModalitiesInStudy  []string `json:"modalities_in_study"`
 	AvailabilityStatus string   `json:"availability_status"`
+	RetrieveStatus     string   `json:"retrieve_status"`
 	AuthorizationBasis string   `json:"authorization_basis"`
 	ViewerURL          string   `json:"viewer_url,omitempty"`
 }
@@ -2788,11 +2789,19 @@ func (a *App) listPatientStudies(ctx context.Context, patientID string, filters 
 			StudyDescription:   source.StudyDescription,
 			ModalitiesInStudy:  source.ModalitiesInStudy,
 			AvailabilityStatus: availabilityStatus,
+			RetrieveStatus:     "idle",
 			AuthorizationBasis: authorizationBasis,
 		}
+		cacheStatus := "not_local"
 		if availabilityStatus == "available_local" {
-			study.ViewerURL = buildOHIFViewerURL(studyUID)
+			cacheStatus = "local_complete"
 		}
+		_, retrieveStatus, viewerURL, err := a.getStudyOperationalState(ctx, studyUID, cacheStatus, study.RetrieveStatus)
+		if err != nil {
+			return nil, fmt.Errorf("resolve patient study operational state for %s: %w", studyUID, err)
+		}
+		study.RetrieveStatus = retrieveStatus
+		study.ViewerURL = viewerURL
 
 		studies = append(studies, study)
 	}

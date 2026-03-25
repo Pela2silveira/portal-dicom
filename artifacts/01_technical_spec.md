@@ -192,6 +192,7 @@ Proveer un portal operativo mínimo capaz de:
 - Orthanc ejecuta `C-GET` contra el PACS remoto configurado.
 - El backend hace polling sobre Orthanc hasta encontrar el `StudyInstanceUID`, marca `patient_study_access.availability_status=available_local` y recién entonces habilita OHIF.
 - La llamada HTTP a Orthanc para disparar `C-GET` no debe usar el timeout corto general del backend; debe respetar el deadline específico del request de retrieve.
+- `GET /api/patient/studies` debe devolver `retrieve_status` por estudio para que la UI diferencie un QIDO en curso de una recuperación `C-GET` en curso.
 
 ### 5.3 Visualizar (OHIF)
 1. UI abre URL de OHIF con `StudyInstanceUID` o con route de OHIF configurada.
