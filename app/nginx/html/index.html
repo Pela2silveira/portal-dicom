@@ -1784,6 +1784,44 @@
         return status || "Estado desconocido";
       }
 
+      function modalityLabel(modality) {
+        const code = (modality || "").trim().toUpperCase();
+        const labels = {
+          CR: "Radiografia computada",
+          CT: "Tomografia computada",
+          DOC: "Documento",
+          DX: "Radiografia digital",
+          KO: "Objetos clave",
+          MG: "Mamografia",
+          MR: "Resonancia magnetica",
+          NM: "Medicina nuclear",
+          OT: "Otros estudios",
+          PR: "Estado de presentacion",
+          PT: "Tomografia por emision de positrones",
+          PX: "Radiografia panoramica",
+          RF: "Radioscopia",
+          SC: "Captura secundaria",
+          SR: "Informe estructurado",
+          US: "Ecografia",
+          XA: "Angiografia por rayos X"
+        };
+
+        if (!code) {
+          return "Sin modalidad";
+        }
+        if (!labels[code]) {
+          return code;
+        }
+        if (code === "OT") {
+          return labels[code];
+        }
+        return labels[code] + " (" + code + ")";
+      }
+
+      function formatModalityList(modalities) {
+        return (modalities || []).map(modality => modalityLabel(modality)).join(", ");
+      }
+
       function patientDateRangeForPeriod(period) {
         if (!period) {
           return {};
@@ -2073,12 +2111,12 @@
           '<div class="study-groups">' +
           Array.from(groupedStudies.entries())
             .map(([groupKey, studies]) => {
-              const groupLabel = groupKey === "OT" ? "Otros estudios" : "Modalidad " + escapeHTML(groupKey);
+              const groupLabel = modalityLabel(groupKey);
 
               const items = studies
                 .map(study => {
                   const modalities = (study.modalities_in_study || [])
-                    .map(modality => '<div class="chip info">' + escapeHTML(modality) + "</div>")
+                    .map(modality => '<div class="chip info">' + escapeHTML(modalityLabel(modality)) + "</div>")
                     .join("");
 
                   const action = study.viewer_url
@@ -2177,7 +2215,7 @@
         physicianResultList.innerHTML = payload.results
           .map(result => {
             const modalities = (result.modalities || [])
-              .map(modality => '<div class="chip info">' + escapeHTML(modality) + "</div>")
+              .map(modality => '<div class="chip info">' + escapeHTML(modalityLabel(modality)) + "</div>")
               .join("");
 
             const action = result.viewer_url
@@ -2211,7 +2249,7 @@
                 '</div>' +
                 '<div class="meta-grid">' +
                   '<div><span>Paciente</span><strong>' + escapeHTML(result.patient_id) + '</strong></div>' +
-                  '<div><span>Modalidades</span><strong>' + escapeHTML((result.modalities || []).join(", ")) + '</strong></div>' +
+                  '<div><span>Modalidades</span><strong>' + escapeHTML(formatModalityList(result.modalities || [])) + '</strong></div>' +
                   '<div><span>Nodos remotos</span><strong>' + escapeHTML((result.locations || []).join(", ")) + '</strong></div>' +
                   '<div><span>Cache local</span><strong>' + escapeHTML(labelForCacheStatus(result.cache_status)) + '</strong></div>' +
                 '</div>' +
