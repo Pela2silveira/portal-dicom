@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/go-ldap/ldap/v3"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -103,6 +105,8 @@ type RetrieveJobEvent struct {
 var ErrPatientIdentityNotFound = errors.New("patient identity not found")
 var ErrProfessionalIdentityNotFound = errors.New("professional identity not found")
 var ErrProfessionalNotLicensed = errors.New("professional not licensed")
+var ErrProfessionalInvalidCredentials = errors.New("professional invalid credentials")
+var ErrProfessionalAuthUnavailable = errors.New("professional auth unavailable")
 
 type PatientIdentitySource interface {
 	ProviderName() string
@@ -2216,16 +2220,30 @@ func (a *App) handlePhysicianLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "username is required", http.StatusBadRequest)
 		return
 	}
-	if a.externalConfig != nil && !a.externalConfig.Professional.FakeAuth {
-		writeJSON(w, http.StatusNotImplemented, PhysicianLoginResponse{
-			Status:  "provider_not_implemented",
-			Message: "La autenticación institucional LDAP/MFA aún no está implementada en este entorno.",
-		})
-		return
-	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
+
+	if a.externalConfig != nil && !a.externalConfig.Professional.FakeAuth {
+		if err := authenticateProfessionalLDAP(ctx, reqBody.Username, reqBody.Password); err != nil {
+			if errors.Is(err, ErrProfessionalInvalidCredentials) {
+				writeJSON(w, http.StatusUnauthorized, PhysicianLoginResponse{
+					Status:  "invalid_credentials",
+					Message: "Usuario o contraseña inválidos.",
+				})
+				return
+			}
+			a.log("error", "physician_ldap_auth_failed", map[string]any{
+				"username": reqBody.Username,
+				"error":    err.Error(),
+			})
+			writeJSON(w, http.StatusBadGateway, PhysicianLoginResponse{
+				Status:  "provider_unavailable",
+				Message: "No se pudo validar la autenticación institucional.",
+			})
+			return
+		}
+	}
 
 	physician, err := a.ensurePhysicianRecord(ctx, reqBody.Username)
 		if err != nil {
@@ -3037,6 +3055,39 @@ func patientSendCodeReadyMessage(maskedEmail string, demo bool) string {
 		return "Modo demo activo. Se ha enviado el código a " + maskedEmail + "."
 	}
 	return "Se ha enviado el código a " + maskedEmail + "."
+}
+
+func authenticateProfessionalLDAP(_ context.Context, username, password string) error {
+	ldapHost := strings.TrimSpace(os.Getenv("LDAP_HOST"))
+	ldapPort := strings.TrimSpace(os.Getenv("LDAP_PORT"))
+	ldapOU := strings.TrimSpace(os.Getenv("LDAP_OU"))
+	if ldapHost == "" || ldapPort == "" || ldapOU == "" {
+		return fmt.Errorf("%w: missing LDAP_HOST, LDAP_PORT, or LDAP_OU", ErrProfessionalAuthUnavailable)
+	}
+	if strings.TrimSpace(password) == "" {
+		return ErrProfessionalInvalidCredentials
+	}
+
+	dialer := &net.Dialer{Timeout: 4 * time.Second}
+	conn, err := ldap.DialURL("ldap://"+net.JoinHostPort(ldapHost, ldapPort), ldap.DialWithDialer(dialer))
+	if err != nil {
+		return fmt.Errorf("%w: dial ldap: %v", ErrProfessionalAuthUnavailable, err)
+	}
+	defer conn.Close()
+
+	conn.SetTimeout(4 * time.Second)
+	dn := "uid=" + strings.TrimSpace(username) + "," + ldapOU
+	if err := conn.Bind(dn, password); err != nil {
+		var ldapErr *ldap.Error
+		if errors.As(err, &ldapErr) {
+			if ldapErr.ResultCode == ldap.LDAPResultInvalidCredentials || ldapErr.ResultCode == ldap.LDAPResultNoSuchObject {
+				return ErrProfessionalInvalidCredentials
+			}
+		}
+		return fmt.Errorf("%w: bind ldap: %v", ErrProfessionalAuthUnavailable, err)
+	}
+
+	return nil
 }
 
 func maskPatientEmail(email string) string {

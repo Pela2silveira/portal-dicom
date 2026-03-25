@@ -64,6 +64,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - OHIF root (`/ohif/`) must not be exposed as a navigable entrypoint; Nginx should redirect it back to the landing and keep only study-specific viewer URLs as supported entrypoints.
 - Physician access must use a portal-owned search and workflow panel.
 - Professional identity may be resolved temporarily from Mongo collection `profesional` when `his.provider = his_mongo_direct`.
+- The first real professional auth slice uses insecure direct LDAP bind with `uid=<dni>,<LDAP_OU>` from env vars `LDAP_HOST`, `LDAP_PORT`, and `LDAP_OU`; Mongo `profesional` remains the authorization source after successful bind.
 - Professional access is allowed only if the Mongo document exists and `habilitado == true`; active professional registration under `formacionGrado[].matriculacion[]` with `baja.fecha == null` remains required except for explicit DNI/username entries listed in `professional.license_exceptions`.
 - The professional summary shown in the portal must expose `nombre y apellido`, `DNI`, and `matrícula`.
 - Physician workflow should be asynchronous and must expose remote PACS context, local cache presence, and retrieve state before opening Stone or OHIF.

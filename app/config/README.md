@@ -142,6 +142,19 @@ Fields:
 - `fake_auth`: when `true`, professional access uses the current transitional validation flow instead of real LDAP/MFA
 - `initial_cache_period`: controls the no-filter result window loaded after professional login from Orthanc local cache
 - `weekly_download_limit`: maximum number of full-study DICOM ZIP downloads a professional can trigger during a calendar week
+- `license_exceptions`: optional list of DNI/username entries that may access the portal without active matrícula, while still requiring `habilitado == true`
+
+When `fake_auth` is `false`, the current implementation expects:
+
+- `LDAP_HOST`
+- `LDAP_PORT`
+- `LDAP_OU`
+
+Current LDAP behavior:
+
+- insecure `ldap://` connection
+- direct bind using `uid=<dni>,<LDAP_OU>`
+- Mongo `profesional` remains the authorization source for `habilitado`, matrícula, and displayed identity
 
 Accepted `initial_cache_period` values:
 
@@ -159,7 +172,8 @@ Recommended default:
 {
   "fake_auth": true,
   "initial_cache_period": "current_week",
-  "weekly_download_limit": 100
+  "weekly_download_limit": 100,
+  "license_exceptions": []
 }
 ```
 
