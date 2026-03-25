@@ -49,13 +49,13 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Patient access must not rely on the native OHIF study list.
 - The patient surface now separates search orchestration from result reads: `POST /api/patient/search` enqueues background QIDO work, `GET /api/patient/search?request_id=...` reports worker state, and `GET /api/patient/studies` remains a read contract over cached rows plus current sync state.
 - The patient surface now exposes a manual `Retrieve` action backed by `POST /api/patient/retrieve`.
-- The current patient retrieve implementation uses Orthanc REST to `PUT /modalities/{id}` and `POST /modalities/{id}/get`, polling Orthanc until the study becomes local.
+- The current patient retrieve implementation enqueues a background retrieve job, then a Go worker uses Orthanc REST to `PUT /modalities/{id}` and `POST /modalities/{id}/get`, polling Orthanc until the study becomes local.
 - The current viewer handoff must open OHIF with a specific `StudyInstanceUID` instead of `/ohif/` root, so patient access does not land on the general study list after retrieve.
 - OHIF root (`/ohif/`) must not be exposed as a navigable entrypoint; Nginx should redirect it back to the landing and keep only study-specific viewer URLs as supported entrypoints.
 - Physician access must use a portal-owned search and workflow panel.
 - Physician workflow should be asynchronous and must expose remote PACS context, local cache presence, and retrieve state before opening OHIF.
 - The first functional physician panel is now backed by `GET /api/physician/results`, with DB-seeded recent-query rows per username until real federated search is implemented.
-- The physician panel now exposes a first real `Retrieve` action backed by `POST /api/physician/retrieve`, reusing Orthanc `C-GET` and recalculating local state from `cached_studies`, `retrieve_jobs`, and Orthanc.
+- The physician panel now exposes a first real `Retrieve` action backed by `POST /api/physician/retrieve`, which enqueues a background job reusing Orthanc `C-GET` and recalculates local state from `cached_studies`, `retrieve_jobs`, and Orthanc.
 - The current physician panel now switches to real remote QIDO search whenever the operator applies filters; only the no-filter state keeps using persisted recent queries as a fallback.
 - The database must cache patient identity anchors, alternate identifiers from HIS, known authorized study UIDs, physician recent searches, and future session state.
 - Physician credentials must not be stored in clear text; only session state, auth events, and encrypted provider-issued auth material are allowed.

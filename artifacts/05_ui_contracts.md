@@ -154,7 +154,8 @@ Allow a patient to see only their authorized studies and open one selected study
   - returns the current worker status for the patient search
 - `POST /api/patient/retrieve`
   - receives `document_number` + `study_instance_uid`
-  - triggers PACS-to-PACS retrieve through Orthanc REST
+  - enqueues a background retrieve job that triggers PACS-to-PACS retrieve through Orthanc REST
+  - the patient list refreshes while `retrieve_status` stays `queued|running`
   - updates local availability before the patient can open OHIF
 - `GET /api/patient/studies/:studyInstanceUID/access`
   - returns whether the session can open the study and the viewer route or token material needed by the final design

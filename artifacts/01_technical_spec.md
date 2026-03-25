@@ -188,9 +188,9 @@ Proveer un portal operativo mínimo capaz de:
 
 **Primer slice implementado (paciente)**
 - La superficie paciente expone `POST /api/patient/retrieve`.
-- El backend registra el `retrieve_job`, asegura la modalidad remota en Orthanc y dispara `POST /modalities/{id}/get`.
+- El backend registra el `retrieve_job` y responde `queued`; luego un worker Go asegura la modalidad remota en Orthanc y dispara `POST /modalities/{id}/get`.
 - Orthanc ejecuta `C-GET` contra el PACS remoto configurado.
-- El backend hace polling sobre Orthanc hasta encontrar el `StudyInstanceUID`, marca `patient_study_access.availability_status=available_local` y recién entonces habilita OHIF.
+- El worker hace polling sobre Orthanc hasta encontrar el `StudyInstanceUID`, marca `patient_study_access.availability_status=available_local` y recién entonces habilita OHIF.
 - La llamada HTTP a Orthanc para disparar `C-GET` no debe usar el timeout corto general del backend; debe respetar el deadline específico del request de retrieve.
 - `GET /api/patient/studies` debe devolver `retrieve_status` por estudio para que la UI diferencie un QIDO en curso de una recuperación `C-GET` en curso.
 

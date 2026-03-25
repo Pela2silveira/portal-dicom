@@ -47,6 +47,7 @@ type App struct {
 	configLoadedAt time.Time
 	identitySource PatientIdentitySource
 	patientSearchQueue chan string
+	retrieveQueue chan string
 }
 
 var ErrPatientIdentityNotFound = errors.New("patient identity not found")
@@ -525,9 +526,11 @@ func main() {
 		configLoadedAt: time.Now().UTC(),
 		identitySource: buildPatientIdentitySource(*externalConfig),
 		patientSearchQueue: make(chan string, 32),
+		retrieveQueue:      make(chan string, 32),
 	}
 
 	app.startPatientSearchWorker()
+	app.startRetrieveWorker()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", app.handleHealth)
@@ -682,6 +685,14 @@ func (a *App) startPatientSearchWorker() {
 	}()
 }
 
+func (a *App) startRetrieveWorker() {
+	go func() {
+		for jobID := range a.retrieveQueue {
+			a.processRetrieveJob(jobID)
+		}
+	}()
+}
+
 func (a *App) recoverQueuedPatientSearches(ctx context.Context) error {
 	rows, err := a.db.QueryContext(ctx, `
 		SELECT id::text
@@ -708,6 +719,10 @@ func (a *App) recoverQueuedPatientSearches(ctx context.Context) error {
 
 func (a *App) enqueuePatientSearch(requestID string) {
 	a.patientSearchQueue <- requestID
+}
+
+func (a *App) enqueueRetrieveJob(jobID string) {
+	a.retrieveQueue <- jobID
 }
 
 func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
@@ -1093,7 +1108,7 @@ func (a *App) handlePatientRetrieve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
 	patient, err := a.ensurePatientRecord(ctx, reqBody.DocumentNumber)
@@ -1106,7 +1121,7 @@ func (a *App) handlePatientRetrieve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := a.performPatientRetrieve(ctx, patient, reqBody.StudyInstanceUID)
+	resp, err := a.queuePatientRetrieve(ctx, patient, reqBody.StudyInstanceUID)
 	if err != nil {
 		a.log("error", "patient_retrieve_failed", map[string]any{
 			"document_number":   reqBody.DocumentNumber,
@@ -1201,7 +1216,7 @@ func (a *App) handlePhysicianRetrieve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
 	physician, err := a.ensurePhysicianSeed(ctx, reqBody.Username)
@@ -1214,7 +1229,7 @@ func (a *App) handlePhysicianRetrieve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := a.performPhysicianRetrieve(ctx, physician, reqBody.StudyInstanceUID)
+	resp, err := a.queuePhysicianRetrieve(ctx, physician, reqBody.StudyInstanceUID)
 	if err != nil {
 		a.log("error", "physician_retrieve_failed", map[string]any{
 			"username":          reqBody.Username,
@@ -1702,6 +1717,119 @@ func (a *App) processPatientSearchRequest(requestID string) {
 	`, requestID, latency)
 }
 
+func (a *App) processRetrieveJob(jobID string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+
+	var (
+		studyInstanceUID string
+		sourceNodeCode   string
+		actorType        string
+		actorID          string
+		status           string
+	)
+	err := a.db.QueryRowContext(ctx, `
+		SELECT
+			rj.study_instance_uid,
+			COALESCE(pn.code, ''),
+			COALESCE(rj.requested_by_actor_type, ''),
+			COALESCE(rj.requested_by_actor_id::text, ''),
+			rj.status
+		FROM retrieve_jobs rj
+		LEFT JOIN pacs_nodes pn ON pn.id = rj.source_node_id
+		WHERE rj.id = $1::uuid
+	`, jobID).Scan(&studyInstanceUID, &sourceNodeCode, &actorType, &actorID, &status)
+	if err != nil {
+		a.log("error", "retrieve_job_load_failed", map[string]any{
+			"job_id": jobID,
+			"error":  err.Error(),
+		})
+		return
+	}
+	if status == "done" {
+		return
+	}
+
+	if err := a.updateRetrieveJobStatus(ctx, jobID, "running", "", "", 0, true); err != nil {
+		a.log("error", "retrieve_job_mark_running_failed", map[string]any{
+			"job_id": jobID,
+			"error":  err.Error(),
+		})
+		return
+	}
+
+	node, err := a.getConfiguredNode(sourceNodeCode)
+	if err != nil {
+		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), "", 0, false)
+		a.log("error", "retrieve_job_node_resolve_failed", map[string]any{
+			"job_id":         jobID,
+			"source_node_id": sourceNodeCode,
+			"error":          err.Error(),
+		})
+		return
+	}
+
+	startedAt := time.Now()
+	a.log("info", "retrieve_job_started", map[string]any{
+		"job_id":             jobID,
+		"study_instance_uid": studyInstanceUID,
+		"source_node_id":     sourceNodeCode,
+		"actor_type":         actorType,
+		"actor_id":           actorID,
+	})
+
+	if err := a.ensureOrthancModality(ctx, node); err != nil {
+		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), "", 0, false)
+		return
+	}
+
+	if err := a.startOrthancCGet(ctx, node, studyInstanceUID); err != nil {
+		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), "", 0, false)
+		return
+	}
+
+	localReady, orthancStudyID, err := a.waitForStudyInOrthanc(ctx, studyInstanceUID, 2*time.Second, 20*time.Second)
+	if err != nil {
+		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), orthancStudyID, 0, false)
+		return
+	}
+	if !localReady {
+		err := errors.New("study not available in orthanc after c-get")
+		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), orthancStudyID, 0, false)
+		return
+	}
+
+	if actorType == "patient" && actorID != "" {
+		if err := a.markPatientStudyAvailableLocal(ctx, actorID, studyInstanceUID, orthancStudyID, sourceNodeCode); err != nil {
+			_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), orthancStudyID, 0, false)
+			return
+		}
+	}
+
+	if err := a.upsertCachedStudy(ctx, studyInstanceUID, orthancStudyID, []string{sourceNodeCode}, "local_complete"); err != nil {
+		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), orthancStudyID, 0, false)
+		return
+	}
+
+	if err := a.updateRetrieveJobStatus(ctx, jobID, "done", "", orthancStudyID, 0, false); err != nil {
+		a.log("error", "retrieve_job_mark_done_failed", map[string]any{
+			"job_id": jobID,
+			"error":  err.Error(),
+		})
+		return
+	}
+
+	a.log("info", "retrieve_job_completed", map[string]any{
+		"job_id":            jobID,
+		"study_instance_uid": studyInstanceUID,
+		"source_node_id":    sourceNodeCode,
+		"actor_type":        actorType,
+		"actor_id":          actorID,
+		"orthanc_study_id":  orthancStudyID,
+		"duration_ms":       time.Since(startedAt).Milliseconds(),
+	})
+}
+
 func (a *App) replacePatientStudyAccessSlice(ctx context.Context, patientID, sourceNodeID string, filters PatientStudiesFilter, studies []PatientStudy) error {
 	if err := a.deletePatientStudyAccessSlice(ctx, patientID, filters); err != nil {
 		return fmt.Errorf("clear patient study access slice: %w", err)
@@ -1781,8 +1909,8 @@ func (a *App) deletePatientStudyAccessSlice(ctx context.Context, patientID strin
 	return err
 }
 
-func (a *App) performPatientRetrieve(ctx context.Context, patient PatientSummary, studyInstanceUID string) (PatientRetrieveResponse, error) {
-	node, sourceNodeID, err := a.getPatientSourceNode(ctx, patient.ID, studyInstanceUID)
+func (a *App) queuePatientRetrieve(ctx context.Context, patient PatientSummary, studyInstanceUID string) (PatientRetrieveResponse, error) {
+	_, sourceNodeID, err := a.getPatientSourceNode(ctx, patient.ID, studyInstanceUID)
 	if err != nil {
 		return PatientRetrieveResponse{}, err
 	}
@@ -1791,73 +1919,23 @@ func (a *App) performPatientRetrieve(ctx context.Context, patient PatientSummary
 	if err != nil {
 		return PatientRetrieveResponse{}, fmt.Errorf("insert retrieve job: %w", err)
 	}
-
-	startedAt := time.Now()
-	if err := a.updateRetrieveJobStatus(ctx, jobID, "running", "", "", 0, true); err != nil {
-		return PatientRetrieveResponse{}, fmt.Errorf("mark retrieve running: %w", err)
-	}
-
-	a.log("info", "patient_retrieve_started", map[string]any{
+	a.log("info", "patient_retrieve_queued", map[string]any{
 		"patient_id":         patient.ID,
 		"study_instance_uid": studyInstanceUID,
 		"source_node_id":     sourceNodeID,
 		"job_id":             jobID,
 	})
-
-	if err := a.ensureOrthancModality(ctx, node); err != nil {
-		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), "", 0, false)
-		return PatientRetrieveResponse{}, fmt.Errorf("ensure orthanc modality: %w", err)
-	}
-
-	if err := a.startOrthancCGet(ctx, node, studyInstanceUID); err != nil {
-		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), "", 0, false)
-		return PatientRetrieveResponse{}, fmt.Errorf("orthanc c-get failed: %w", err)
-	}
-
-	localReady, orthancStudyID, err := a.waitForStudyInOrthanc(ctx, studyInstanceUID, 2*time.Second, 20*time.Second)
-	if err != nil {
-		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), orthancStudyID, 0, false)
-		return PatientRetrieveResponse{}, fmt.Errorf("wait for retrieved study: %w", err)
-	}
-	if !localReady {
-		err := errors.New("study not available in orthanc after c-get")
-		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), orthancStudyID, 0, false)
-		return PatientRetrieveResponse{}, err
-	}
-
-	if err := a.markPatientStudyAvailableLocal(ctx, patient.ID, studyInstanceUID, orthancStudyID, sourceNodeID); err != nil {
-		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), orthancStudyID, 0, false)
-		return PatientRetrieveResponse{}, fmt.Errorf("mark patient study available: %w", err)
-	}
-
-	if err := a.upsertCachedStudy(ctx, studyInstanceUID, orthancStudyID, []string{sourceNodeID}, "local_complete"); err != nil {
-		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), orthancStudyID, 0, false)
-		return PatientRetrieveResponse{}, fmt.Errorf("upsert cached study: %w", err)
-	}
-
-	if err := a.updateRetrieveJobStatus(ctx, jobID, "done", "", orthancStudyID, 0, false); err != nil {
-		return PatientRetrieveResponse{}, fmt.Errorf("mark retrieve done: %w", err)
-	}
-
-	a.log("info", "patient_retrieve_completed", map[string]any{
-		"patient_id":          patient.ID,
-		"study_instance_uid":  studyInstanceUID,
-		"source_node_id":      sourceNodeID,
-		"job_id":              jobID,
-		"orthanc_study_id":    orthancStudyID,
-		"duration_ms":         time.Since(startedAt).Milliseconds(),
-	})
+	a.enqueueRetrieveJob(jobID)
 
 	return PatientRetrieveResponse{
 		JobID:            jobID,
 		StudyInstanceUID: studyInstanceUID,
-		Status:           "done",
-		ViewerURL:        buildOHIFViewerURL(studyInstanceUID),
+		Status:           "queued",
 	}, nil
 }
 
-func (a *App) performPhysicianRetrieve(ctx context.Context, physician PhysicianSummary, studyInstanceUID string) (PhysicianRetrieveResponse, error) {
-	node, sourceNodeID, err := a.getPhysicianSourceNode(ctx, studyInstanceUID)
+func (a *App) queuePhysicianRetrieve(ctx context.Context, physician PhysicianSummary, studyInstanceUID string) (PhysicianRetrieveResponse, error) {
+	_, sourceNodeID, err := a.getPhysicianSourceNode(ctx, studyInstanceUID)
 	if err != nil {
 		return PhysicianRetrieveResponse{}, err
 	}
@@ -1866,63 +1944,18 @@ func (a *App) performPhysicianRetrieve(ctx context.Context, physician PhysicianS
 	if err != nil {
 		return PhysicianRetrieveResponse{}, fmt.Errorf("insert retrieve job: %w", err)
 	}
-
-	startedAt := time.Now()
-	if err := a.updateRetrieveJobStatus(ctx, jobID, "running", "", "", 0, true); err != nil {
-		return PhysicianRetrieveResponse{}, fmt.Errorf("mark retrieve running: %w", err)
-	}
-
-	a.log("info", "physician_retrieve_started", map[string]any{
+	a.log("info", "physician_retrieve_queued", map[string]any{
 		"physician_id":       physician.ID,
 		"study_instance_uid": studyInstanceUID,
 		"source_node_id":     sourceNodeID,
 		"job_id":             jobID,
 	})
-
-	if err := a.ensureOrthancModality(ctx, node); err != nil {
-		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), "", 0, false)
-		return PhysicianRetrieveResponse{}, fmt.Errorf("ensure orthanc modality: %w", err)
-	}
-
-	if err := a.startOrthancCGet(ctx, node, studyInstanceUID); err != nil {
-		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), "", 0, false)
-		return PhysicianRetrieveResponse{}, fmt.Errorf("orthanc c-get failed: %w", err)
-	}
-
-	localReady, orthancStudyID, err := a.waitForStudyInOrthanc(ctx, studyInstanceUID, 2*time.Second, 20*time.Second)
-	if err != nil {
-		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), orthancStudyID, 0, false)
-		return PhysicianRetrieveResponse{}, fmt.Errorf("wait for retrieved study: %w", err)
-	}
-	if !localReady {
-		err := errors.New("study not available in orthanc after c-get")
-		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), orthancStudyID, 0, false)
-		return PhysicianRetrieveResponse{}, err
-	}
-
-	if err := a.upsertCachedStudy(ctx, studyInstanceUID, orthancStudyID, []string{sourceNodeID}, "local_complete"); err != nil {
-		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), orthancStudyID, 0, false)
-		return PhysicianRetrieveResponse{}, fmt.Errorf("upsert cached study: %w", err)
-	}
-
-	if err := a.updateRetrieveJobStatus(ctx, jobID, "done", "", orthancStudyID, 0, false); err != nil {
-		return PhysicianRetrieveResponse{}, fmt.Errorf("mark retrieve done: %w", err)
-	}
-
-	a.log("info", "physician_retrieve_completed", map[string]any{
-		"physician_id":      physician.ID,
-		"study_instance_uid": studyInstanceUID,
-		"source_node_id":    sourceNodeID,
-		"job_id":            jobID,
-		"orthanc_study_id":  orthancStudyID,
-		"duration_ms":       time.Since(startedAt).Milliseconds(),
-	})
+	a.enqueueRetrieveJob(jobID)
 
 	return PhysicianRetrieveResponse{
 		JobID:            jobID,
 		StudyInstanceUID: studyInstanceUID,
-		Status:           "done",
-		ViewerURL:        buildOHIFViewerURL(studyInstanceUID),
+		Status:           "queued",
 	}, nil
 }
 
@@ -2219,6 +2252,15 @@ func (a *App) getPhysicianSourceNode(ctx context.Context, studyInstanceUID strin
 		return a.externalConfig.PACSNodes[0], a.externalConfig.PACSNodes[0].ID, nil
 	}
 	return PACSNodeConfig{}, "", fmt.Errorf("source node not resolved for physician study %q", studyInstanceUID)
+}
+
+func (a *App) getConfiguredNode(nodeID string) (PACSNodeConfig, error) {
+	for _, node := range a.externalConfig.PACSNodes {
+		if node.ID == nodeID {
+			return node, nil
+		}
+	}
+	return PACSNodeConfig{}, fmt.Errorf("configured PACS node %q not found", nodeID)
 }
 
 func (a *App) getStudyOperationalState(ctx context.Context, studyUID string, fallbackCacheStatus, fallbackRetrieveStatus string) (string, string, string, error) {
