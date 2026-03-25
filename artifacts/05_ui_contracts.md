@@ -196,10 +196,10 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 
 ### Screen Model
 
-- Search filter bar
+- Compact professional data summary at the top of the page
+- Search filters in a dedicated block below the professional data section
 - Search execution status
-- Federated results table
-- Context panels that anticipate future capabilities: multi-node search, operational state, and asynchronous follow-up
+- Federated results table as the primary visual element
 - Per-study actions
 - Optional retrieve job activity summary
 

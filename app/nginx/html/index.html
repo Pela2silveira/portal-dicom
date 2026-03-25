@@ -560,6 +560,10 @@
         gap: 12px;
       }
 
+      .filter-grid-physician {
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      }
+
       .patient-filter-layout {
         display: grid;
         gap: 12px;
@@ -764,6 +768,10 @@
         grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
       }
 
+      .summary-grid-compact {
+        grid-template-columns: minmax(220px, 2fr) repeat(2, minmax(140px, 1fr));
+      }
+
       .summary-item {
         border: 1px solid var(--line);
         background: var(--surface-soft);
@@ -940,6 +948,10 @@
           grid-template-columns: repeat(4, minmax(0, 1fr));
         }
 
+        .filter-grid-physician {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+
         .meta-grid {
           grid-template-columns: repeat(4, minmax(0, 1fr));
         }
@@ -953,6 +965,10 @@
 
         .summary-item.summary-item-wide {
           grid-column: auto;
+        }
+
+        .summary-grid-compact {
+          grid-template-columns: minmax(260px, 2.1fr) repeat(2, minmax(120px, 0.9fr));
         }
       }
 
@@ -1256,50 +1272,67 @@
         <section class="panel">
           <div class="workspace-header">
             <div>
-              <p class="eyebrow">Superficie Profesional</p>
-              <h3>Búsqueda federada y retrieve</h3>
+              <p class="eyebrow">Profesional</p>
+              <h3>Resultados y recuperación</h3>
             </div>
             <button class="action action-secondary" type="button" data-reset>Salir</button>
           </div>
-          <div class="workspace-grid">
+          <div class="workspace-stack">
+            <section class="workspace-card workspace-card-primary">
+              <h4>Datos del profesional</h4>
+              <div class="summary-grid summary-grid-compact">
+                <div class="summary-item summary-item-wide">
+                  <span>Nombre y apellido</span>
+                  <strong id="physician-full-name-value">Sin profesional cargado</strong>
+                </div>
+                <div class="summary-item">
+                  <span>Usuario</span>
+                  <strong id="physician-username-value">-</strong>
+                </div>
+                <div class="summary-item">
+                  <span>DNI</span>
+                  <strong id="physician-dni-value">-</strong>
+                </div>
+              </div>
+            </section>
+
             <section class="workspace-card">
-              <h4>Panel de consulta<span id="physician-summary">Sin profesional cargado</span></h4>
-              <p class="section-copy">La vista profesional concentra filtros, estado federado por estudio y acciones de recuperacion antes de abrir el visor.</p>
-              <div class="filter-grid">
+              <h4>Filtros</h4>
+              <div class="filter-grid filter-grid-physician">
                 <div class="field-group">
                   <label for="physician-search-patient">Paciente</label>
                   <input id="physician-search-patient" type="text" value="">
                 </div>
                 <div class="field-group">
-                  <label for="physician-search-from">Desde</label>
+                  <label for="physician-search-from">Fecha desde</label>
                   <input id="physician-search-from" type="date">
                 </div>
                 <div class="field-group">
-                  <label for="physician-search-to">Hasta</label>
+                  <label for="physician-search-to">Fecha hasta</label>
                   <input id="physician-search-to" type="date">
                 </div>
                 <div class="field-group">
-                  <label for="physician-search-modality">Modalidad</label>
-                  <input id="physician-search-modality" type="text" value="">
+                  <label for="physician-search-modality">Tipo de Estudio</label>
+                  <select id="physician-search-modality">
+                    <option value="">Todas</option>
+                    <option value="CR">Radiografia computada (CR)</option>
+                    <option value="CT">Tomografia computada (CT)</option>
+                    <option value="DX">Radiografia digital (DX)</option>
+                    <option value="MG">Mamografia (MG)</option>
+                    <option value="MR">Resonancia magnetica (MR)</option>
+                    <option value="US">Ecografia (US)</option>
+                    <option value="XA">Angiografia (XA)</option>
+                    <option value="OT">Otros estudios (OT)</option>
+                  </select>
                 </div>
               </div>
-              <div class="inline-actions">
-                <button class="action action-secondary" id="physician-apply-filters" type="button">Aplicar búsqueda</button>
-              </div>
-              <div class="info-stack">
-                <div class="info-panel">
-                  <strong>Busqueda y disponibilidad</strong>
-                  <span>Con filtros activos, el portal consulta el nodo PACS configurado y actualiza el estado local de cada estudio.</span>
-                </div>
-                <div class="info-panel">
-                  <strong>Capas que se incorporan despues</strong>
-                  <span>Busqueda multi nodo, contexto clinico, prioridad por sede, auditoria avanzada y seguimiento asincronico de jobs.</span>
-                </div>
+              <div class="filter-action">
+                <button class="action action-secondary" id="physician-apply-filters" type="button">Buscar</button>
               </div>
             </section>
-            <section class="workspace-card">
+
+            <section class="workspace-card workspace-card-primary">
               <h4>Resultados</h4>
-              <div class="workspace-note">Esta grilla ya diferencia estudios listos para visualizar, estudios pendientes de recuperar y resultados que requieren reintento u otra accion operativa.</div>
               <div class="result-list" id="physician-result-list">
                 <div class="empty-state">Ingrese por el flujo profesional para cargar resultados desde la API del portal.</div>
               </div>
@@ -1362,7 +1395,9 @@
       const physicianSearchModality = document.getElementById("physician-search-modality");
       const physicianApplyFiltersButton = document.getElementById("physician-apply-filters");
       const physicianResultList = document.getElementById("physician-result-list");
-      const physicianSummary = document.getElementById("physician-summary");
+      const physicianFullNameValue = document.getElementById("physician-full-name-value");
+      const physicianUsernameValue = document.getElementById("physician-username-value");
+      const physicianDniValue = document.getElementById("physician-dni-value");
       const physicianLoginButton = document.querySelector('[data-flow="physician"] .action-primary');
       const physicianNote = document.querySelector('[data-flow="physician"] .note');
       const resetButtons = document.querySelectorAll("[data-reset]");
@@ -1871,8 +1906,9 @@
       }
 
       function renderPhysicianResults(payload) {
-        physicianSummary.textContent =
-          payload.physician.full_name + " · DNI " + payload.physician.dni;
+        physicianFullNameValue.textContent = payload.physician.full_name || "-";
+        physicianUsernameValue.textContent = payload.physician.username || "-";
+        physicianDniValue.textContent = payload.physician.dni || "-";
 
         if (!payload.results.length) {
           physicianResultList.innerHTML =
@@ -2385,7 +2421,9 @@
           try {
             await loadPhysicianResults(dniValue);
           } catch (error) {
-            physicianSummary.textContent = "Profesional " + dniValue;
+            physicianFullNameValue.textContent = "Profesional " + dniValue;
+            physicianUsernameValue.textContent = dniValue;
+            physicianDniValue.textContent = dniValue;
             physicianResultList.innerHTML =
               '<div class="empty-state">No se pudieron cargar los resultados del profesional.</div>';
           }
@@ -2404,7 +2442,7 @@
       physicianSearchPatient.addEventListener("input", () => savePortalWorkspaceState());
       physicianSearchFrom.addEventListener("input", () => savePortalWorkspaceState());
       physicianSearchTo.addEventListener("input", () => savePortalWorkspaceState());
-      physicianSearchModality.addEventListener("input", () => savePortalWorkspaceState());
+      physicianSearchModality.addEventListener("change", () => savePortalWorkspaceState());
       syncPatientContinueState();
       restorePortalWorkspaceState().catch(() => {});
     </script>
