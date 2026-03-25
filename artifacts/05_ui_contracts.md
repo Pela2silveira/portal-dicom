@@ -46,7 +46,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - The login panel should prefer short labels and should avoid explanatory helper paragraphs unless they change the next action.
 - The login panel should avoid redundant internal banners or badges that restate the access context without changing the next action.
 - Institutional links may appear in the footer as secondary navigation, provided they do not compete visually with the access form. The current shared footer keeps `Salud Neuquén` and the Android app link available across login, patient, and physician surfaces.
-- Institutional logos such as ANDES and RedTICS may appear in the footer as secondary brand references and do not need to be interactive.
+- Institutional logos such as ANDES and RedTICS may appear in the footer as secondary brand references and should remain non-interactive.
 - Future real implementation validates patient identity before exposing the list.
 
 ### Screen Model
@@ -118,7 +118,7 @@ Allow a patient to see only their authorized studies and open one selected study
 ### Availability States
 
 - `available_local`: study is already in local Orthanc and can be opened now
-- `pending_retrieve`: study is expected but not yet available for viewing
+- `pending_retrieve`: study is expected but not yet available for viewing; display label `Recuperacion pendiente`
 - `unavailable`: study exists in patient authorization scope but is not currently retrievable
 - `error`: retrieval or authorization resolution failed
 
@@ -186,7 +186,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - The login panel should prefer short labels and should avoid explanatory helper paragraphs unless they change the next action.
 - The login panel should avoid redundant internal banners or badges that restate the access context without changing the next action.
 - Institutional links may appear in the footer as secondary navigation, provided they do not compete visually with the access form. The current shared footer keeps `Salud Neuquén` and the Android app link available across login, patient, and physician surfaces.
-- Institutional logos such as ANDES and RedTICS may appear in the footer as secondary brand references and do not need to be interactive.
+- Institutional logos such as ANDES and RedTICS may appear in the footer as secondary brand references and should remain non-interactive.
 - Future real implementation target: `LDAP provincial + MFA`
 
 ### Screen Model

@@ -1317,9 +1317,9 @@
           </div>
         </div>
         <div class="footer-brand-row">
-          <a class="footer-logo" href="/" aria-label="ANDES">
+          <div class="footer-logo" aria-label="ANDES">
             <img src="/portal-assets/andes-logo-wide.svg" alt="ANDES">
-          </a>
+          </div>
           <div class="footer-logo-secondary" aria-label="RedTICS">
             <img src="/portal-assets/redtics-white.svg" alt="RedTICS">
           </div>
@@ -1470,7 +1470,7 @@
 
         if (status === "queued" || status === "running") {
           patientSyncStatus.classList.add("active");
-          patientSyncStatus.textContent = sync.message || "Buscando estudios en los PACS remotos...";
+          patientSyncStatus.textContent = sync.message || "Buscando...";
           clearPatientSyncPoll();
           patientSyncPollHandle = window.setTimeout(() => {
             if (activePatientDocument && activePatientSearchRequestID) {
@@ -1495,7 +1495,7 @@
 
       function labelForStatus(status) {
         if (status === "available_local") return "Disponible en cache";
-        if (status === "pending_retrieve") return "Pendiente retrieve";
+        if (status === "pending_retrieve") return "Recuperacion pendiente";
         if (status === "remote_available") return "Disponible en remoto";
         if (status === "unavailable") return "No disponible";
         return status || "Estado desconocido";

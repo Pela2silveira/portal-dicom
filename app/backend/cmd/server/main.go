@@ -1094,9 +1094,9 @@ func (a *App) getPatientSearchStateByRequestID(ctx context.Context, requestID st
 func patientSyncMessage(status string) string {
 	switch status {
 	case "queued":
-		return "Buscando estudios en los PACS remotos..."
+		return "Buscando..."
 	case "running":
-		return "Actualizando estudios desde los PACS remotos..."
+		return "Buscando..."
 	case "failed":
 		return "No se pudo completar la búsqueda remota."
 	default:
