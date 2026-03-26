@@ -1530,7 +1530,7 @@
                   <label for="physician-search-source">Origen de busqueda</label>
                   <div class="field-group">
                     <select id="physician-search-source">
-                      <option value="local_cache">Cache local</option>
+                      <option value="local_cache">Caché local</option>
                     </select>
                   </div>
                 </div>
@@ -1544,14 +1544,14 @@
               <div class="section-header-inline">
                 <h4>Resultados</h4>
                 <div class="pacs-health-summary" id="physician-pacs-health-summary" data-status="unknown" tabindex="0" aria-live="polite">
-                  <span id="physician-pacs-health-text">PACS en linea -/-</span>
+                  <span id="physician-pacs-health-text">PACS en línea -/-</span>
                   <div class="pacs-health-summary-tooltip" id="physician-pacs-health-tooltip">
                     <div>
-                      <strong>En linea</strong>
+                      <strong>En línea</strong>
                       <span id="physician-pacs-online-list">Sin datos.</span>
                     </div>
                     <div>
-                      <strong>Fuera de linea</strong>
+                      <strong>Fuera de línea</strong>
                       <span id="physician-pacs-offline-list">Sin datos.</span>
                     </div>
                   </div>
@@ -2322,7 +2322,7 @@
       function labelForCacheStatus(status) {
         if (status === "local_complete") return "Completo";
         if (status === "local_partial") return "Parcial";
-        if (status === "not_local") return "No local";
+        if (status === "not_local") return "No disponible localmente";
         return status || "Desconocido";
       }
 
@@ -2336,7 +2336,7 @@
       function upsertPhysicianSourceOptions(onlineComponents) {
         const selectedValue = physicianSearchSource.value || physicianLocalCacheSourceValue;
         const options = [
-          { value: physicianLocalCacheSourceValue, label: "Cache local" }
+          { value: physicianLocalCacheSourceValue, label: "Caché local" }
         ];
 
         (onlineComponents || []).forEach(component => {
@@ -2377,7 +2377,7 @@
           .map(component => component.display_name || component.name.replace("remote_pacs:", ""));
         const onlineComponents = remoteComponents.filter(component => component.status === "healthy");
 
-        physicianPacsHealthText.textContent = "PACS en linea " + online.length + "/" + total;
+        physicianPacsHealthText.textContent = "PACS en línea " + online.length + "/" + total;
         physicianPacsOnlineList.textContent = formatPACSList(online);
         physicianPacsOfflineList.textContent = formatPACSList(offline);
         upsertPhysicianSourceOptions(onlineComponents);
@@ -2477,7 +2477,7 @@
                   '<div><span>Hospitales</span><strong>' + escapeHTML((result.locations || []).join(", ") || "-") + '</strong></div>' +
                   '<div><span>Prestacion en ANDES</span><strong>' + escapeHTML(result.andes_prestacion || "-") + '</strong></div>' +
                   '<div><span>Profesional en ANDES</span><strong>' + escapeHTML(result.andes_professional || "-") + '</strong></div>' +
-                  '<div><span>Cache local</span><strong>' + escapeHTML(labelForCacheStatus(result.cache_status)) + '</strong></div>' +
+                  '<div><span>Caché local</span><strong>' + escapeHTML(labelForCacheStatus(result.cache_status)) + '</strong></div>' +
                 '</div>' +
                 '<div class="chip-row">' +
                   (result.locations || []).map(location => '<div class="chip success">Hospital: ' + escapeHTML(location) + '</div>').join("") +

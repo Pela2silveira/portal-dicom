@@ -249,6 +249,13 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - `local_partial`
 - `local_complete`
 
+### Cache State Labels
+
+- visible labels must stay in Spanish
+- `not_local` should render as `No disponible localmente`
+- `local_partial` should render as `Parcial`
+- `local_complete` should render as `Completo`
+
 ### Retrieve States
 
 - `idle`
