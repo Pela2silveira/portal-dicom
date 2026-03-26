@@ -70,6 +70,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The current patient retrieve implementation enqueues a background retrieve job, then a Go worker uses Orthanc REST to `PUT /modalities/{id}` and `POST /modalities/{id}/get`, polling Orthanc until the study becomes local.
 - The transition to local availability must be transactional: only after Orthanc confirms local presence may the backend commit `retrieve_jobs=done`, `patient_study_access.availability_status=available_local`, and `cached_studies.cache_status=local_complete`.
 - Retrieve completion feedback in the browser should follow a per-job SSE stream (`GET /api/retrieve/jobs/:id/events`) instead of unbounded full-list polling.
+- The terminal refresh after a patient retrieve must also be silent: keep the current list mounted, preserve viewport/focus, and avoid placeholder flicker when reloading the study set.
 - The current preferred viewer handoff must open Stone with a specific `StudyInstanceUID`, and the alternative handoff must open OHIF with the same explicit study scoping.
 - OHIF root (`/ohif/`) must not be exposed as a navigable entrypoint; Nginx should redirect it back to the landing and keep only study-specific viewer URLs as supported entrypoints.
 - Physician access must use a portal-owned search and workflow panel.

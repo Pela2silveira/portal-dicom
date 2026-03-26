@@ -2278,7 +2278,7 @@
                 '</div>';
 
               return (
-                '<article class="study-item">' +
+                '<article class="study-item" data-patient-study="' + escapeHTML(study.study_instance_uid) + '">' +
                   '<div class="item-head">' +
                     '<div>' +
                       '<strong>Descripción del estudio: ' + escapeHTML(study.study_description || "Estudio sin descripción") + '</strong>' +
@@ -2496,8 +2496,29 @@
           .join("");
       }
 
-      async function loadPatientStudies(documentNumber) {
+      function restorePatientStudyFocus(studyInstanceUID) {
+        if (!studyInstanceUID) {
+          return;
+        }
+
+        const selector = '[data-patient-study="' + cssEscape(studyInstanceUID) + '"]';
+        const studyCard = patientStudyList.querySelector(selector);
+        if (!studyCard) {
+          return;
+        }
+
+        const focusTarget = studyCard.querySelector("[data-patient-retrieve], a, button");
+        if (focusTarget && typeof focusTarget.focus === "function") {
+          focusTarget.focus({ preventScroll: true });
+        }
+      }
+
+      async function loadPatientStudies(documentNumber, options = {}) {
         activePatientDocument = documentNumber;
+        const silentRefresh = Boolean(options.silentRefresh);
+        const restoreStudyUID = options.restoreStudyUID || "";
+        const previousScrollX = window.scrollX;
+        const previousScrollY = window.scrollY;
 
         const params = new URLSearchParams({ document: documentNumber });
         if (patientDateFilter.from) params.set("date_from", patientDateFilter.from);
@@ -2508,8 +2529,10 @@
         }
         if (patientFilterModality.value) params.set("modality", patientFilterModality.value);
 
-        patientStudyList.innerHTML =
-          '<div class="empty-state">Cargando estudios...</div>';
+        if (!silentRefresh) {
+          patientStudyList.innerHTML =
+            '<div class="empty-state">Cargando estudios...</div>';
+        }
 
         const response = await fetch("/api/patient/studies?" + params.toString(), {
           headers: { Accept: "application/json" }
@@ -2521,6 +2544,10 @@
 
         const payload = await response.json();
         renderPatientStudies(payload);
+        if (silentRefresh) {
+          window.scrollTo(previousScrollX, previousScrollY);
+          restorePatientStudyFocus(restoreStudyUID);
+        }
         savePortalWorkspaceState("patient");
       }
 
@@ -2739,7 +2766,7 @@
         return payload;
       }
 
-      function watchPatientRetrieveJob(jobID) {
+      function watchPatientRetrieveJob(jobID, studyInstanceUID) {
         clearPatientRetrievePoll();
         patientRetrieveEventSource = new EventSource("/api/retrieve/jobs/" + encodeURIComponent(jobID) + "/events");
         patientRetrieveEventSource.addEventListener("status", async event => {
@@ -2747,14 +2774,20 @@
           if (payload.status === "done" || payload.status === "failed") {
             clearPatientRetrievePoll();
             if (activePatientDocument) {
-              await loadPatientStudies(activePatientDocument);
+              await loadPatientStudies(activePatientDocument, {
+                silentRefresh: true,
+                restoreStudyUID: payload.study_instance_uid || studyInstanceUID || ""
+              });
             }
           }
         });
         patientRetrieveEventSource.onerror = async () => {
           clearPatientRetrievePoll();
           if (activePatientDocument) {
-            await loadPatientStudies(activePatientDocument);
+            await loadPatientStudies(activePatientDocument, {
+              silentRefresh: true,
+              restoreStudyUID: studyInstanceUID || ""
+            });
           }
         };
       }
@@ -2967,7 +3000,7 @@
         try {
           const payload = await triggerPatientRetrieve(studyInstanceUID);
           if (payload?.job_id) {
-            watchPatientRetrieveJob(payload.job_id);
+            watchPatientRetrieveJob(payload.job_id, studyInstanceUID);
           }
         } catch (error) {
           button.disabled = false;

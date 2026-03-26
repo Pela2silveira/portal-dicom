@@ -171,6 +171,7 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 * La UI paciente debe reutilizar la búsqueda remota en curso cuando el operador repita el mismo `documento + filtros`, evitando emitir `POST /api/patient/search` redundantes mientras exista un `request_id` activo para esa combinación.
 * Si el backend reinicia con búsquedas paciente en `queued` o `running`, esas filas huérfanas deben cerrarse como fallidas; la UI no debe heredar un estado `Buscando...` indefinido desde ejecución previa.
 * Los estudios remotos de esta lista deben quedar inicialmente como `pending_retrieve`, con botón explícito `Retrieve` para traerlos a Orthanc antes de habilitar `Visualizar estudio`.
+* Cuando un retrieve de paciente llegue a estado terminal, la lista debe refrescarse de manera silenciosa: sin vaciar la grilla, sin mostrar placeholders intermedios y preservando scroll/foco para evitar parpadeo o pérdida de contexto.
 
 ### 6.1.2 Superficie Médico
 * Panel propio del portal para búsqueda federada y operación.

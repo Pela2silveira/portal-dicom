@@ -168,7 +168,7 @@ Allow a patient to see only their authorized studies and open one selected study
   - enqueues a background retrieve job that triggers PACS-to-PACS retrieve through Orthanc REST
   - must reject the request if the origin PACS is currently offline
   - returns `job_id` and the UI follows completion through `GET /api/retrieve/jobs/:id/events` (SSE)
-  - the patient list should refresh on retrieve terminal events (`done|failed`), not through unbounded list polling
+  - the patient list should refresh on retrieve terminal events (`done|failed`) without unmounting the current grid or showing an intermediate loading placeholder
   - updates local availability before the patient can open OHIF
 - `GET /api/patient/studies/:studyInstanceUID/access`
   - returns whether the session can open the study and the viewer route or token material needed by the final design

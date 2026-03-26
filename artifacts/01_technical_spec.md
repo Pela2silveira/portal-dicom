@@ -255,7 +255,7 @@ Proveer un portal operativo mínimo capaz de:
    - cantidad de estudios ya disponibles localmente;
    - duración total del sync.
 13. Estas métricas no se persisten en PostgreSQL en esta etapa; se resuelven mediante logs estructurados y futuros endpoints de stats en memoria.
-14. Cuando el estudio queda `pending_retrieve`, la UI del paciente ofrece un botón `Retrieve` que llama `POST /api/patient/retrieve` y recarga la lista al completar.
+14. Cuando el estudio queda `pending_retrieve`, la UI del paciente ofrece un botón `Retrieve` que llama `POST /api/patient/retrieve`; al completar o fallar, la lista debe rehidratarse sin desmontarse ni mostrar un estado vacío transitorio, preservando scroll y foco sobre el estudio afectado.
 15. El cambio a `available_local` debe confirmarse dentro de la misma transacción que deja `retrieve_jobs=done` y `cached_studies.cache_status=local_complete`; si falla cualquier paso, el estudio conserva `pending_retrieve`.
 16. Con `patient.fake_auth = true`, `POST /api/patient/send-code` sigue validando la existencia del paciente pero omite la validación real del mail y el envío efectivo del código.
 17. Si QIDO no encuentra estudios, el endpoint debe responder `200` con `studies: []`; la UI no debe tratarlo como error técnico.
