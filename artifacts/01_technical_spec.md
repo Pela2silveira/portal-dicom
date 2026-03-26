@@ -32,6 +32,8 @@
 - La misma carga mínima de runtime puede exponer flags visuales no sensibles del portal, por ejemplo `portal.show_demo_ribbon`, para mantener consistencia entre landing y workspaces.
 - El retrieve debe poder exponer un progreso liviano orientado a UX, combinando fase (`preparing/retrieving/verifying`) y porcentaje aproximado del job de Orthanc cuando esté disponible, sin emitir eventos de alta frecuencia al navegador.
 - La frecuencia de polling interno sobre el job de Orthanc debe ser configurable mediante `portal.retrieve_progress_poll_seconds`, con valor inicial de 5 segundos.
+- TO-DO: si el `Progress` del job de Orthanc no resulta suficientemente útil, investigar un handler alternativo de retrieve/progreso basado en `dcmtk` u otro mecanismo con mejor granularidad y costo operativo razonable.
+- TO-DO: investigar si una combinación con el plugin de indexación local de Orthanc, compartiendo un volumen entre backend y contenedor Orthanc, puede dar una señal más robusta de ingreso/progreso local.
 - Esa carga mínima también puede exponer el `patient.auth_mode` efectivo cuando sea necesario para adaptar el comportamiento visual del login, por ejemplo ocultar el campo de código en `master_key`.
 - Los endpoints públicos de login deben contar con rate limiting liviano en backend por IP efectiva e identificador normalizado, usando headers de proxy (`CF-Connecting-IP`, `X-Forwarded-For`) cuando la app esté detrás de Cloudflare + doble Nginx.
 - La integración DIMSE vía Orthanc debe evitar `PUT /modalities/{id}` redundantes en cada health check; la modalidad remota puede cachearse en memoria y refrescarse solo cuando Orthanc la pierda o cuando cambie la configuración efectiva del nodo.
