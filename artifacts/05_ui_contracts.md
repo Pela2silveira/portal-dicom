@@ -184,7 +184,6 @@ Allow a patient to see only their authorized studies and open one selected study
   - must reject the request if the origin PACS is currently offline
   - returns `job_id` and the UI follows completion through `GET /api/retrieve/jobs/:id/events` (SSE)
   - intermediate SSE events may expose `phase` and `progress` for the active retrieve, but should stay low-frequency and change-driven
-  - active retrieve state should be visible both in the affected row/button and in a prominent notice near the results section, so users can perceive progress even when the Orthanc percentage stays at `0` for several polls
   - the patient list should refresh on retrieve terminal events (`done|failed`) without unmounting the current grid or showing an intermediate loading placeholder
   - updates local availability before the patient can open OHIF
 - `GET /api/patient/studies/:studyInstanceUID/access`
