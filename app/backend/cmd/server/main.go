@@ -49,6 +49,7 @@ type App struct {
 	db             *sql.DB
 	httpClient     *http.Client
 	logger         *log.Logger
+	loginRateLimiter *InMemoryRateLimiter
 	externalConfig *ExternalConfig
 	configLoadedAt time.Time
 	identitySource PatientIdentitySource
@@ -62,6 +63,23 @@ type App struct {
 	systemEventSubscribers    map[chan SystemHealthEvent]struct{}
 	systemHealthState         SystemHealthEvent
 	systemHealthStateMu       sync.RWMutex
+}
+
+type InMemoryRateLimiter struct {
+	mu        sync.Mutex
+	entries   map[string][]time.Time
+	lastSweep time.Time
+}
+
+type LoginRateLimitRule struct {
+	Scope  string
+	Limit  int
+	Window time.Duration
+}
+
+type LoginRateLimitPolicy struct {
+	Endpoint string
+	Rules    []LoginRateLimitRule
 }
 
 type ComponentSeverity string
@@ -1472,6 +1490,7 @@ func main() {
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
 		},
+		loginRateLimiter: newInMemoryRateLimiter(),
 		logger:         logger,
 		externalConfig: externalConfig,
 		configLoadedAt: time.Now().UTC(),
@@ -1869,6 +1888,9 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if !a.enforceLoginRateLimit(w, r, patientLoginRateLimitPolicy("patient_send_code"), reqBody.DocumentNumber) {
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
@@ -1976,6 +1998,9 @@ func (a *App) handlePatientLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := validateDocumentNumber(reqBody.DocumentNumber); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if !a.enforceLoginRateLimit(w, r, patientLoginRateLimitPolicy("patient_login"), reqBody.DocumentNumber) {
 		return
 	}
 
@@ -2628,6 +2653,9 @@ func (a *App) handlePhysicianLogin(w http.ResponseWriter, r *http.Request) {
 	reqBody.Username = normalizeProfessionalDocumentInput(reqBody.Username)
 	if reqBody.Username == "" {
 		http.Error(w, "username is required", http.StatusBadRequest)
+		return
+	}
+	if !a.enforceLoginRateLimit(w, r, physicianLoginRateLimitPolicy(), reqBody.Username) {
 		return
 	}
 
@@ -3508,6 +3536,185 @@ func nullTime(value time.Time) any {
 		return nil
 	}
 	return value
+}
+
+func newInMemoryRateLimiter() *InMemoryRateLimiter {
+	return &InMemoryRateLimiter{
+		entries: make(map[string][]time.Time),
+	}
+}
+
+func (l *InMemoryRateLimiter) allow(key string, limit int, window time.Duration, now time.Time) (bool, time.Duration) {
+	if l == nil || strings.TrimSpace(key) == "" || limit <= 0 || window <= 0 {
+		return true, 0
+	}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	cutoff := now.Add(-window)
+	timestamps := l.entries[key]
+	kept := timestamps[:0]
+	for _, ts := range timestamps {
+		if ts.After(cutoff) {
+			kept = append(kept, ts)
+		}
+	}
+
+	if len(kept) >= limit {
+		retryAfter := kept[0].Add(window).Sub(now)
+		if retryAfter < 0 {
+			retryAfter = 0
+		}
+		l.entries[key] = kept
+		l.sweepLocked(now)
+		return false, retryAfter
+	}
+
+	kept = append(kept, now)
+	l.entries[key] = kept
+	l.sweepLocked(now)
+	return true, 0
+}
+
+func (l *InMemoryRateLimiter) sweepLocked(now time.Time) {
+	if now.Sub(l.lastSweep) < 5*time.Minute {
+		return
+	}
+	l.lastSweep = now
+	cutoff := now.Add(-15 * time.Minute)
+	for key, timestamps := range l.entries {
+		keepAny := false
+		for _, ts := range timestamps {
+			if ts.After(cutoff) {
+				keepAny = true
+				break
+			}
+		}
+		if !keepAny {
+			delete(l.entries, key)
+		}
+	}
+}
+
+func clientIPForRateLimit(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+
+	if forwarded := strings.TrimSpace(r.Header.Get("CF-Connecting-IP")); forwarded != "" {
+		return forwarded
+	}
+
+	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
+		parts := strings.Split(forwarded, ",")
+		for _, part := range parts {
+			candidate := strings.TrimSpace(part)
+			if candidate != "" {
+				return candidate
+			}
+		}
+	}
+
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err == nil {
+		return host
+	}
+	return strings.TrimSpace(r.RemoteAddr)
+}
+
+func patientLoginRateLimitPolicy(endpoint string) LoginRateLimitPolicy {
+	switch endpoint {
+	case "patient_send_code":
+		return LoginRateLimitPolicy{
+			Endpoint: endpoint,
+			Rules: []LoginRateLimitRule{
+				{Scope: "ip", Limit: 10, Window: time.Minute},
+				{Scope: "identifier", Limit: 3, Window: 10 * time.Minute},
+			},
+		}
+	case "patient_login":
+		return LoginRateLimitPolicy{
+			Endpoint: endpoint,
+			Rules: []LoginRateLimitRule{
+				{Scope: "ip", Limit: 20, Window: time.Minute},
+				{Scope: "identifier", Limit: 5, Window: 10 * time.Minute},
+			},
+		}
+	default:
+		return LoginRateLimitPolicy{Endpoint: endpoint}
+	}
+}
+
+func physicianLoginRateLimitPolicy() LoginRateLimitPolicy {
+	return LoginRateLimitPolicy{
+		Endpoint: "physician_login",
+		Rules: []LoginRateLimitRule{
+			{Scope: "ip", Limit: 20, Window: time.Minute},
+			{Scope: "identifier", Limit: 5, Window: 10 * time.Minute},
+		},
+	}
+}
+
+func (a *App) enforceLoginRateLimit(w http.ResponseWriter, r *http.Request, policy LoginRateLimitPolicy, identifier string) bool {
+	if a == nil || a.loginRateLimiter == nil {
+		return true
+	}
+
+	clientIP := clientIPForRateLimit(r)
+	now := time.Now().UTC()
+	longestRetryAfter := time.Duration(0)
+	blockedScope := ""
+
+	for _, rule := range policy.Rules {
+		var key string
+		switch rule.Scope {
+		case "ip":
+			if clientIP == "" {
+				continue
+			}
+			key = policy.Endpoint + "|ip|" + clientIP
+		case "identifier":
+			normalizedIdentifier := strings.TrimSpace(identifier)
+			if normalizedIdentifier == "" {
+				continue
+			}
+			key = policy.Endpoint + "|identifier|" + normalizedIdentifier
+		default:
+			continue
+		}
+
+		allowed, retryAfter := a.loginRateLimiter.allow(key, rule.Limit, rule.Window, now)
+		if allowed {
+			continue
+		}
+		if retryAfter > longestRetryAfter {
+			longestRetryAfter = retryAfter
+			blockedScope = rule.Scope
+		}
+	}
+
+	if blockedScope == "" {
+		return true
+	}
+
+	retryAfterSeconds := int(math.Ceil(longestRetryAfter.Seconds()))
+	if retryAfterSeconds < 1 {
+		retryAfterSeconds = 1
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(retryAfterSeconds))
+	writeJSON(w, http.StatusTooManyRequests, map[string]any{
+		"status":  "rate_limited",
+		"message": "Se alcanzó el límite de intentos. Intente nuevamente en unos minutos.",
+	})
+	a.log("warn", "login_rate_limited", map[string]any{
+		"endpoint":     policy.Endpoint,
+		"scope":        blockedScope,
+		"client_ip":    clientIP,
+		"identifier":   identifier,
+		"retry_after_s": retryAfterSeconds,
+	})
+	return false
 }
 
 func validateDocumentNumber(value string) error {

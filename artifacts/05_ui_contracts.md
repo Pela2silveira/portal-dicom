@@ -173,6 +173,8 @@ Allow a patient to see only their authorized studies and open one selected study
 - `POST /api/patient/search`
   - receives `document_number` plus the current patient filters
   - enqueues background QIDO work and returns `request_id`
+- `POST /api/patient/send-code` and `POST /api/patient/login`
+  - may return `429` with a neutral retry message when backend login rate limits are exceeded
 - `GET /api/patient/search?request_id=...`
   - returns the current worker status for the patient search
 - `POST /api/patient/retrieve`
@@ -215,6 +217,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - Institutional logos such as ANDES and RedTICS may appear in the footer as secondary brand references and should remain non-interactive.
 - Future real implementation target: `LDAP provincial + MFA`
 - Future real implementation also requires backend-managed portal sessions and viewer/image gating by active session plus allowed `StudyInstanceUID`; the current timeout in the shell does not satisfy that requirement by itself.
+- `POST /api/physician/login` may return `429` with a neutral retry message when backend login rate limits are exceeded.
 
 ### Screen Model
 

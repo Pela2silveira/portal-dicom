@@ -93,6 +93,7 @@ Recommended responsibility split:
 - Keep SSE endpoints unbuffered.
 - Keep long read timeouts for DICOM ZIP downloads and viewer traffic.
 - Forward `Host`, `X-Forwarded-For`, and `X-Forwarded-Proto`.
+- If Cloudflare is in front of the external Nginx, restore the real client IP there and forward `CF-Connecting-IP` through to the internal portal.
 - Prefer a plain pass-through to the internal Nginx instead of duplicating the app-routing logic at the edge.
 
 ### Functional example
@@ -126,6 +127,12 @@ server {
     listen 443 ssl http2;
     server_name imagenes.example.gob.ar;
 
+    # If Cloudflare fronts this edge Nginx, trust Cloudflare IPs here so
+    # $remote_addr becomes the real client IP. Keep the CIDR list updated.
+    # include /etc/nginx/cloudflare-realip.conf;
+    # real_ip_header CF-Connecting-IP;
+    # real_ip_recursive on;
+
     ssl_certificate     /etc/letsencrypt/live/imagenes.example.gob.ar/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/imagenes.example.gob.ar/privkey.pem;
     ssl_session_timeout 1d;
@@ -142,6 +149,7 @@ server {
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header CF-Connecting-IP $http_cf_connecting_ip;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto https;
     proxy_set_header X-Forwarded-Host $host;
@@ -211,6 +219,21 @@ server {
     }
 }
 ```
+
+### Login rate limit note
+
+The backend applies a lightweight in-memory login rate limit on:
+
+- `POST /api/patient/send-code`
+- `POST /api/patient/login`
+- `POST /api/physician/login`
+
+It evaluates both:
+
+- client IP
+- normalized patient/professional identifier (`documento` or `dni`)
+
+For the IP dimension to be meaningful behind Cloudflare + double Nginx, the edge proxy must preserve the real client IP correctly.
 
 ### Why this works with the current project
 

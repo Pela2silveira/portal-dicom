@@ -43,6 +43,8 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Portal session lifetime is shared by patient and professional surfaces and is configured through `portal.session_timeout_minutes` rather than hardcoded in the frontend.
 - Public UI runtime config must be exposed through a minimal endpoint (`/api/runtime-config`) instead of publishing `/api/config`; only non-sensitive values needed by the landing/workspace shell belong there.
 - The diagonal `Demo` ribbon is controlled by `portal.show_demo_ribbon` and, when enabled, must appear consistently on the landing auth card and on both patient/professional workspaces.
+- Login abuse protection uses a compromise approach for now: lightweight in-memory rate limiting in the backend, keyed by client IP and normalized identifier, instead of adding Redis or CAPTCHA at this stage.
+- In deployments behind Cloudflare and a second Nginx, the edge proxy must restore and forward the real client IP so backend rate limiting can use `CF-Connecting-IP` / `X-Forwarded-For` meaningfully.
 - Patient send-code confirmation must show the destination email obfuscated (`first 3 chars + **** + @domain`) both in demo mode and in real mode when an active email exists.
 - Professional auth mode must be switchable at runtime through `professional.fake_auth` in `config.json`, defaulting to `true` for current MVP/demo compatibility.
 - With `professional.fake_auth = true`, the backend keeps the current transitional professional access validation against Mongo `profesional`; with `false`, professional login is reserved for future `LDAP provincial + MFA`.
