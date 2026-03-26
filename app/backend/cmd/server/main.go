@@ -5504,7 +5504,6 @@ func (a *App) updateRetrieveJobStatus(ctx context.Context, jobID, status, errMsg
 }
 
 func (a *App) ensureOrthancModality(ctx context.Context, node PACSNodeConfig) error {
-	resolved := node.Resolved()
 	payload, signature, err := a.orthancModalityPayload(node)
 	if err != nil {
 		return err
