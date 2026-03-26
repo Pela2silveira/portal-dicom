@@ -33,6 +33,7 @@
 - Esa carga mínima también puede exponer el `patient.auth_mode` efectivo cuando sea necesario para adaptar el comportamiento visual del login, por ejemplo ocultar el campo de código en `master_key`.
 - Los endpoints públicos de login deben contar con rate limiting liviano en backend por IP efectiva e identificador normalizado, usando headers de proxy (`CF-Connecting-IP`, `X-Forwarded-For`) cuando la app esté detrás de Cloudflare + doble Nginx.
 - La integración DIMSE vía Orthanc debe evitar `PUT /modalities/{id}` redundantes en cada health check; la modalidad remota puede cachearse en memoria y refrescarse solo cuando Orthanc la pierda o cuando cambie la configuración efectiva del nodo.
+- El health remoto de PACS opcionales debe tener una breve gracia de arranque antes del primer chequeo real, y el C-ECHO DIMSE puede usar un timeout levemente mayor para reducir falsos negativos durante el cold start del stack.
 - La carga inicial del panel profesional sin filtros debe usar una ventana relativa configurable mediante `professional.initial_cache_period`.
 - Si las dependencias del backend no están disponibles al arranque, el proceso debe permanecer vivo en modo degradado y publicar `/api/health` con `503` para habilitar el fallback de mantenimiento en Nginx.
 - Docker Compose debe usar un endpoint separado de liveness (`/api/livez`) para la salud del contenedor y dejar `/api/health` como readiness operativa.

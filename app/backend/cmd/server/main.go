@@ -1370,6 +1370,12 @@ type MixedHealthAdapter struct{}
 type AuthQIDOHealthAdapter struct{}
 type DIMSECechoHealthAdapter struct{}
 
+const (
+	startupRemotePACSHealthGrace = 20 * time.Second
+	systemHealthCheckTimeout     = 8 * time.Second
+	dimseEchoHealthTimeout       = 7 * time.Second
+)
+
 type PACSAuthResponse struct {
 	Type                string `json:"type"`
 	TokenURL            string `json:"token_url"`
@@ -2941,6 +2947,22 @@ func (a *App) remotePACSComponents(ctx context.Context) []ComponentHealth {
 		return nil
 	}
 
+	if time.Since(a.configLoadedAt) < startupRemotePACSHealthGrace {
+		components := make([]ComponentHealth, 0, len(a.externalConfig.PACSNodes))
+		for _, node := range a.externalConfig.PACSNodes {
+			resolved := node.Resolved()
+			components = append(components, ComponentHealth{
+				Name:        "remote_pacs:" + node.ID,
+				DisplayName: strings.TrimSpace(resolved.Name),
+				Category:    "optional",
+				Severity:    ComponentSeverityOptional,
+				Status:      ComponentStatusUnknown,
+				Message:     "health check delayed during startup grace period",
+			})
+		}
+		return components
+	}
+
 	components := make([]ComponentHealth, 0, len(a.externalConfig.PACSNodes))
 	for _, node := range a.externalConfig.PACSNodes {
 		resolved := node.Resolved()
@@ -3086,7 +3108,7 @@ func (a *App) checkRemotePACSWithAuthQIDO(parent context.Context, node PACSNodeC
 }
 
 func (a *App) checkRemotePACSViaOrthancEcho(parent context.Context, node PACSNodeConfig, resolved PACSNodeResolvedConfig) bool {
-	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+	ctx, cancel := context.WithTimeout(parent, dimseEchoHealthTimeout)
 	defer cancel()
 
 	if err := a.ensureOrthancModality(ctx, node); err != nil {
@@ -3099,7 +3121,7 @@ func (a *App) checkRemotePACSViaOrthancEcho(parent context.Context, node PACSNod
 	}
 
 	payload, err := json.Marshal(map[string]any{
-		"Timeout": 5,
+		"Timeout": int(dimseEchoHealthTimeout / time.Second),
 	})
 	if err != nil {
 		a.log("error", "remote_pacs_echo_payload_failed", map[string]any{
@@ -3184,7 +3206,7 @@ func (a *App) startSystemHealthWatcher() {
 }
 
 func (a *App) updateSystemHealthState() {
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), systemHealthCheckTimeout)
 	defer cancel()
 
 	components := a.collectComponentHealth(ctx)
@@ -5565,7 +5587,7 @@ func (a *App) executeOrthancEcho(ctx context.Context, node PACSNodeConfig, resol
 			return false
 		}
 
-		retryReq, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(a.cfg.OrthancURL, "/")+"/modalities/"+url.PathEscape(resolved.ID)+"/echo", strings.NewReader(`{"Timeout":5}`))
+		retryReq, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(a.cfg.OrthancURL, "/")+"/modalities/"+url.PathEscape(resolved.ID)+"/echo", strings.NewReader(fmt.Sprintf(`{"Timeout":%d}`, int(dimseEchoHealthTimeout/time.Second))))
 		if err != nil {
 			a.log("error", "remote_pacs_echo_request_build_failed", map[string]any{
 				"node_id": resolved.ID,
