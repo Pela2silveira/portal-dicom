@@ -2447,7 +2447,7 @@
                 : study.source_node_available === false
                   ? '<button class="action action-secondary" type="button" disabled>Origen no disponible</button>'
                 : (study.retrieve_status === "running" || study.retrieve_status === "queued")
-                  ? '<button class="action action-secondary" type="button" disabled data-patient-retrieve-button="' + escapeHTML(study.study_instance_uid) + '">' + escapeHTML(retrieveActionLabel(study.retrieve_status, study.retrieve_phase, study.retrieve_progress)) + '</button>'
+                  ? '<button class="action action-secondary" type="button" disabled data-patient-retrieve-button="' + escapeHTML(study.study_instance_uid) + '" title="' + escapeHTML(retrieveProgressTitle(study.retrieve_status, study.retrieve_phase, study.retrieve_progress)) + '">' + escapeHTML(retrieveActionLabel(study.retrieve_status, study.retrieve_phase, study.retrieve_progress)) + '</button>'
                 : study.retrieve_status === "done"
                     ? '<button class="action action-secondary" type="button" disabled data-patient-retrieve-button="' + escapeHTML(study.study_instance_uid) + '">Recuperado</button>'
                     : study.retrieve_status === "failed"
@@ -2539,6 +2539,19 @@
         if (status === "done") return "Recuperado";
         if (status === "failed") return "Reintentar recuperación";
         return "Recuperar estudio";
+      }
+
+      function retrieveProgressTitle(status, phase, progress) {
+        if (status === "running" || status === "queued") {
+          if (typeof progress === "number" && progress >= 0 && progress < 100) {
+            return "Progreso de recuperación: " + progress + "%";
+          }
+          const phaseLabel = retrievePhaseLabel(phase);
+          if (phaseLabel) {
+            return phaseLabel;
+          }
+        }
+        return "";
       }
 
       function labelForCacheStatus(status) {
@@ -2674,7 +2687,7 @@
             } else if (result.source_node_available === false) {
               retrieveAction = '<button class="action action-secondary" type="button" disabled>Origen no disponible</button>';
             } else if (result.retrieve_status === "running" || result.retrieve_status === "queued") {
-              retrieveAction = '<button class="action action-secondary" type="button" disabled data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">' + escapeHTML(retrieveActionLabel(result.retrieve_status, result.retrieve_phase, result.retrieve_progress)) + '</button>';
+              retrieveAction = '<button class="action action-secondary" type="button" disabled data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '" title="' + escapeHTML(retrieveProgressTitle(result.retrieve_status, result.retrieve_phase, result.retrieve_progress)) + '">' + escapeHTML(retrieveActionLabel(result.retrieve_status, result.retrieve_phase, result.retrieve_progress)) + '</button>';
             } else if (result.retrieve_status === "failed") {
               retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '" data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">Reintentar recuperación</button>';
             }
@@ -2876,6 +2889,12 @@
         }
 
         button.textContent = retrieveActionLabel(payload.status, payload.phase, payload.progress);
+        const patientTitle = retrieveProgressTitle(payload.status, payload.phase, payload.progress);
+        if (patientTitle) {
+          button.setAttribute("title", patientTitle);
+        } else {
+          button.removeAttribute("title");
+        }
         if (payload.status === "running" || payload.status === "queued" || payload.status === "done") {
           button.disabled = true;
           button.removeAttribute("data-patient-retrieve");
@@ -2904,6 +2923,12 @@
         }
 
         button.textContent = retrieveActionLabel(payload.status, payload.phase, payload.progress);
+        const physicianTitle = retrieveProgressTitle(payload.status, payload.phase, payload.progress);
+        if (physicianTitle) {
+          button.setAttribute("title", physicianTitle);
+        } else {
+          button.removeAttribute("title");
+        }
         if (payload.status === "running" || payload.status === "queued" || payload.status === "done") {
           button.disabled = true;
           button.removeAttribute("data-physician-retrieve");

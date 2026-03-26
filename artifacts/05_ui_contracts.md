@@ -312,6 +312,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - retrieve progress or terminal state
 - partial-filter warning when a node could not apply all requested filters
 - retrieve progress must be readable directly in the result row and action state
+- when Orthanc only exposes sparse percentage updates, the active retrieve button may also expose the current percentage through its hover `title`
 
 ### Viewer Handoff
 
