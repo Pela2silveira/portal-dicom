@@ -3563,8 +3563,18 @@
       });
       patientMailCode.addEventListener("input", syncPatientContinueState);
       patientMailCode.addEventListener("keydown", event => {
-        if ((event.key === "Tab" && !event.shiftKey) || event.key === "Enter") {
+        if (event.key === "Tab" && !event.shiftKey) {
           event.preventDefault();
+          focusPatientContinueButton();
+          return;
+        }
+
+        if (event.key === "Enter") {
+          event.preventDefault();
+          if (!patientValidateButton.disabled) {
+            patientValidateButton.click();
+            return;
+          }
           focusPatientContinueButton();
         }
       });
@@ -3580,8 +3590,18 @@
       });
       physicianPassword.addEventListener("input", syncPhysicianContinueState);
       physicianPassword.addEventListener("keydown", event => {
-        if ((event.key === "Tab" && !event.shiftKey) || event.key === "Enter") {
+        if (event.key === "Tab" && !event.shiftKey) {
           event.preventDefault();
+          focusPhysicianContinueButton();
+          return;
+        }
+
+        if (event.key === "Enter") {
+          event.preventDefault();
+          if (!physicianLoginButton.disabled) {
+            physicianLoginButton.click();
+            return;
+          }
           focusPhysicianContinueButton();
         }
       });
