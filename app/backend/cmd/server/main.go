@@ -59,6 +59,7 @@ type App struct {
 	prestacionLookup          PrestacionLookupSource
 	patientSearchQueue         chan string
 	retrieveQueue              chan string
+	scheduledRetrieveQueue     chan string
 	retrieveEventMu            sync.Mutex
 	retrieveEventSubscribers map[string]map[chan RetrieveJobEvent]struct{}
 	systemEventMu             sync.Mutex
@@ -1179,8 +1180,13 @@ type ConfigResponse struct {
 }
 
 type RuntimeConfigResponse struct {
-	Portal  PortalConfig               `json:"portal"`
+	Portal  RuntimePortalConfigResponse  `json:"portal"`
 	Patient RuntimePatientConfigResponse `json:"patient"`
+}
+
+type RuntimePortalConfigResponse struct {
+	SessionTimeoutMinutes int  `json:"session_timeout_minutes"`
+	ShowDemoRibbon        bool `json:"show_demo_ribbon"`
 }
 
 type RuntimePatientConfigResponse struct {
@@ -1403,9 +1409,14 @@ type HISConfigResponse struct {
 }
 
 type PortalConfig struct {
-	SessionTimeoutMinutes      int  `json:"session_timeout_minutes"`
-	ShowDemoRibbon             bool `json:"show_demo_ribbon"`
-	RetrieveProgressPollSeconds int `json:"retrieve_progress_poll_seconds"`
+	SessionTimeoutMinutes           int  `json:"session_timeout_minutes"`
+	ShowDemoRibbon                  bool `json:"show_demo_ribbon"`
+	RetrieveProgressPollSeconds     int  `json:"retrieve_progress_poll_seconds"`
+	RetrieveWorkerConcurrency       int  `json:"retrieve_worker_concurrency"`
+	ScheduledRetrieveEnabled        bool `json:"scheduled_retrieve_enabled"`
+	ScheduledRetrieveIntervalMinutes int `json:"scheduled_retrieve_interval_minutes"`
+	ScheduledRetrieveMaxStudyAgeDays int `json:"scheduled_retrieve_max_study_age_days"`
+	ScheduledRetrieveBatchSize      int  `json:"scheduled_retrieve_batch_size"`
 }
 
 func main() {
@@ -1524,12 +1535,14 @@ func main() {
 		prestacionLookup:             prestacionLookup,
 		patientSearchQueue:         make(chan string, 32),
 		retrieveQueue:              make(chan string, 32),
+		scheduledRetrieveQueue:     make(chan string, 32),
 		retrieveEventSubscribers: make(map[string]map[chan RetrieveJobEvent]struct{}),
 		systemEventSubscribers:   make(map[chan SystemHealthEvent]struct{}),
 	}
 
 	app.startPatientSearchWorker()
 	app.startRetrieveWorker()
+	app.startScheduledRetrieveWorker()
 	app.startSystemHealthWatcher()
 
 	mux := http.NewServeMux()
@@ -1809,7 +1822,10 @@ func (a *App) handleRuntimeConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, RuntimeConfigResponse{
-		Portal: a.externalConfig.Portal,
+		Portal: RuntimePortalConfigResponse{
+			SessionTimeoutMinutes: a.externalConfig.Portal.SessionTimeoutMinutes,
+			ShowDemoRibbon:        a.externalConfig.Portal.ShowDemoRibbon,
+		},
 		Patient: RuntimePatientConfigResponse{
 			AuthMode: a.externalConfig.Patient.ResolvedAuthMode(),
 		},
@@ -1833,9 +1849,39 @@ func (a *App) startPatientSearchWorker() {
 }
 
 func (a *App) startRetrieveWorker() {
+	workers := a.retrieveWorkerConcurrency()
+	for workerIndex := 0; workerIndex < workers; workerIndex++ {
+		go func() {
+			for {
+				select {
+				case jobID := <-a.retrieveQueue:
+					a.processRetrieveJob(jobID)
+					continue
+				default:
+				}
+
+				select {
+				case jobID := <-a.retrieveQueue:
+					a.processRetrieveJob(jobID)
+				case jobID := <-a.scheduledRetrieveQueue:
+					a.processRetrieveJob(jobID)
+				}
+			}
+		}()
+	}
+}
+
+func (a *App) startScheduledRetrieveWorker() {
+	if a.externalConfig == nil || !a.externalConfig.Portal.ScheduledRetrieveEnabled {
+		return
+	}
+
 	go func() {
-		for jobID := range a.retrieveQueue {
-			a.processRetrieveJob(jobID)
+		ticker := time.NewTicker(a.scheduledRetrieveInterval())
+		defer ticker.Stop()
+
+		for range ticker.C {
+			a.runScheduledRetrieveCycle()
 		}
 	}()
 }
@@ -1890,6 +1936,16 @@ func (a *App) enqueuePatientSearch(requestID string) {
 
 func (a *App) enqueueRetrieveJob(jobID string) {
 	a.retrieveQueue <- jobID
+}
+
+func (a *App) enqueueScheduledRetrieveJob(jobID string) {
+	select {
+	case a.scheduledRetrieveQueue <- jobID:
+	default:
+		a.log("error", "scheduled_retrieve_queue_full", map[string]any{
+			"job_id": jobID,
+		})
+	}
 }
 
 func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
@@ -3383,9 +3439,14 @@ func loadExternalConfig(path string) (*ExternalConfig, error) {
 
 	cfg := ExternalConfig{
 		Portal: PortalConfig{
-			SessionTimeoutMinutes: 10,
-			ShowDemoRibbon:       false,
-			RetrieveProgressPollSeconds: 5,
+			SessionTimeoutMinutes:           10,
+			ShowDemoRibbon:                  false,
+			RetrieveProgressPollSeconds:     5,
+			RetrieveWorkerConcurrency:       2,
+			ScheduledRetrieveEnabled:        false,
+			ScheduledRetrieveIntervalMinutes: 60,
+			ScheduledRetrieveMaxStudyAgeDays: 7,
+			ScheduledRetrieveBatchSize:      5,
 		},
 		Patient: PatientConfig{
 			AuthMode: PatientAuthModeFakeAuth,
@@ -4577,7 +4638,7 @@ func (a *App) processRetrieveJob(jobID string) {
 		})
 	}
 
-	if err := a.completeRetrieveSuccess(ctx, jobID, actorType, actorID, studyInstanceUID, orthancStudyID, sourceNodeCode); err != nil {
+	if err := a.completeRetrieveSuccess(ctx, jobID, studyInstanceUID, orthancStudyID, sourceNodeCode); err != nil {
 		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", "verifying", 100, err.Error(), orthancJobID, orthancStudyID, 0, false)
 		a.log("error", "retrieve_job_mark_done_failed", map[string]any{
 			"job_id": jobID,
@@ -4682,7 +4743,7 @@ func (a *App) deletePatientStudyAccessSlice(ctx context.Context, patientID strin
 }
 
 func (a *App) queuePatientRetrieve(ctx context.Context, patient PatientSummary, studyInstanceUID string) (PatientRetrieveResponse, error) {
-	activeJob, err := a.findActiveRetrieveJob(ctx, studyInstanceUID, "patient", patient.ID)
+	activeJob, err := a.findActiveRetrieveJobByStudy(ctx, studyInstanceUID)
 	if err != nil {
 		return PatientRetrieveResponse{}, err
 	}
@@ -4722,7 +4783,7 @@ func (a *App) queuePatientRetrieve(ctx context.Context, patient PatientSummary, 
 }
 
 func (a *App) queuePhysicianRetrieve(ctx context.Context, physician PhysicianSummary, studyInstanceUID string) (PhysicianRetrieveResponse, error) {
-	activeJob, err := a.findActiveRetrieveJob(ctx, studyInstanceUID, "physician", physician.ID)
+	activeJob, err := a.findActiveRetrieveJobByStudy(ctx, studyInstanceUID)
 	if err != nil {
 		return PhysicianRetrieveResponse{}, err
 	}
@@ -4779,6 +4840,26 @@ func (a *App) findActiveRetrieveJob(ctx context.Context, studyUID, actorType, ac
 	}
 	if err != nil {
 		return nil, fmt.Errorf("find active retrieve job: %w", err)
+	}
+	return &snapshot, nil
+}
+
+func (a *App) findActiveRetrieveJobByStudy(ctx context.Context, studyUID string) (*retrieveJobSnapshot, error) {
+	var snapshot retrieveJobSnapshot
+	err := a.db.QueryRowContext(ctx, `
+		SELECT id::text, study_instance_uid, status, COALESCE(phase, ''), COALESCE(progress, 0), COALESCE(error, '')
+		FROM retrieve_jobs
+		WHERE study_instance_uid = $1
+		  AND status IN ('queued', 'running')
+		  AND COALESCE(started_at, created_at) >= now() - interval '10 minutes'
+		ORDER BY created_at DESC, id DESC
+		LIMIT 1
+	`, studyUID).Scan(&snapshot.JobID, &snapshot.StudyInstanceUID, &snapshot.Status, &snapshot.Phase, &snapshot.Progress, &snapshot.Error)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find active retrieve job by study: %w", err)
 	}
 	return &snapshot, nil
 }
@@ -5508,7 +5589,7 @@ func (a *App) insertRetrieveJob(ctx context.Context, studyUID, sourceNodeID, act
 		INSERT INTO retrieve_jobs (
 			study_instance_uid, source_node_id, requested_by_actor_type, requested_by_actor_id, status
 		) VALUES (
-			$1, (SELECT id FROM pacs_nodes WHERE code = $2), $3, $4::uuid, 'queued'
+			$1, (SELECT id FROM pacs_nodes WHERE code = $2), NULLIF($3, ''), CASE WHEN $4 = '' THEN NULL ELSE $4::uuid END, 'queued'
 		)
 		RETURNING id::text
 	`, studyUID, sourceNodeID, actorType, actorID).Scan(&jobID)
@@ -5581,6 +5662,125 @@ func (a *App) retrieveProgressPollInterval() time.Duration {
 		return 5 * time.Second
 	}
 	return time.Duration(a.externalConfig.Portal.RetrieveProgressPollSeconds) * time.Second
+}
+
+func (a *App) retrieveWorkerConcurrency() int {
+	if a.externalConfig == nil || a.externalConfig.Portal.RetrieveWorkerConcurrency <= 0 {
+		return 2
+	}
+	return a.externalConfig.Portal.RetrieveWorkerConcurrency
+}
+
+func (a *App) scheduledRetrieveInterval() time.Duration {
+	if a.externalConfig == nil || a.externalConfig.Portal.ScheduledRetrieveIntervalMinutes <= 0 {
+		return time.Hour
+	}
+	return time.Duration(a.externalConfig.Portal.ScheduledRetrieveIntervalMinutes) * time.Minute
+}
+
+func (a *App) scheduledRetrieveMaxStudyAgeDays() int {
+	if a.externalConfig == nil || a.externalConfig.Portal.ScheduledRetrieveMaxStudyAgeDays <= 0 {
+		return 7
+	}
+	return a.externalConfig.Portal.ScheduledRetrieveMaxStudyAgeDays
+}
+
+func (a *App) scheduledRetrieveBatchSize() int {
+	if a.externalConfig == nil || a.externalConfig.Portal.ScheduledRetrieveBatchSize <= 0 {
+		return 5
+	}
+	return a.externalConfig.Portal.ScheduledRetrieveBatchSize
+}
+
+type scheduledRetrieveCandidate struct {
+	StudyInstanceUID string
+	SourceNodeID     string
+}
+
+func (a *App) runScheduledRetrieveCycle() {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	candidates, err := a.listScheduledRetrieveCandidates(ctx, a.scheduledRetrieveMaxStudyAgeDays(), a.scheduledRetrieveBatchSize())
+	if err != nil {
+		a.log("error", "scheduled_retrieve_candidates_failed", map[string]any{
+			"error": err.Error(),
+		})
+		return
+	}
+	if len(candidates) == 0 {
+		return
+	}
+
+	enqueued := 0
+	for _, candidate := range candidates {
+		if !a.sourceNodeAvailable(candidate.SourceNodeID) {
+			continue
+		}
+		activeJob, err := a.findActiveRetrieveJobByStudy(ctx, candidate.StudyInstanceUID)
+		if err != nil || activeJob != nil {
+			continue
+		}
+
+		jobID, err := a.insertRetrieveJob(ctx, candidate.StudyInstanceUID, candidate.SourceNodeID, "system", "")
+		if err != nil {
+			a.log("error", "scheduled_retrieve_enqueue_failed", map[string]any{
+				"study_instance_uid": candidate.StudyInstanceUID,
+				"source_node_id":     candidate.SourceNodeID,
+				"error":              err.Error(),
+			})
+			continue
+		}
+		a.enqueueScheduledRetrieveJob(jobID)
+		enqueued++
+	}
+
+	if enqueued > 0 {
+		a.log("info", "scheduled_retrieve_cycle_completed", map[string]any{
+			"candidates": len(candidates),
+			"enqueued":   enqueued,
+		})
+	}
+}
+
+func (a *App) listScheduledRetrieveCandidates(ctx context.Context, maxStudyAgeDays, batchSize int) ([]scheduledRetrieveCandidate, error) {
+	rows, err := a.db.QueryContext(ctx, `
+		WITH ranked AS (
+			SELECT
+				q.study_instance_uid,
+				q.source_node_id,
+				q.last_seen_at,
+				ROW_NUMBER() OVER (
+					PARTITION BY q.study_instance_uid
+					ORDER BY q.last_seen_at DESC, q.source_node_id ASC
+				) AS rn
+			FROM qido_study_cache q
+			LEFT JOIN cached_studies cs ON cs.study_instance_uid = q.study_instance_uid
+			WHERE COALESCE(cs.cache_status, 'not_local') <> 'local_complete'
+			  AND COALESCE(q.source_node_id, '') <> ''
+			  AND COALESCE(NULLIF(REPLACE(q.study_date, '-', ''), ''), TO_CHAR(q.last_seen_at, 'YYYYMMDD')) >= TO_CHAR(CURRENT_DATE - ($1::int || ' days')::interval, 'YYYYMMDD')
+		)
+		SELECT study_instance_uid, source_node_id
+		FROM ranked
+		WHERE rn = 1
+		ORDER BY last_seen_at DESC, study_instance_uid ASC
+		LIMIT $2
+	`, maxStudyAgeDays, batchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	candidates := make([]scheduledRetrieveCandidate, 0, batchSize)
+	for rows.Next() {
+		var candidate scheduledRetrieveCandidate
+		if err := rows.Scan(&candidate.StudyInstanceUID, &candidate.SourceNodeID); err != nil {
+			return nil, err
+		}
+		candidates = append(candidates, candidate)
+	}
+
+	return candidates, rows.Err()
 }
 
 func (a *App) fetchOrthancJobStatus(ctx context.Context, orthancJobID string) (orthancRetrieveStatus, error) {
@@ -5866,7 +6066,7 @@ func (a *App) markPatientStudyAvailableLocal(ctx context.Context, patientID, stu
 	return err
 }
 
-func (a *App) completeRetrieveSuccess(ctx context.Context, jobID, actorType, actorID, studyUID, orthancStudyID, sourceNodeID string) error {
+func (a *App) completeRetrieveSuccess(ctx context.Context, jobID, studyUID, orthancStudyID, sourceNodeID string) error {
 	tx, err := a.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -5875,22 +6075,19 @@ func (a *App) completeRetrieveSuccess(ctx context.Context, jobID, actorType, act
 		_ = tx.Rollback()
 	}()
 
-	if actorType == "patient" && actorID != "" {
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE patient_study_access
-			SET availability_status = 'available_local',
-			    local_orthanc_study_id = $3,
-			    last_seen_at = now(),
-			    last_authorized_at = now(),
-			    source_json = jsonb_set(
-			      jsonb_set(COALESCE(source_json, '{}'::jsonb), '{source_node_id}', to_jsonb($4::text), true),
-			      '{orthanc_study_id}', to_jsonb($3::text), true
-			    )
-			WHERE patient_id = $1::uuid
-			  AND study_instance_uid = $2
-		`, actorID, studyUID, orthancStudyID, sourceNodeID); err != nil {
-			return err
-		}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE patient_study_access
+		SET availability_status = 'available_local',
+		    local_orthanc_study_id = $2,
+		    last_seen_at = now(),
+		    last_authorized_at = now(),
+		    source_json = jsonb_set(
+		      jsonb_set(COALESCE(source_json, '{}'::jsonb), '{source_node_id}', to_jsonb($3::text), true),
+		      '{orthanc_study_id}', to_jsonb($2::text), true
+		    )
+		WHERE study_instance_uid = $1
+	`, studyUID, orthancStudyID, sourceNodeID); err != nil {
+		return err
 	}
 
 	locationsJSON, err := json.Marshal([]string{sourceNodeID})
@@ -7095,6 +7292,18 @@ func validateExternalConfig(cfg ExternalConfig) error {
 	}
 	if cfg.Portal.RetrieveProgressPollSeconds <= 0 {
 		return errors.New("portal.retrieve_progress_poll_seconds must be greater than 0")
+	}
+	if cfg.Portal.RetrieveWorkerConcurrency <= 0 {
+		return errors.New("portal.retrieve_worker_concurrency must be greater than 0")
+	}
+	if cfg.Portal.ScheduledRetrieveIntervalMinutes <= 0 {
+		return errors.New("portal.scheduled_retrieve_interval_minutes must be greater than 0")
+	}
+	if cfg.Portal.ScheduledRetrieveMaxStudyAgeDays <= 0 {
+		return errors.New("portal.scheduled_retrieve_max_study_age_days must be greater than 0")
+	}
+	if cfg.Portal.ScheduledRetrieveBatchSize <= 0 {
+		return errors.New("portal.scheduled_retrieve_batch_size must be greater than 0")
 	}
 
 	switch cfg.Patient.ResolvedAuthMode() {

@@ -40,7 +40,12 @@
   "portal": {
     "session_timeout_minutes": 10,
     "show_demo_ribbon": true,
-    "retrieve_progress_poll_seconds": 5
+    "retrieve_progress_poll_seconds": 5,
+    "retrieve_worker_concurrency": 2,
+    "scheduled_retrieve_enabled": false,
+    "scheduled_retrieve_interval_minutes": 60,
+    "scheduled_retrieve_max_study_age_days": 7,
+    "scheduled_retrieve_batch_size": 5
   },
   "patient": {
     "auth_mode": "mail",

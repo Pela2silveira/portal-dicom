@@ -32,6 +32,7 @@
 - La misma carga mínima de runtime puede exponer flags visuales no sensibles del portal, por ejemplo `portal.show_demo_ribbon`, para mantener consistencia entre landing y workspaces.
 - El retrieve debe poder exponer un progreso liviano orientado a UX, combinando fase (`preparing/retrieving/verifying`) y porcentaje aproximado del job de Orthanc cuando esté disponible, sin emitir eventos de alta frecuencia al navegador.
 - La frecuencia de polling interno sobre el job de Orthanc debe ser configurable mediante `portal.retrieve_progress_poll_seconds`, con valor inicial de 5 segundos.
+- El backend puede ejecutar un scheduler opcional de precache que, cada `portal.scheduled_retrieve_interval_minutes`, seleccione estudios recientes no locales desde `qido_study_cache` y encole retrieves estándar hacia Orthanc sin bloquear la UI; la concurrencia de workers y el tamaño del batch también deben ser configurables.
 - TO-DO: si el `Progress` del job de Orthanc no resulta suficientemente útil, investigar un handler alternativo de retrieve/progreso basado en `dcmtk` u otro mecanismo con mejor granularidad y costo operativo razonable.
 - TO-DO: investigar si una combinación con el plugin de indexación local de Orthanc, compartiendo un volumen entre backend y contenedor Orthanc, puede dar una señal más robusta de ingreso/progreso local.
 - Esa carga mínima también puede exponer el `patient.auth_mode` efectivo cuando sea necesario para adaptar el comportamiento visual del login, por ejemplo ocultar el campo de código en `master_key`.

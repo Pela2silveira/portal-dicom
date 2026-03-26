@@ -154,6 +154,11 @@ Fields:
 - `session_timeout_minutes`: common session timeout for patient and professional surfaces
 - `show_demo_ribbon`: when `true`, the diagonal `Demo` ribbon is shown on the landing auth card and on both patient/professional workspaces
 - `retrieve_progress_poll_seconds`: polling interval, in seconds, used by the backend to query Orthanc job progress for active retrieve jobs
+- `retrieve_worker_concurrency`: number of backend goroutines allowed to monitor/complete Orthanc-backed retrieve jobs concurrently
+- `scheduled_retrieve_enabled`: when `true`, a background scheduler periodically enqueues automatic retrieves for recent non-local studies already present in the portal lists/cache
+- `scheduled_retrieve_interval_minutes`: interval between scheduler cycles
+- `scheduled_retrieve_max_study_age_days`: maximum study age considered by the scheduler, based on study date or last seen date fallback
+- `scheduled_retrieve_batch_size`: maximum number of studies enqueued per scheduler cycle
 
 Public exposure note:
 
