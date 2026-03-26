@@ -103,6 +103,11 @@
         min-width: 0;
       }
 
+      .panel-with-ribbon {
+        position: relative;
+        overflow: hidden;
+      }
+
       .auth {
         position: relative;
         padding: 0;
@@ -1264,8 +1269,8 @@
       </header>
 
       <main class="hero">
-        <section class="panel auth">
-          <div class="demo-ribbon" aria-hidden="true">Demo</div>
+        <section class="panel panel-with-ribbon auth">
+          <div class="demo-ribbon hidden" data-demo-ribbon aria-hidden="true">Demo</div>
           <div class="auth-top">
             <h3>Acceso al portal</h3>
             <p>Seleccione su perfil para continuar.</p>
@@ -1328,7 +1333,8 @@
       </main>
 
       <main class="workspace hidden" id="patient-workspace">
-        <section class="panel">
+        <section class="panel panel-with-ribbon">
+          <div class="demo-ribbon hidden" data-demo-ribbon aria-hidden="true">Demo</div>
           <div class="workspace-header">
             <div>
               <p class="eyebrow">Paciente</p>
@@ -1445,7 +1451,8 @@
       </main>
 
       <main class="workspace hidden" id="physician-workspace">
-        <section class="panel">
+        <section class="panel panel-with-ribbon">
+          <div class="demo-ribbon hidden" data-demo-ribbon aria-hidden="true">Demo</div>
           <div class="workspace-header">
             <div>
               <p class="eyebrow">Profesional</p>
@@ -1611,6 +1618,7 @@
       const physicianWorkspace = document.getElementById("physician-workspace");
       const roleButtons = document.querySelectorAll("[data-role]");
       const flows = document.querySelectorAll("[data-flow]");
+      const demoRibbons = document.querySelectorAll("[data-demo-ribbon]");
       const mailCodeButton = document.getElementById("send-mail-code");
       const patientDocument = document.getElementById("patient-document");
       const patientMailCode = document.getElementById("patient-mail-code");
@@ -1671,6 +1679,7 @@
       let portalSessionTimeoutHandle = null;
       const portalWorkspaceStorageKey = "portalWorkspaceState";
       let portalSessionDurationMs = 10 * 60 * 1000;
+      let portalShowDemoRibbon = false;
       const patientDateFilter = (() => {
         const now = new Date();
         return {
@@ -1795,8 +1804,16 @@
           if (Number.isFinite(minutes) && minutes > 0) {
             portalSessionDurationMs = minutes * 60 * 1000;
           }
+          portalShowDemoRibbon = Boolean(payload?.portal?.show_demo_ribbon);
+          applyDemoRibbonVisibility();
         } catch (_error) {
         }
+      }
+
+      function applyDemoRibbonVisibility() {
+        demoRibbons.forEach(ribbon => {
+          ribbon.classList.toggle("hidden", !portalShowDemoRibbon);
+        });
       }
 
       function returnToLandingSoft() {

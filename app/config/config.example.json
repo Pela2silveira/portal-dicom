@@ -38,7 +38,8 @@
     "prestaciones_enrichment_enabled": false
   },
   "portal": {
-    "session_timeout_minutes": 10
+    "session_timeout_minutes": 10,
+    "show_demo_ribbon": true
   },
   "patient": {
     "auth_mode": "mail",

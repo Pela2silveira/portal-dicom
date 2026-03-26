@@ -39,6 +39,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - The patient and professional `Continuar` actions must share the same visual treatment on the public landing.
 - The `Continuar` action should use the same primary blue CTA language and must stay disabled until the mail-code request succeeds and the patient enters a code value.
 - The public landing may expose a diagonal `Demo` ribbon on the auth card to signal demo-oriented access modes without changing the login flow itself.
+- The diagonal `Demo` ribbon must be controlled by a shared portal flag and, when enabled, should also appear on the patient and professional workspaces to avoid changing the environment signal after login.
 - Keyboard flow on the public landing must start on the active role selector. Natural `Tab` navigation should move between `Paciente` and `Profesional`, and `Enter` on the selected role must jump to that role's user-identification input.
 - Once the patient input flow starts, `Tab` from `Documento` moves to `Enviar código`, successful `Enviar código` moves focus to `Código por mail`, and `Tab`/`Enter` from `Código por mail` moves focus to `Continuar`.
 - The patient `Continuar` step must still validate against backend before opening the workspace; in `master_key` mode the entered code is checked against the configured shared key, but the visible UI remains unchanged.

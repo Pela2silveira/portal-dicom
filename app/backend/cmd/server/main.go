@@ -1358,6 +1358,7 @@ type HISConfigResponse struct {
 
 type PortalConfig struct {
 	SessionTimeoutMinutes int `json:"session_timeout_minutes"`
+	ShowDemoRibbon       bool `json:"show_demo_ribbon"`
 }
 
 func main() {
@@ -3344,6 +3345,7 @@ func loadExternalConfig(path string) (*ExternalConfig, error) {
 	cfg := ExternalConfig{
 		Portal: PortalConfig{
 			SessionTimeoutMinutes: 10,
+			ShowDemoRibbon:       false,
 		},
 		Patient: PatientConfig{
 			AuthMode: PatientAuthModeFakeAuth,

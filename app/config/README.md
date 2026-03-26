@@ -152,11 +152,12 @@ Shared portal runtime behavior.
 Fields:
 
 - `session_timeout_minutes`: common session timeout for patient and professional surfaces
+- `show_demo_ribbon`: when `true`, the diagonal `Demo` ribbon is shown on the landing auth card and on both patient/professional workspaces
 
 Public exposure note:
 
 - The full `/api/config` endpoint is operational/internal and stays blocked by public Nginx.
-- The landing UI reads only a minimal public runtime payload from `/api/runtime-config`, currently limited to `portal.session_timeout_minutes`.
+- The landing UI reads only a minimal public runtime payload from `/api/runtime-config`, currently limited to safe `portal` fields such as `session_timeout_minutes` and `show_demo_ribbon`.
 
 ## `professional`
 

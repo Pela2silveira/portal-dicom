@@ -41,6 +41,7 @@
 - [Ready] **Professional entry keyboard flow**: once the professional input flow starts, `Tab`/`Enter` from `DNI` moves to `Contraseña`; and `Tab`/`Enter` from `Contraseña` moves focus to `Continuar`.
 - [Ready] **Matching public continue CTA**: the `Continuar` button in the professional login uses the same visual treatment as the patient `Continuar` action.
 - [Ready] **Demo ribbon on landing**: the public auth card shows a diagonal `Demo` ribbon on the right without interfering with focus, clicks, or responsive layout.
+- [Ready] **Shared demo ribbon flag**: `portal.show_demo_ribbon` controls the same diagonal `Demo` ribbon across landing, patient workspace, and professional workspace.
 - [Ready] **Patient continue backend validation**: the patient `Continuar` action validates against backend before opening the workspace; in `master_key` mode the entered code must match the configured shared key.
 - [Ready] **Configurable shared session timeout**: patient and professional workspaces expire according to `portal.session_timeout_minutes`; when the timeout is reached, the app returns to the landing and clears the restorable workspace state.
 - [Ready] **Minimal public runtime config**: the landing/workspace shell reads `portal.session_timeout_minutes` from `/api/runtime-config` without exposing the broader `/api/config` payload.
