@@ -2447,12 +2447,12 @@
                 : study.source_node_available === false
                   ? '<button class="action action-secondary" type="button" disabled>Origen no disponible</button>'
                 : (study.retrieve_status === "running" || study.retrieve_status === "queued")
-                  ? '<button class="action action-secondary" type="button" disabled>Recuperando</button>'
-                  : study.retrieve_status === "done"
-                    ? '<button class="action action-secondary" type="button" disabled>Recuperado</button>'
+                  ? '<button class="action action-secondary" type="button" disabled data-patient-retrieve-button="' + escapeHTML(study.study_instance_uid) + '">' + escapeHTML(retrieveActionLabel(study.retrieve_status, study.retrieve_phase, study.retrieve_progress)) + '</button>'
+                : study.retrieve_status === "done"
+                    ? '<button class="action action-secondary" type="button" disabled data-patient-retrieve-button="' + escapeHTML(study.study_instance_uid) + '">Recuperado</button>'
                     : study.retrieve_status === "failed"
-                      ? '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '">Reintentar recuperación</button>'
-                      : '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '">Recuperar estudio</button>';
+                      ? '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '" data-patient-retrieve-button="' + escapeHTML(study.study_instance_uid) + '">Reintentar recuperación</button>'
+                      : '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '" data-patient-retrieve-button="' + escapeHTML(study.study_instance_uid) + '">Recuperar estudio</button>';
               const ohifAction = study.ohif_viewer_url
                 ? '<a class="action action-primary" href="' + escapeHTML(study.ohif_viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar con OHIF Viewer</a>'
                 : "";
@@ -2466,8 +2466,8 @@
                     escapeHTML(labelForStatus(study.availability_status)) +
                   '</div>' +
                   (study.retrieve_status && study.retrieve_status !== "idle"
-                    ? '<div class="' + chipClassForRetrieve(study.retrieve_status) + '">' +
-                        escapeHTML(labelForRetrieveStatus(study.retrieve_status)) +
+                    ? '<div class="' + chipClassForRetrieve(study.retrieve_status) + '" data-patient-retrieve-chip="' + escapeHTML(study.study_instance_uid) + '">' +
+                        escapeHTML(labelForRetrieveStatus(study.retrieve_status, study.retrieve_phase, study.retrieve_progress)) +
                       '</div>'
                     : "") +
                 '</div>';
@@ -2498,11 +2498,26 @@
             .join("");
       }
 
-      function labelForRetrieveStatus(status) {
+      function retrievePhaseLabel(phase) {
+        if (phase === "preparing") return "Preparando recuperación";
+        if (phase === "retrieving") return "Recuperando desde origen";
+        if (phase === "verifying") return "Verificando disponibilidad local";
+        if (phase === "paused") return "Recuperación pausada";
+        if (phase === "done") return "Recuperación completa";
+        return "";
+      }
+
+      function labelForRetrieveStatus(status, phase, progress) {
         if (status === "idle") return "Recuperación pendiente";
         if (status === "done") return "Recuperación completa";
-        if (status === "running") return "Recuperación en curso";
-        if (status === "queued") return "Recuperación en cola";
+        if (status === "running") {
+          const phaseLabel = retrievePhaseLabel(phase);
+          if (typeof progress === "number" && progress > 0 && progress < 100) {
+            return (phaseLabel || "Recuperación en curso") + " (" + progress + "%)";
+          }
+          return phaseLabel || "Recuperación en curso";
+        }
+        if (status === "queued") return retrievePhaseLabel(phase) || "Recuperación en cola";
         if (status === "failed") return "Recuperación con error";
         return status || "Estado desconocido";
       }
@@ -2512,6 +2527,18 @@
         if (status === "running" || status === "queued") return "chip warn";
         if (status === "failed") return "chip";
         return "chip";
+      }
+
+      function retrieveActionLabel(status, phase, progress) {
+        if (status === "running" || status === "queued") {
+          if (typeof progress === "number" && progress > 0 && progress < 100) {
+            return "Recuperando " + progress + "%";
+          }
+          return retrievePhaseLabel(phase) || "Recuperando";
+        }
+        if (status === "done") return "Recuperado";
+        if (status === "failed") return "Reintentar recuperación";
+        return "Recuperar estudio";
       }
 
       function labelForCacheStatus(status) {
@@ -2643,16 +2670,16 @@
               : "";
             let retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '">Recuperar estudio</button>';
             if (result.retrieve_status === "done" && result.viewer_url) {
-              retrieveAction = '<button class="action action-secondary" type="button" disabled>Recuperado</button>';
+              retrieveAction = '<button class="action action-secondary" type="button" disabled data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">Recuperado</button>';
             } else if (result.source_node_available === false) {
               retrieveAction = '<button class="action action-secondary" type="button" disabled>Origen no disponible</button>';
             } else if (result.retrieve_status === "running" || result.retrieve_status === "queued") {
-              retrieveAction = '<button class="action action-secondary" type="button" disabled>Recuperando</button>';
+              retrieveAction = '<button class="action action-secondary" type="button" disabled data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">' + escapeHTML(retrieveActionLabel(result.retrieve_status, result.retrieve_phase, result.retrieve_progress)) + '</button>';
             } else if (result.retrieve_status === "failed") {
-              retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '">Reintentar recuperación</button>';
+              retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '" data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">Reintentar recuperación</button>';
             }
             if (result.retrieve_status !== "done" && result.retrieve_status !== "running" && result.retrieve_status !== "queued" && result.retrieve_status !== "failed") {
-              retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '">Recuperar estudio</button>';
+              retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '" data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">Recuperar estudio</button>';
             }
 
             return (
@@ -2662,8 +2689,8 @@
                     '<strong>Descripción del estudio: ' + escapeHTML(result.study_description || "Estudio sin descripción") + '</strong>' +
                     '<span>' + escapeHTML(result.patient_name) + " · " + escapeHTML(result.study_date || "Sin fecha") + '</span>' +
                   '</div>' +
-                  '<div class="' + chipClassForRetrieve(result.retrieve_status) + '">' +
-                    escapeHTML(labelForRetrieveStatus(result.retrieve_status)) +
+                  '<div class="' + chipClassForRetrieve(result.retrieve_status) + '" data-physician-retrieve-chip="' + escapeHTML(result.study_instance_uid) + '">' +
+                    escapeHTML(labelForRetrieveStatus(result.retrieve_status, result.retrieve_phase, result.retrieve_progress)) +
                   '</div>' +
                 '</div>' +
                 '<div class="meta-grid">' +
@@ -2819,6 +2846,70 @@
         const focusTarget = studyCard.querySelector("[data-physician-retrieve], a, button");
         if (focusTarget && typeof focusTarget.focus === "function") {
           focusTarget.focus({ preventScroll: true });
+        }
+      }
+
+      function updatePatientRetrieveVisual(payload) {
+        const studyUID = payload.study_instance_uid || "";
+        if (!studyUID) {
+          return;
+        }
+
+        let chip = patientStudyList.querySelector('[data-patient-retrieve-chip="' + cssEscape(studyUID) + '"]');
+        if (!chip && payload.status && payload.status !== "idle") {
+          const studyCard = patientStudyList.querySelector('[data-patient-study="' + cssEscape(studyUID) + '"]');
+          const chipRow = studyCard ? studyCard.querySelector(".status-chips") : null;
+          if (chipRow) {
+            chip = document.createElement("div");
+            chipRow.appendChild(chip);
+          }
+        }
+        if (chip) {
+          chip.className = chipClassForRetrieve(payload.status);
+          chip.setAttribute("data-patient-retrieve-chip", studyUID);
+          chip.textContent = labelForRetrieveStatus(payload.status, payload.phase, payload.progress);
+        }
+
+        const button = patientStudyList.querySelector('[data-patient-retrieve-button="' + cssEscape(studyUID) + '"]');
+        if (!button) {
+          return;
+        }
+
+        button.textContent = retrieveActionLabel(payload.status, payload.phase, payload.progress);
+        if (payload.status === "running" || payload.status === "queued" || payload.status === "done") {
+          button.disabled = true;
+          button.removeAttribute("data-patient-retrieve");
+        } else if (payload.status === "failed") {
+          button.disabled = false;
+          button.setAttribute("data-patient-retrieve", studyUID);
+        }
+      }
+
+      function updatePhysicianRetrieveVisual(payload) {
+        const studyUID = payload.study_instance_uid || "";
+        if (!studyUID) {
+          return;
+        }
+
+        const chip = physicianResultList.querySelector('[data-physician-retrieve-chip="' + cssEscape(studyUID) + '"]');
+        if (chip) {
+          chip.className = chipClassForRetrieve(payload.status);
+          chip.setAttribute("data-physician-retrieve-chip", studyUID);
+          chip.textContent = labelForRetrieveStatus(payload.status, payload.phase, payload.progress);
+        }
+
+        const button = physicianResultList.querySelector('[data-physician-retrieve-button="' + cssEscape(studyUID) + '"]');
+        if (!button) {
+          return;
+        }
+
+        button.textContent = retrieveActionLabel(payload.status, payload.phase, payload.progress);
+        if (payload.status === "running" || payload.status === "queued" || payload.status === "done") {
+          button.disabled = true;
+          button.removeAttribute("data-physician-retrieve");
+        } else if (payload.status === "failed") {
+          button.disabled = false;
+          button.setAttribute("data-physician-retrieve", studyUID);
         }
       }
 
@@ -2990,6 +3081,7 @@
         patientRetrieveEventSource = new EventSource("/api/retrieve/jobs/" + encodeURIComponent(jobID) + "/events");
         patientRetrieveEventSource.addEventListener("status", async event => {
           const payload = JSON.parse(event.data);
+          updatePatientRetrieveVisual(payload);
           if (payload.status === "done" || payload.status === "failed") {
             clearPatientRetrievePoll();
             if (activePatientDocument) {
@@ -3016,6 +3108,7 @@
         physicianRetrieveEventSource = new EventSource("/api/retrieve/jobs/" + encodeURIComponent(jobID) + "/events");
         physicianRetrieveEventSource.addEventListener("status", async event => {
           const payload = JSON.parse(event.data);
+          updatePhysicianRetrieveVisual(payload);
           if (payload.status === "done" || payload.status === "failed") {
             clearPhysicianRetrievePoll();
             if (activePhysicianUsername) {

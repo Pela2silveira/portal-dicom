@@ -39,7 +39,8 @@
   },
   "portal": {
     "session_timeout_minutes": 10,
-    "show_demo_ribbon": true
+    "show_demo_ribbon": true,
+    "retrieve_progress_poll_seconds": 5
   },
   "patient": {
     "auth_mode": "mail",

@@ -130,6 +130,8 @@ type RetrieveJobEvent struct {
 	JobID            string `json:"job_id"`
 	StudyInstanceUID string `json:"study_instance_uid"`
 	Status           string `json:"status"`
+	Phase            string `json:"phase,omitempty"`
+	Progress         int    `json:"progress,omitempty"`
 	Error            string `json:"error,omitempty"`
 }
 
@@ -1031,6 +1033,8 @@ type PatientStudy struct {
 	AndesProfessional  string   `json:"andes_professional,omitempty"`
 	AvailabilityStatus string   `json:"availability_status"`
 	RetrieveStatus     string   `json:"retrieve_status"`
+	RetrievePhase      string   `json:"retrieve_phase,omitempty"`
+	RetrieveProgress   int      `json:"retrieve_progress,omitempty"`
 	AuthorizationBasis string   `json:"authorization_basis"`
 	ViewerURL          string   `json:"viewer_url,omitempty"`
 	OHIFViewerURL      string   `json:"ohif_viewer_url,omitempty"`
@@ -1116,6 +1120,8 @@ type retrieveJobSnapshot struct {
 	JobID            string
 	StudyInstanceUID string
 	Status           string
+	Phase            string
+	Progress         int
 	Error            string
 }
 
@@ -1150,6 +1156,8 @@ type PhysicianResult struct {
 	AndesProfessional string  `json:"andes_professional,omitempty"`
 	CacheStatus      string   `json:"cache_status"`
 	RetrieveStatus   string   `json:"retrieve_status"`
+	RetrievePhase    string   `json:"retrieve_phase,omitempty"`
+	RetrieveProgress int      `json:"retrieve_progress,omitempty"`
 	PartialFilter    bool     `json:"partial_filter"`
 	ViewerURL        string   `json:"viewer_url,omitempty"`
 	OHIFViewerURL    string   `json:"ohif_viewer_url,omitempty"`
@@ -1373,6 +1381,7 @@ type DIMSECechoHealthAdapter struct{}
 const (
 	systemHealthCheckTimeout = 8 * time.Second
 	dimseEchoHealthTimeout   = 7 * time.Second
+	retrieveJobStaleAfter    = 10 * time.Minute
 )
 
 type PACSAuthResponse struct {
@@ -1394,8 +1403,9 @@ type HISConfigResponse struct {
 }
 
 type PortalConfig struct {
-	SessionTimeoutMinutes int `json:"session_timeout_minutes"`
-	ShowDemoRibbon       bool `json:"show_demo_ribbon"`
+	SessionTimeoutMinutes      int  `json:"session_timeout_minutes"`
+	ShowDemoRibbon             bool `json:"show_demo_ribbon"`
+	RetrieveProgressPollSeconds int `json:"retrieve_progress_poll_seconds"`
 }
 
 func main() {
@@ -3375,6 +3385,7 @@ func loadExternalConfig(path string) (*ExternalConfig, error) {
 		Portal: PortalConfig{
 			SessionTimeoutMinutes: 10,
 			ShowDemoRibbon:       false,
+			RetrieveProgressPollSeconds: 5,
 		},
 		Patient: PatientConfig{
 			AuthMode: PatientAuthModeFakeAuth,
@@ -4507,7 +4518,7 @@ func (a *App) processRetrieveJob(jobID string) {
 		return
 	}
 
-	if err := a.updateRetrieveJobStatus(ctx, jobID, "running", "", "", 0, true); err != nil {
+	if err := a.updateRetrieveJobStatus(ctx, jobID, "running", "preparing", 0, "", "", "", 0, true); err != nil {
 		a.log("error", "retrieve_job_mark_running_failed", map[string]any{
 			"job_id": jobID,
 			"error":  err.Error(),
@@ -4517,7 +4528,7 @@ func (a *App) processRetrieveJob(jobID string) {
 
 	node, err := a.getConfiguredNode(sourceNodeCode)
 	if err != nil {
-		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), "", 0, false)
+		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", "preparing", 0, err.Error(), "", "", 0, false)
 		a.log("error", "retrieve_job_node_resolve_failed", map[string]any{
 			"job_id":         jobID,
 			"source_node_id": sourceNodeCode,
@@ -4536,28 +4547,38 @@ func (a *App) processRetrieveJob(jobID string) {
 	})
 
 	if err := a.ensureOrthancModality(ctx, node); err != nil {
-		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), "", 0, false)
+		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", "preparing", 0, err.Error(), "", "", 0, false)
 		return
 	}
 
-	if err := a.startOrthancCGet(ctx, node, studyInstanceUID); err != nil {
-		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), "", 0, false)
-		return
-	}
-
-	localReady, orthancStudyID, err := a.waitForStudyInOrthanc(ctx, studyInstanceUID, 2*time.Second, 20*time.Second)
+	orthancJobID, err := a.startOrthancCGet(ctx, node, studyInstanceUID)
 	if err != nil {
-		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), orthancStudyID, 0, false)
+		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", "preparing", 0, err.Error(), "", "", 0, false)
 		return
 	}
-	if !localReady {
-		err := errors.New("study not available in orthanc after c-get")
-		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), orthancStudyID, 0, false)
+	if err := a.updateRetrieveJobStatus(ctx, jobID, "running", "retrieving", 0, "", orthancJobID, "", 0, false); err != nil {
+		a.log("error", "retrieve_job_save_orthanc_job_failed", map[string]any{
+			"job_id":         jobID,
+			"orthanc_job_id": orthancJobID,
+			"error":          err.Error(),
+		})
+	}
+
+	orthancStudyID, err := a.monitorOrthancRetrieveJob(ctx, jobID, orthancJobID, studyInstanceUID)
+	if err != nil {
+		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", "retrieving", 0, err.Error(), orthancJobID, "", 0, false)
 		return
+	}
+
+	if err := a.updateRetrieveJobStatus(ctx, jobID, "running", "verifying", 100, "", orthancJobID, orthancStudyID, 0, false); err != nil {
+		a.log("error", "retrieve_job_mark_verifying_failed", map[string]any{
+			"job_id": jobID,
+			"error":  err.Error(),
+		})
 	}
 
 	if err := a.completeRetrieveSuccess(ctx, jobID, actorType, actorID, studyInstanceUID, orthancStudyID, sourceNodeCode); err != nil {
-		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), orthancStudyID, 0, false)
+		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", "verifying", 100, err.Error(), orthancJobID, orthancStudyID, 0, false)
 		a.log("error", "retrieve_job_mark_done_failed", map[string]any{
 			"job_id": jobID,
 			"error":  err.Error(),
@@ -4743,15 +4764,16 @@ func (a *App) queuePhysicianRetrieve(ctx context.Context, physician PhysicianSum
 func (a *App) findActiveRetrieveJob(ctx context.Context, studyUID, actorType, actorID string) (*retrieveJobSnapshot, error) {
 	var snapshot retrieveJobSnapshot
 	err := a.db.QueryRowContext(ctx, `
-		SELECT id::text, study_instance_uid, status, COALESCE(error, '')
+		SELECT id::text, study_instance_uid, status, COALESCE(phase, ''), COALESCE(progress, 0), COALESCE(error, '')
 		FROM retrieve_jobs
 		WHERE study_instance_uid = $1
 		  AND requested_by_actor_type = $2
 		  AND requested_by_actor_id = $3::uuid
 		  AND status IN ('queued', 'running')
+		  AND COALESCE(started_at, created_at) >= now() - interval '10 minutes'
 		ORDER BY created_at DESC, id DESC
 		LIMIT 1
-	`, studyUID, actorType, actorID).Scan(&snapshot.JobID, &snapshot.StudyInstanceUID, &snapshot.Status, &snapshot.Error)
+	`, studyUID, actorType, actorID).Scan(&snapshot.JobID, &snapshot.StudyInstanceUID, &snapshot.Status, &snapshot.Phase, &snapshot.Progress, &snapshot.Error)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -4764,10 +4786,10 @@ func (a *App) findActiveRetrieveJob(ctx context.Context, studyUID, actorType, ac
 func (a *App) getRetrieveJobEvent(ctx context.Context, jobID string) (RetrieveJobEvent, error) {
 	var event RetrieveJobEvent
 	err := a.db.QueryRowContext(ctx, `
-		SELECT id::text, study_instance_uid, status, COALESCE(error, '')
+		SELECT id::text, study_instance_uid, status, COALESCE(phase, ''), COALESCE(progress, 0), COALESCE(error, '')
 		FROM retrieve_jobs
 		WHERE id = $1::uuid
-	`, jobID).Scan(&event.JobID, &event.StudyInstanceUID, &event.Status, &event.Error)
+	`, jobID).Scan(&event.JobID, &event.StudyInstanceUID, &event.Status, &event.Phase, &event.Progress, &event.Error)
 	return event, err
 }
 
@@ -5408,9 +5430,11 @@ func (a *App) getConfiguredNode(nodeID string) (PACSNodeConfig, error) {
 	return PACSNodeConfig{}, fmt.Errorf("configured PACS node %q not found", nodeID)
 }
 
-func (a *App) getStudyOperationalState(ctx context.Context, studyUID string, fallbackCacheStatus, fallbackRetrieveStatus string) (string, string, string, string, error) {
+func (a *App) getStudyOperationalState(ctx context.Context, studyUID string, fallbackCacheStatus, fallbackRetrieveStatus string) (string, string, string, int, string, string, error) {
 	cacheStatus := fallbackCacheStatus
 	retrieveStatus := fallbackRetrieveStatus
+	retrievePhase := ""
+	retrieveProgress := 0
 	viewerURL := ""
 	ohifViewerURL := ""
 
@@ -5421,7 +5445,7 @@ func (a *App) getStudyOperationalState(ctx context.Context, studyUID string, fal
 		WHERE study_instance_uid = $1
 	`, studyUID).Scan(&cacheStatus, &cachedOrthancStudyID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return "", "", "", "", err
+		return "", "", "", 0, "", "", err
 	}
 	if cacheStatus == "" {
 		cacheStatus = fallbackCacheStatus
@@ -5429,45 +5453,53 @@ func (a *App) getStudyOperationalState(ctx context.Context, studyUID string, fal
 
 	var (
 		latestRetrieveStatus string
+		latestRetrievePhase  string
+		latestRetrieveProgress int
 		retrieveCreatedAt    time.Time
 		retrieveStartedAt    sql.NullTime
 		retrieveFinishedAt   sql.NullTime
 	)
 	err = a.db.QueryRowContext(ctx, `
-		SELECT status, created_at, started_at, finished_at
+		SELECT status, COALESCE(phase, ''), COALESCE(progress, 0), created_at, started_at, finished_at
 		FROM retrieve_jobs
 		WHERE study_instance_uid = $1
 		ORDER BY created_at DESC, id DESC
 		LIMIT 1
-	`, studyUID).Scan(&latestRetrieveStatus, &retrieveCreatedAt, &retrieveStartedAt, &retrieveFinishedAt)
+	`, studyUID).Scan(&latestRetrieveStatus, &latestRetrievePhase, &latestRetrieveProgress, &retrieveCreatedAt, &retrieveStartedAt, &retrieveFinishedAt)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return "", "", "", "", err
+		return "", "", "", 0, "", "", err
 	}
 	if latestRetrieveStatus != "" {
 		retrieveStatus = latestRetrieveStatus
+		retrievePhase = latestRetrievePhase
+		retrieveProgress = latestRetrieveProgress
 		if (latestRetrieveStatus == "queued" || latestRetrieveStatus == "running") && !retrieveFinishedAt.Valid {
 			lastActivity := retrieveCreatedAt
 			if retrieveStartedAt.Valid {
 				lastActivity = retrieveStartedAt.Time
 			}
-			if time.Since(lastActivity) > 10*time.Minute {
+			if time.Since(lastActivity) > retrieveJobStaleAfter {
 				retrieveStatus = "idle"
+				retrievePhase = ""
+				retrieveProgress = 0
 			}
 		}
 	}
 
 	isLocal, _, err := a.findOrthancStudy(ctx, studyUID)
 	if err != nil {
-		return "", "", "", "", err
+		return "", "", "", 0, "", "", err
 	}
 	if isLocal {
 		cacheStatus = "local_complete"
 		retrieveStatus = "done"
+		retrievePhase = "done"
+		retrieveProgress = 100
 		viewerURL = buildStoneViewerURL(studyUID)
 		ohifViewerURL = buildOHIFViewerURL(studyUID)
 	}
 
-	return cacheStatus, retrieveStatus, viewerURL, ohifViewerURL, nil
+	return cacheStatus, retrieveStatus, retrievePhase, retrieveProgress, viewerURL, ohifViewerURL, nil
 }
 
 func (a *App) insertRetrieveJob(ctx context.Context, studyUID, sourceNodeID, actorType, actorID string) (string, error) {
@@ -5483,16 +5515,19 @@ func (a *App) insertRetrieveJob(ctx context.Context, studyUID, sourceNodeID, act
 	return jobID, err
 }
 
-func (a *App) updateRetrieveJobStatus(ctx context.Context, jobID, status, errMsg, orthancStudyID string, instancesReceived int, setStarted bool) error {
+func (a *App) updateRetrieveJobStatus(ctx context.Context, jobID, status, phase string, progress int, errMsg, orthancJobID, orthancStudyID string, instancesReceived int, setStarted bool) error {
 	query := `
 		UPDATE retrieve_jobs
 		SET status = $2,
-		    error = NULLIF($3, ''),
-		    orthanc_study_id = NULLIF($4, ''),
-		    instances_received = NULLIF($5, 0),
+		    phase = NULLIF($3, ''),
+		    progress = GREATEST(0, LEAST($4, 100)),
+		    error = NULLIF($5, ''),
+		    orthanc_job_id = NULLIF($6, ''),
+		    orthanc_study_id = NULLIF($7, ''),
+		    instances_received = NULLIF($8, 0),
 		    finished_at = CASE WHEN $2 IN ('done', 'failed') THEN now() ELSE finished_at END
 	`
-	args := []any{jobID, status, errMsg, orthancStudyID, instancesReceived}
+	args := []any{jobID, status, phase, progress, errMsg, orthancJobID, orthancStudyID, instancesReceived}
 	if setStarted {
 		query += `, started_at = now()`
 	}
@@ -5506,6 +5541,148 @@ func (a *App) updateRetrieveJobStatus(ctx context.Context, jobID, status, errMsg
 		a.publishRetrieveJobEvent(event)
 	}
 	return nil
+}
+
+type orthancJobResponse struct {
+	ID               string          `json:"ID"`
+	State            string          `json:"State"`
+	Progress         int             `json:"Progress"`
+	ErrorCode        int             `json:"ErrorCode"`
+	ErrorDescription string          `json:"ErrorDescription"`
+	Content          json.RawMessage `json:"Content"`
+}
+
+type orthancRetrieveStatus struct {
+	State    string
+	Phase    string
+	Progress int
+	Error    string
+}
+
+func mapOrthancJobStateToRetrievePhase(state string) string {
+	switch strings.TrimSpace(state) {
+	case "Pending", "Retry":
+		return "preparing"
+	case "Running":
+		return "retrieving"
+	case "Paused":
+		return "paused"
+	case "Success":
+		return "verifying"
+	case "Failure":
+		return "failed"
+	default:
+		return "retrieving"
+	}
+}
+
+func (a *App) retrieveProgressPollInterval() time.Duration {
+	if a.externalConfig == nil || a.externalConfig.Portal.RetrieveProgressPollSeconds <= 0 {
+		return 5 * time.Second
+	}
+	return time.Duration(a.externalConfig.Portal.RetrieveProgressPollSeconds) * time.Second
+}
+
+func (a *App) fetchOrthancJobStatus(ctx context.Context, orthancJobID string) (orthancRetrieveStatus, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(a.cfg.OrthancURL, "/")+"/jobs/"+url.PathEscape(orthancJobID), nil)
+	if err != nil {
+		return orthancRetrieveStatus{}, err
+	}
+	if a.cfg.OrthancUser != "" {
+		req.SetBasicAuth(a.cfg.OrthancUser, a.cfg.OrthancPass)
+	}
+
+	res, err := a.httpClient.Do(req)
+	if err != nil {
+		return orthancRetrieveStatus{}, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+		return orthancRetrieveStatus{}, fmt.Errorf("orthanc job bad status %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var payload orthancJobResponse
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		return orthancRetrieveStatus{}, err
+	}
+
+	progress := payload.Progress
+	if progress < 0 {
+		progress = 0
+	}
+	if progress > 100 {
+		progress = 100
+	}
+
+	return orthancRetrieveStatus{
+		State:    strings.TrimSpace(payload.State),
+		Phase:    mapOrthancJobStateToRetrievePhase(payload.State),
+		Progress: progress,
+		Error:    strings.TrimSpace(payload.ErrorDescription),
+	}, nil
+}
+
+func (a *App) monitorOrthancRetrieveJob(ctx context.Context, jobID, orthancJobID, studyUID string) (string, error) {
+	ticker := time.NewTicker(a.retrieveProgressPollInterval())
+	defer ticker.Stop()
+
+	lastState := ""
+	lastProgress := -1
+
+	checkOnce := func() (string, bool, error) {
+		status, err := a.fetchOrthancJobStatus(ctx, orthancJobID)
+		if err != nil {
+			return "", false, err
+		}
+
+		if status.State != lastState || status.Progress != lastProgress {
+			if err := a.updateRetrieveJobStatus(ctx, jobID, "running", status.Phase, status.Progress, "", orthancJobID, "", 0, false); err != nil {
+				a.log("error", "retrieve_job_progress_update_failed", map[string]any{
+					"job_id":         jobID,
+					"orthanc_job_id": orthancJobID,
+					"error":          err.Error(),
+				})
+			}
+			lastState = status.State
+			lastProgress = status.Progress
+		}
+
+		switch status.State {
+		case "Success":
+			localReady, orthancStudyID, err := a.waitForStudyInOrthanc(ctx, studyUID, 2*time.Second, 20*time.Second)
+			if err != nil {
+				return "", false, err
+			}
+			if !localReady {
+				return "", false, errors.New("study not available in orthanc after c-get")
+			}
+			return orthancStudyID, true, nil
+		case "Failure":
+			if status.Error == "" {
+				status.Error = "orthanc retrieve job failed"
+			}
+			return "", false, errors.New(status.Error)
+		}
+
+		return "", false, nil
+	}
+
+	for {
+		orthancStudyID, done, err := checkOnce()
+		if err != nil {
+			return "", err
+		}
+		if done {
+			return orthancStudyID, nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }
 
 func (a *App) ensureOrthancModality(ctx context.Context, node PACSNodeConfig) error {
@@ -5595,13 +5772,14 @@ func (a *App) executeOrthancEcho(ctx context.Context, node PACSNodeConfig, resol
 	return false
 }
 
-func (a *App) startOrthancCGet(ctx context.Context, node PACSNodeConfig, studyInstanceUID string) error {
+func (a *App) startOrthancCGet(ctx context.Context, node PACSNodeConfig, studyInstanceUID string) (string, error) {
 	return a.startOrthancCGetWithRefresh(ctx, node, studyInstanceUID, true)
 }
 
-func (a *App) startOrthancCGetWithRefresh(ctx context.Context, node PACSNodeConfig, studyInstanceUID string, allowRefresh bool) error {
+func (a *App) startOrthancCGetWithRefresh(ctx context.Context, node PACSNodeConfig, studyInstanceUID string, allowRefresh bool) (string, error) {
 	resolved := node.Resolved()
 	payload, err := json.Marshal(map[string]any{
+		"Asynchronous": true,
 		"Level": "Study",
 		"Resources": []map[string]string{
 			{"StudyInstanceUID": studyInstanceUID},
@@ -5609,12 +5787,12 @@ func (a *App) startOrthancCGetWithRefresh(ctx context.Context, node PACSNodeConf
 		"Timeout": 60,
 	})
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(a.cfg.OrthancURL, "/")+"/modalities/"+url.PathEscape(resolved.ID)+"/get", strings.NewReader(string(payload)))
 	if err != nil {
-		return err
+		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if a.cfg.OrthancUser != "" {
@@ -5624,7 +5802,7 @@ func (a *App) startOrthancCGetWithRefresh(ctx context.Context, node PACSNodeConf
 	orthancRetrieveClient := &http.Client{}
 	res, err := orthancRetrieveClient.Do(req)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
@@ -5633,13 +5811,23 @@ func (a *App) startOrthancCGetWithRefresh(ctx context.Context, node PACSNodeConf
 		if allowRefresh && orthancModalityMissing(res.StatusCode, bodyText) {
 			a.invalidateOrthancModality(node.ID)
 			if err := a.ensureOrthancModality(ctx, node); err != nil {
-				return fmt.Errorf("orthanc c-get modality refresh failed: %w", err)
+				return "", fmt.Errorf("orthanc c-get modality refresh failed: %w", err)
 			}
 			return a.startOrthancCGetWithRefresh(ctx, node, studyInstanceUID, false)
 		}
-		return fmt.Errorf("orthanc c-get bad status %d: %s", res.StatusCode, bodyText)
+		return "", fmt.Errorf("orthanc c-get bad status %d: %s", res.StatusCode, bodyText)
 	}
-	return nil
+
+	var payloadResponse struct {
+		ID string `json:"ID"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payloadResponse); err != nil {
+		return "", fmt.Errorf("decode orthanc c-get response: %w", err)
+	}
+	if strings.TrimSpace(payloadResponse.ID) == "" {
+		return "", errors.New("orthanc c-get did not return job id")
+	}
+	return payloadResponse.ID, nil
 }
 
 func (a *App) waitForStudyInOrthanc(ctx context.Context, studyUID string, pollInterval, timeout time.Duration) (bool, string, error) {
@@ -5727,6 +5915,8 @@ func (a *App) completeRetrieveSuccess(ctx context.Context, jobID, actorType, act
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE retrieve_jobs
 		SET status = 'done',
+		    phase = 'done',
+		    progress = 100,
 		    error = NULL,
 		    orthanc_study_id = NULLIF($2, ''),
 		    instances_received = NULL,
@@ -5971,26 +6161,28 @@ func (a *App) searchPhysicianResultsFromNode(ctx context.Context, physician Phys
 		a.logAccessionNumberProbe("physician_remote_qido", node.ID, studyUID, dicomFirstString(item, "00080050"))
 
 		result := PhysicianResult{
-			StudyInstanceUID: studyUID,
-			PatientName:      dicomFirstPersonName(item, "00100010"),
-			PatientID:        dicomFirstString(item, "00100020"),
-			StudyDate:        normalizeStudyDate(dicomFirstString(item, "00080020")),
-			StudyDescription: dicomFirstString(item, "00081030"),
-			Modalities:       dicomStringList(item, "00080061"),
-			Locations:        []string{node.Name},
-			SourceNodeID:     node.ID,
-			CacheStatus:      "not_local",
-			RetrieveStatus:   "idle",
-			PartialFilter:    false,
+			StudyInstanceUID:    studyUID,
+			PatientName:         dicomFirstPersonName(item, "00100010"),
+			PatientID:           dicomFirstString(item, "00100020"),
+			StudyDate:           normalizeStudyDate(dicomFirstString(item, "00080020")),
+			StudyDescription:    dicomFirstString(item, "00081030"),
+			Modalities:          dicomStringList(item, "00080061"),
+			Locations:           []string{node.Name},
+			SourceNodeID:        node.ID,
+			CacheStatus:         "not_local",
+			RetrieveStatus:      "idle",
+			PartialFilter:       false,
 			SourceNodeAvailable: a.sourceNodeAvailable(node.ID),
 		}
 
-		cacheStatus, retrieveStatus, viewerURL, ohifViewerURL, err := a.getStudyOperationalState(ctx, studyUID, result.CacheStatus, result.RetrieveStatus)
+		cacheStatus, retrieveStatus, retrievePhase, retrieveProgress, viewerURL, ohifViewerURL, err := a.getStudyOperationalState(ctx, studyUID, result.CacheStatus, result.RetrieveStatus)
 		if err != nil {
 			return nil, fmt.Errorf("resolve physician qido state for %s: %w", studyUID, err)
 		}
 		result.CacheStatus = cacheStatus
 		result.RetrieveStatus = retrieveStatus
+		result.RetrievePhase = retrievePhase
+		result.RetrieveProgress = retrieveProgress
 		result.ViewerURL = viewerURL
 		result.OHIFViewerURL = ohifViewerURL
 		if viewerURL != "" {
@@ -6188,7 +6380,7 @@ func (a *App) searchPhysicianResultsFromLocalCache(ctx context.Context, username
 		}
 		a.logAccessionNumberProbe("physician_local_cache_qido", "orthanc", studyUID, dicomFirstString(item, "00080050"))
 
-		cacheStatus, retrieveStatus, viewerURL, ohifViewerURL, err := a.getStudyOperationalState(ctx, studyUID, "local_complete", "done")
+		cacheStatus, retrieveStatus, retrievePhase, retrieveProgress, viewerURL, ohifViewerURL, err := a.getStudyOperationalState(ctx, studyUID, "local_complete", "done")
 		if err != nil {
 			return nil, fmt.Errorf("resolve physician cached study state for %s: %w", studyUID, err)
 		}
@@ -6210,6 +6402,8 @@ func (a *App) searchPhysicianResultsFromLocalCache(ctx context.Context, username
 			Locations:        locations,
 			CacheStatus:      cacheStatus,
 			RetrieveStatus:   retrieveStatus,
+			RetrievePhase:    retrievePhase,
+			RetrieveProgress: retrieveProgress,
 			PartialFilter:    false,
 			ViewerURL:        viewerURL,
 			OHIFViewerURL:    ohifViewerURL,
@@ -6815,11 +7009,13 @@ func (a *App) listPatientStudies(ctx context.Context, patientID, documentNumber 
 		if availabilityStatus == "available_local" {
 			cacheStatus = "local_complete"
 		}
-		_, retrieveStatus, viewerURL, ohifViewerURL, err := a.getStudyOperationalState(ctx, studyUID, cacheStatus, study.RetrieveStatus)
+		_, retrieveStatus, retrievePhase, retrieveProgress, viewerURL, ohifViewerURL, err := a.getStudyOperationalState(ctx, studyUID, cacheStatus, study.RetrieveStatus)
 		if err != nil {
 			return nil, fmt.Errorf("resolve patient study operational state for %s: %w", studyUID, err)
 		}
 		study.RetrieveStatus = retrieveStatus
+		study.RetrievePhase = retrievePhase
+		study.RetrieveProgress = retrieveProgress
 		study.ViewerURL = viewerURL
 		study.OHIFViewerURL = ohifViewerURL
 		if viewerURL != "" {
@@ -6896,6 +7092,9 @@ func buildPhysicianDownloadURL(username, studyInstanceUID string) string {
 func validateExternalConfig(cfg ExternalConfig) error {
 	if cfg.Portal.SessionTimeoutMinutes <= 0 {
 		return errors.New("portal.session_timeout_minutes must be greater than 0")
+	}
+	if cfg.Portal.RetrieveProgressPollSeconds <= 0 {
+		return errors.New("portal.retrieve_progress_poll_seconds must be greater than 0")
 	}
 
 	switch cfg.Patient.ResolvedAuthMode() {

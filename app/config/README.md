@@ -153,6 +153,7 @@ Fields:
 
 - `session_timeout_minutes`: common session timeout for patient and professional surfaces
 - `show_demo_ribbon`: when `true`, the diagonal `Demo` ribbon is shown on the landing auth card and on both patient/professional workspaces
+- `retrieve_progress_poll_seconds`: polling interval, in seconds, used by the backend to query Orthanc job progress for active retrieve jobs
 
 Public exposure note:
 

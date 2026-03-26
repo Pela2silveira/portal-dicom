@@ -169,6 +169,7 @@ Allow a patient to see only their authorized studies and open one selected study
   - returns only studies authorized for the active patient session
   - includes sync state for the current filter set (`idle|queued|running|done|failed`)
   - includes per-study `retrieve_status` resolved from `retrieve_jobs`
+  - includes per-study `retrieve_phase` and `retrieve_progress` to drive lightweight retrieve progress in the row/action state
   - includes per-study `source_node_available` so the UI can block retrieve when the origin PACS is offline
 - `POST /api/patient/search`
   - receives `document_number` plus the current patient filters
@@ -182,6 +183,7 @@ Allow a patient to see only their authorized studies and open one selected study
   - enqueues a background retrieve job that triggers PACS-to-PACS retrieve through Orthanc REST
   - must reject the request if the origin PACS is currently offline
   - returns `job_id` and the UI follows completion through `GET /api/retrieve/jobs/:id/events` (SSE)
+  - intermediate SSE events may expose `phase` and `progress` for the active retrieve, but should stay low-frequency and change-driven
   - the patient list should refresh on retrieve terminal events (`done|failed`) without unmounting the current grid or showing an intermediate loading placeholder
   - updates local availability before the patient can open OHIF
 - `GET /api/patient/studies/:studyInstanceUID/access`
@@ -333,6 +335,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
   - triggers PACS-to-PACS retrieve through Orthanc REST and returns `job_id`
 - `GET /api/retrieve/jobs/:id/events`
   - SSE stream for retrieve lifecycle events (`running`, `done`, `failed`)
+  - may include `phase` and `progress` for lightweight retrieve progress in the physician result row and action state
 - `POST /api/retrieve/jobs`
   - future generic retrieve job contract for selected `studyInstanceUID`
 - `GET /api/retrieve/jobs/:id`
