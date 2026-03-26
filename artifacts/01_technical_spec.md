@@ -246,18 +246,20 @@ Proveer un portal operativo mínimo capaz de:
 7. `GET /api/patient/search?request_id=<uuid>` devuelve el estado (`queued|running|done|failed`) del worker para ese conjunto de filtros.
 8. `GET /api/patient/studies?document=<dni>` queda como contrato de lectura del portal-owned list: devuelve resultados cacheados y el último estado de sync del conjunto de filtros actual, sin disparar side effects.
 9. Si la UI vuelve a solicitar el mismo `documento + filtros` mientras existe un `request_id` paciente en estado `queued` o `running`, debe reutilizar ese job activo y evitar un nuevo `POST /api/patient/search`.
-10. El worker actualiza `patient_study_access`, marca como `available_local` los estudios ya presentes en Orthanc y deja el resto como `pending_retrieve`.
-11. El flujo debe dejar trazas estructuradas de observabilidad para:
+10. Si el backend reinicia con búsquedas paciente todavía en `queued` o `running`, debe reconciliarlas a `failed` al arrancar para no rehidratar un `Buscando...` huérfano desde Postgres.
+11. El worker actualiza `patient_study_access`, marca como `available_local` sólo los estudios que Orthanc ya confirma locales y deja el resto como `pending_retrieve`.
+12. El flujo debe dejar trazas estructuradas de observabilidad para:
    - solicitud de token al PACS remoto;
    - request QIDO;
    - cantidad de estudios sincronizados;
    - cantidad de estudios ya disponibles localmente;
    - duración total del sync.
-12. Estas métricas no se persisten en PostgreSQL en esta etapa; se resuelven mediante logs estructurados y futuros endpoints de stats en memoria.
-13. Cuando el estudio queda `pending_retrieve`, la UI del paciente ofrece un botón `Retrieve` que llama `POST /api/patient/retrieve` y recarga la lista al completar.
-14. Con `patient.fake_auth = true`, `POST /api/patient/send-code` sigue validando la existencia del paciente pero omite la validación real del mail y el envío efectivo del código.
-15. Si QIDO no encuentra estudios, el endpoint debe responder `200` con `studies: []`; la UI no debe tratarlo como error técnico.
-16. El CTA de recarga del paciente debe expresar “Actualizar lista” o equivalente, no “Aplicar filtros”, para dejar claro que también reintenta el sync.
+13. Estas métricas no se persisten en PostgreSQL en esta etapa; se resuelven mediante logs estructurados y futuros endpoints de stats en memoria.
+14. Cuando el estudio queda `pending_retrieve`, la UI del paciente ofrece un botón `Retrieve` que llama `POST /api/patient/retrieve` y recarga la lista al completar.
+15. El cambio a `available_local` debe confirmarse dentro de la misma transacción que deja `retrieve_jobs=done` y `cached_studies.cache_status=local_complete`; si falla cualquier paso, el estudio conserva `pending_retrieve`.
+16. Con `patient.fake_auth = true`, `POST /api/patient/send-code` sigue validando la existencia del paciente pero omite la validación real del mail y el envío efectivo del código.
+17. Si QIDO no encuentra estudios, el endpoint debe responder `200` con `studies: []`; la UI no debe tratarlo como error técnico.
+18. El CTA de recarga del paciente debe expresar “Actualizar lista” o equivalente, no “Aplicar filtros”, para dejar claro que también reintenta el sync.
 
 ### 5.3.2 Flujo profesional
 1. El profesional ingresa al portal mediante autenticación institucional.

@@ -16,7 +16,9 @@
 - [Ready] **Patient list contract**: `GET /api/patient/studies?document=<dni>` returns `200` with `studies: []` if none; “Actualizar lista” semantics defined.
 - [Ready] **Patient async search worker**: remote patient search runs through `search_requests`/`search_node_runs`, started by `POST /api/patient/search`, polled through `GET /api/patient/search?request_id=...`, with visible `queued/running` state in the patient results surface.
 - [Ready] **Patient in-flight search reuse**: if the patient UI repeats the same `document + filters` while a search is already `queued` or `running`, the browser reuses the active `request_id` instead of emitting another redundant `POST /api/patient/search`.
+- [Ready] **Stale patient search reconciliation**: patient searches left in `queued` or `running` after backend restart are reconciled to `failed`, so the portal does not restore a phantom in-progress state from persisted rows.
 - [Ready] **Manual retrieve contract**: `POST /api/patient/retrieve`, `POST /api/physician/retrieve`, job persistence and state transitions exist (queued→running→done/failed).
+- [Ready] **Transactional local availability**: a patient study changes to `available_local` only when Orthanc confirms local presence, and that promotion is committed together with the successful retrieve completion and local cache update.
 - [Ready] **Viewer handoff**: portal opens `GET /ohif/viewer?StudyInstanceUIDs=<uid>` in a new tab; Visualizar enabled only when local cache is ready.
 - [Ready] **OHIF root containment**: `GET /ohif/` redirects to landing and patient/professional flows enter OHIF only through study-specific viewer URLs.
 - [Ready] **Retrieve completion heuristic**: Orthanc polling with stable window + global timeout defined.

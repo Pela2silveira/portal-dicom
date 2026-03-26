@@ -147,6 +147,7 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 * **Persistencia compartida de resultados QIDO:** los metadatos de estudios obtenidos por QIDO remoto deben persistirse en PostgreSQL como una cache compartida por `StudyInstanceUID + nodo PACS`, independiente de si el estudio se observó desde el flujo de paciente o de profesional.
 * **Persistencia del enriquecimiento ANDES:** cuando exista enriquecimiento ANDES para un `StudyInstanceUID + nodo PACS`, esa información debe persistirse junto con la cache QIDO para reutilización posterior sin volver a consultar siempre la fuente externa.
 * **TO-DO de invalidación:** queda pendiente definir el mecanismo funcional y operativo para invalidar o purgar elementos de esa cache cuando un estudio deje de estar disponible en un PACS o cuando el enriquecimiento ANDES requiera refresco.
+* **Transacción de disponibilidad local:** el cambio de `pending_retrieve` a `available_local` debe ocurrir únicamente después de que Orthanc confirme la presencia local del estudio, y debe persistirse en la misma transacción que el cierre exitoso del retrieve y la actualización de cache local.
 * **TO-DO de contrato multiorigen:** cuando profesional evolucione a multiselect de PACS, el contrato lógico de resultados debería exponer `source_node_ids[]` como array agregado por `StudyInstanceUID`, manteniendo la persistencia física por `StudyInstanceUID + nodo PACS`.
 * **Descarga de estudio:** tanto paciente como profesional deben poder descargar el estudio completo local en formato `ZIP DICOM` desde Orthanc cuando ya esté disponible en caché local.
 * **Límite de descarga profesional:** las descargas `ZIP DICOM` iniciadas por profesionales deben respetar el límite semanal configurado y rechazar el exceso con una respuesta de rate limit.
@@ -168,6 +169,7 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 * La primera implementación funcional de esta superficie consume `GET /api/patient/studies?document=<dni>` y renderiza la lista desde datos del backend.
 * La búsqueda remota de estudios del paciente debe ejecutarse mediante workers Go en background, persistiendo estado en `search_requests` y `search_node_runs`, mientras la UI sigue mostrando la lista cacheada y un indicador de búsqueda en curso.
 * La UI paciente debe reutilizar la búsqueda remota en curso cuando el operador repita el mismo `documento + filtros`, evitando emitir `POST /api/patient/search` redundantes mientras exista un `request_id` activo para esa combinación.
+* Si el backend reinicia con búsquedas paciente en `queued` o `running`, esas filas huérfanas deben cerrarse como fallidas; la UI no debe heredar un estado `Buscando...` indefinido desde ejecución previa.
 * Los estudios remotos de esta lista deben quedar inicialmente como `pending_retrieve`, con botón explícito `Retrieve` para traerlos a Orthanc antes de habilitar `Visualizar estudio`.
 
 ### 6.1.2 Superficie Médico

@@ -1700,8 +1700,8 @@ func (a *App) startPatientSearchWorker() {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := a.recoverQueuedPatientSearches(ctx); err != nil {
-			a.log("error", "patient_search_recovery_failed", map[string]any{"error": err.Error()})
+		if err := a.reconcileStalePatientSearches(ctx); err != nil {
+			a.log("error", "patient_search_reconcile_failed", map[string]any{"error": err.Error()})
 		}
 	}()
 
@@ -1720,28 +1720,49 @@ func (a *App) startRetrieveWorker() {
 	}()
 }
 
-func (a *App) recoverQueuedPatientSearches(ctx context.Context) error {
+func (a *App) reconcileStalePatientSearches(ctx context.Context) error {
 	rows, err := a.db.QueryContext(ctx, `
-		SELECT id::text
-		FROM search_requests
+		UPDATE search_requests
+		SET status = 'failed',
+		    error = 'search interrupted by backend restart',
+		    finished_at = now()
 		WHERE actor_type = 'patient'
 		  AND status IN ('queued', 'running')
-		ORDER BY created_at ASC
+		RETURNING id::text
 	`)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 
+	var reconciled int
 	for rows.Next() {
 		var requestID string
 		if err := rows.Scan(&requestID); err != nil {
 			return err
 		}
-		a.enqueuePatientSearch(requestID)
+		reconciled++
+		if _, err := a.db.ExecContext(ctx, `
+			UPDATE search_node_runs
+			SET status = 'failed',
+			    finished_at = now(),
+			    error = COALESCE(NULLIF(error, ''), 'search interrupted by backend restart')
+			WHERE search_request_id = $1::uuid
+			  AND status IN ('queued', 'running')
+		`, requestID); err != nil {
+			return err
+		}
 	}
 
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if reconciled > 0 {
+		a.log("info", "patient_searches_reconciled_after_restart", map[string]any{
+			"count": reconciled,
+		})
+	}
+	return nil
 }
 
 func (a *App) enqueuePatientSearch(requestID string) {
@@ -4105,19 +4126,8 @@ func (a *App) processRetrieveJob(jobID string) {
 		return
 	}
 
-	if actorType == "patient" && actorID != "" {
-		if err := a.markPatientStudyAvailableLocal(ctx, actorID, studyInstanceUID, orthancStudyID, sourceNodeCode); err != nil {
-			_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), orthancStudyID, 0, false)
-			return
-		}
-	}
-
-	if err := a.upsertCachedStudy(ctx, studyInstanceUID, orthancStudyID, []string{sourceNodeCode}, "local_complete"); err != nil {
+	if err := a.completeRetrieveSuccess(ctx, jobID, actorType, actorID, studyInstanceUID, orthancStudyID, sourceNodeCode); err != nil {
 		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", err.Error(), orthancStudyID, 0, false)
-		return
-	}
-
-	if err := a.updateRetrieveJobStatus(ctx, jobID, "done", "", orthancStudyID, 0, false); err != nil {
 		a.log("error", "retrieve_job_mark_done_failed", map[string]any{
 			"job_id": jobID,
 			"error":  err.Error(),
@@ -5164,6 +5174,75 @@ func (a *App) markPatientStudyAvailableLocal(ctx context.Context, patientID, stu
 		  AND study_instance_uid = $2
 	`, patientID, studyUID, orthancStudyID, sourceNodeID)
 	return err
+}
+
+func (a *App) completeRetrieveSuccess(ctx context.Context, jobID, actorType, actorID, studyUID, orthancStudyID, sourceNodeID string) error {
+	tx, err := a.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	if actorType == "patient" && actorID != "" {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE patient_study_access
+			SET availability_status = 'available_local',
+			    local_orthanc_study_id = $3,
+			    last_seen_at = now(),
+			    last_authorized_at = now(),
+			    source_json = jsonb_set(
+			      jsonb_set(COALESCE(source_json, '{}'::jsonb), '{source_node_id}', to_jsonb($4::text), true),
+			      '{orthanc_study_id}', to_jsonb($3::text), true
+			    )
+			WHERE patient_id = $1::uuid
+			  AND study_instance_uid = $2
+		`, actorID, studyUID, orthancStudyID, sourceNodeID); err != nil {
+			return err
+		}
+	}
+
+	locationsJSON, err := json.Marshal([]string{sourceNodeID})
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO cached_studies (
+			study_instance_uid, orthanc_study_id, first_seen_at, last_verified_at, cache_status, locations_json
+		) VALUES (
+			$1, $2, now(), now(), 'local_complete', $3::jsonb
+		)
+		ON CONFLICT (study_instance_uid) DO UPDATE SET
+			orthanc_study_id = EXCLUDED.orthanc_study_id,
+			last_verified_at = now(),
+			cache_status = EXCLUDED.cache_status,
+			locations_json = EXCLUDED.locations_json
+	`, studyUID, orthancStudyID, string(locationsJSON)); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE retrieve_jobs
+		SET status = 'done',
+		    error = NULL,
+		    orthanc_study_id = NULLIF($2, ''),
+		    instances_received = NULL,
+		    finished_at = now()
+		WHERE id = $1::uuid
+	`, jobID, orthancStudyID); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	event, err := a.getRetrieveJobEvent(ctx, jobID)
+	if err == nil {
+		a.publishRetrieveJobEvent(event)
+	}
+	return nil
 }
 
 func (a *App) upsertCachedStudy(ctx context.Context, studyUID, orthancStudyID string, locations []string, cacheStatus string) error {
