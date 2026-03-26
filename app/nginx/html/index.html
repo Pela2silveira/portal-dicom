@@ -1709,8 +1709,25 @@
         activePatientSearchKey = "";
         activePatientDocument = "";
         activePhysicianUsername = "";
+        clearLoginForms();
         clearPortalWorkspaceState();
         activateRole("patient");
+      }
+
+      function clearLoginForms() {
+        patientDocument.value = "";
+        patientMailCode.value = "";
+        patientMailCodeReady = false;
+        mailCodeFeedback.classList.add("hidden");
+        mailCodeFeedback.classList.remove("warning");
+        mailCodeFeedback.innerHTML = "";
+        syncPatientContinueState();
+
+        physicianDni.value = "";
+        physicianPassword.value = "";
+        physicianNote.classList.remove("warning");
+        physicianNote.textContent = "Ingrese su DNI y contraseña institucional para acceder.";
+        syncPhysicianContinueState();
       }
 
       function focusPatientDocumentInput() {
@@ -1777,6 +1794,7 @@
       async function restorePortalWorkspaceState() {
         const rawState = sessionStorage.getItem(portalWorkspaceStorageKey);
         if (!rawState) {
+          clearLoginForms();
           return;
         }
 
@@ -1785,6 +1803,7 @@
           state = JSON.parse(rawState);
         } catch (_error) {
           clearPortalWorkspaceState();
+          clearLoginForms();
           return;
         }
 
@@ -1840,7 +1859,10 @@
             physicianResultList.innerHTML =
               '<div class="empty-state">No se pudieron restaurar los resultados del profesional.</div>';
           }
+          return;
         }
+
+        clearLoginForms();
       }
 
       function escapeHTML(value) {

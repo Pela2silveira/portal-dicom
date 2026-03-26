@@ -37,6 +37,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - The `Enviar código` button must stay visually associated with the `Documento` input, not with the mail-code input.
 - The `Continuar` action should use the same primary blue CTA language and must stay disabled until the mail-code request succeeds and the patient enters a code value.
 - Keyboard flow on the public patient entry must be deterministic: initial focus on `Documento`, `Tab` from `Documento` moves to `Enviar código`, successful `Enviar código` moves focus to `Código por mail`, and `Tab`/`Enter` from `Código por mail` moves focus to `Continuar`.
+- Returning to the public landing, whether by explicit `Salir` or by a session/workspace reset, must clear both patient and professional login forms instead of preserving previous credentials or codes in the browser-rendered inputs.
 - Required patient outcomes:
   - `ready_to_send`: proceed with mail-code UX
   - `missing_active_email`: show contact-update guidance in a prominent warning style
