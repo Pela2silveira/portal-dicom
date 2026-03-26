@@ -3326,7 +3326,12 @@
         }
 
         button.disabled = true;
-        button.textContent = "Recuperando...";
+        updatePatientRetrieveVisual({
+          study_instance_uid: studyInstanceUID,
+          status: "queued",
+          phase: "preparing",
+          progress: 0
+        });
 
         try {
           const payload = await triggerPatientRetrieve(studyInstanceUID);
@@ -3351,7 +3356,12 @@
         }
 
         button.disabled = true;
-        button.textContent = "Recuperando...";
+        updatePhysicianRetrieveVisual({
+          study_instance_uid: studyInstanceUID,
+          status: "queued",
+          phase: "preparing",
+          progress: 0
+        });
 
         try {
           const payload = await triggerPhysicianRetrieve(studyInstanceUID);
