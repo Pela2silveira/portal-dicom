@@ -1442,6 +1442,7 @@
             <section class="workspace-card workspace-card-primary">
               <h4>Resultados</h4>
               <div class="sync-status" id="patient-sync-status" aria-live="polite"></div>
+              <div class="note note-neutral hidden" id="patient-retrieve-notice" aria-live="polite"></div>
               <div class="study-list" id="patient-study-list">
                 <div class="empty-state">Ingrese con su documento para ver sus estudios.</div>
               </div>
@@ -1585,6 +1586,7 @@
                   </div>
                 </div>
               </div>
+              <div class="note note-neutral hidden" id="physician-retrieve-notice" aria-live="polite"></div>
               <div class="result-list" id="physician-result-list">
                 <div class="empty-state">Ingrese con sus credenciales para ver resultados.</div>
               </div>
@@ -1632,6 +1634,7 @@
       const patientCalendarNext = document.getElementById("patient-calendar-next");
       const patientApplyFiltersButton = document.getElementById("patient-apply-filters");
       const patientSyncStatus = document.getElementById("patient-sync-status");
+      const patientRetrieveNotice = document.getElementById("patient-retrieve-notice");
       const patientStudyList = document.getElementById("patient-study-list");
       const patientFullNameValue = document.getElementById("patient-full-name-value");
       const patientDocumentValue = document.getElementById("patient-document-value");
@@ -1655,6 +1658,7 @@
       const physicianSearchSource = document.getElementById("physician-search-source");
       const physicianApplyFiltersButton = document.getElementById("physician-apply-filters");
       const physicianResultList = document.getElementById("physician-result-list");
+      const physicianRetrieveNotice = document.getElementById("physician-retrieve-notice");
       const physicianFullNameValue = document.getElementById("physician-full-name-value");
       const physicianDniValue = document.getElementById("physician-dni-value");
       const physicianLicenseValue = document.getElementById("physician-license-value");
@@ -1755,6 +1759,26 @@
         physicianNote.classList.remove("warning");
         physicianNote.textContent = "Ingrese su DNI y contraseña institucional para acceder.";
         syncPhysicianContinueState();
+      }
+
+      function setRetrieveNotice(element, text) {
+        if (!element) {
+          return;
+        }
+        if (!text) {
+          element.textContent = "";
+          element.classList.add("hidden");
+          return;
+        }
+        element.textContent = text;
+        element.classList.remove("hidden");
+      }
+
+      function retrieveNoticeText(status, phase, progress) {
+        if (status === "queued" || status === "running") {
+          return "Recuperación en curso. " + labelForRetrieveStatus(status, phase, progress) + ".";
+        }
+        return "";
       }
 
       function clearPortalSession() {
@@ -2422,6 +2446,11 @@
         patientBirthDateValue.textContent = payload.patient.birth_date || "-";
         patientSexValue.textContent = payload.patient.sex || "-";
         patientGenderIdentityValue.textContent = payload.patient.gender_identity || "-";
+        const activeRetrieve = (payload.studies || []).find(study => study.retrieve_status === "queued" || study.retrieve_status === "running");
+        setRetrieveNotice(
+          patientRetrieveNotice,
+          activeRetrieve ? retrieveNoticeText(activeRetrieve.retrieve_status, activeRetrieve.retrieve_phase, activeRetrieve.retrieve_progress) : ""
+        );
 
         if (!payload.studies.length) {
           const hasFilters =
@@ -2644,6 +2673,11 @@
         physicianFullNameValue.textContent = payload.physician.full_name || "-";
         physicianDniValue.textContent = payload.physician.dni || "-";
         physicianLicenseValue.textContent = payload.physician.license_number || "-";
+        const activeRetrieve = (payload.results || []).find(result => result.retrieve_status === "queued" || result.retrieve_status === "running");
+        setRetrieveNotice(
+          physicianRetrieveNotice,
+          activeRetrieve ? retrieveNoticeText(activeRetrieve.retrieve_status, activeRetrieve.retrieve_phase, activeRetrieve.retrieve_progress) : ""
+        );
 
         if (!payload.results.length) {
           physicianResultList.innerHTML =
@@ -2869,6 +2903,7 @@
           chip.setAttribute("data-patient-retrieve-chip", studyUID);
           chip.textContent = labelForRetrieveStatus(payload.status, payload.phase, payload.progress);
         }
+        setRetrieveNotice(patientRetrieveNotice, retrieveNoticeText(payload.status, payload.phase, payload.progress));
 
         const button = patientStudyList.querySelector('[data-patient-retrieve-button="' + cssEscape(studyUID) + '"]');
         if (!button) {
@@ -2897,6 +2932,7 @@
           chip.setAttribute("data-physician-retrieve-chip", studyUID);
           chip.textContent = labelForRetrieveStatus(payload.status, payload.phase, payload.progress);
         }
+        setRetrieveNotice(physicianRetrieveNotice, retrieveNoticeText(payload.status, payload.phase, payload.progress));
 
         const button = physicianResultList.querySelector('[data-physician-retrieve-button="' + cssEscape(studyUID) + '"]');
         if (!button) {
