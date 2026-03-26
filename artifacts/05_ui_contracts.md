@@ -36,10 +36,15 @@ Allow a patient to see only their authorized studies and open one selected study
 - With `patient.auth_mode = "fake_auth"`, the UI contract remains the same but backend may return `ready_to_send` in demo mode after validating patient existence.
 - With `patient.auth_mode = "master_key"`, the visible flow may remain the same while the backend returns `ready_to_send` for a shared-key access path after validating patient existence.
 - The `Enviar código` button must stay visually associated with the `Documento` input, not with the mail-code input.
+- The patient and professional `Continuar` actions must share the same visual treatment on the public landing.
 - The `Continuar` action should use the same primary blue CTA language and must stay disabled until the mail-code request succeeds and the patient enters a code value.
-- Keyboard flow on the public patient entry must be deterministic: initial focus on `Documento`, `Tab` from `Documento` moves to `Enviar código`, successful `Enviar código` moves focus to `Código por mail`, and `Tab`/`Enter` from `Código por mail` moves focus to `Continuar`.
+- The public landing may expose a diagonal `Demo` ribbon on the auth card to signal demo-oriented access modes without changing the login flow itself.
+- Keyboard flow on the public landing must start on the active role selector. Natural `Tab` navigation should move between `Paciente` and `Profesional`, and `Enter` on the selected role must jump to that role's user-identification input.
+- Once the patient input flow starts, `Tab` from `Documento` moves to `Enviar código`, successful `Enviar código` moves focus to `Código por mail`, and `Tab`/`Enter` from `Código por mail` moves focus to `Continuar`.
+- The patient `Continuar` step must still validate against backend before opening the workspace; in `master_key` mode the entered code is checked against the configured shared key, but the visible UI remains unchanged.
 - Returning to the public landing, whether by explicit `Salir` or by a session/workspace reset, must clear both patient and professional login forms instead of preserving previous credentials or codes in the browser-rendered inputs.
 - If the portal UI is already open and system health falls to `unavailable`, or the health SSE fails and `/api/health` confirms `503`, the app must return to the public landing through an in-place UI reset instead of forcing a full browser reload.
+- Patient and professional portal sessions must expire after the configured `portal.session_timeout_minutes`; when that happens, the UI returns to the landing and clears the stored workspace state.
 - Required patient outcomes:
   - `ready_to_send`: proceed with mail-code UX
   - `missing_active_email`: show contact-update guidance in a prominent warning style
@@ -193,7 +198,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - Public landing flow: `DNI + contraseña`
 - Current implementation already opens the portal-owned physician surface
 - Browser refresh inside the physician workspace should restore the physician surface and its active filters from session state instead of sending the user back to the public landing.
-- Keyboard flow on the public physician entry must be deterministic: initial focus on `DNI` when that role is active, `Tab`/`Enter` from `DNI` moves to `Contraseña`, and `Tab`/`Enter` from `Contraseña` moves focus to `Continuar`.
+- Once the professional input flow starts, `Tab`/`Enter` from `DNI` moves to `Contraseña`, and `Tab`/`Enter` from `Contraseña` moves focus to `Continuar`.
 - The visible language of the entry flow should read as operational product language, not as internal demo text
 - The institutional strapline in the public header should read `Ministerio de Salud - Provincia del Neuquén`.
 - The public landing should keep supporting context concise so the professional access form remains the dominant visual element.

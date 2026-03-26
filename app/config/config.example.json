@@ -37,6 +37,9 @@
     "document_lookup_path": "/core-v2/mpi/pacientes?documento={dni}",
     "prestaciones_enrichment_enabled": false
   },
+  "portal": {
+    "session_timeout_minutes": 10
+  },
   "patient": {
     "auth_mode": "mail",
     "master_key": ""

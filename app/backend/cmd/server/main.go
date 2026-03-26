@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -1033,6 +1034,17 @@ type PatientSendCodeResponse struct {
 	Message string `json:"message"`
 }
 
+type PatientLoginRequest struct {
+	DocumentNumber string `json:"document_number"`
+	Code           string `json:"code"`
+}
+
+type PatientLoginResponse struct {
+	Status  string         `json:"status"`
+	Message string         `json:"message"`
+	Patient PatientSummary `json:"patient,omitempty"`
+}
+
 type qidoResponseItem map[string]dicomJSONAttribute
 
 type dicomJSONAttribute struct {
@@ -1124,6 +1136,7 @@ type ConfigResponse struct {
 	LoadedAt   string             `json:"loaded_at"`
 	PACSNodes  []PACSNodeResponse `json:"pacs_nodes"`
 	HIS        HISConfigResponse  `json:"his"`
+	Portal     PortalConfig       `json:"portal"`
 	Patient    PatientConfig      `json:"patient"`
 	Professional ProfessionalConfig `json:"professional"`
 	Cache      CacheConfig        `json:"cache"`
@@ -1133,6 +1146,7 @@ type ConfigResponse struct {
 type ExternalConfig struct {
 	PACSNodes    []PACSNodeConfig   `json:"pacs_nodes"`
 	HIS          HISConfig          `json:"his"`
+	Portal       PortalConfig       `json:"portal"`
 	Patient      PatientConfig      `json:"patient"`
 	Professional ProfessionalConfig `json:"professional"`
 	Cache        CacheConfig        `json:"cache"`
@@ -1338,6 +1352,10 @@ type HISConfigResponse struct {
 	PrestacionesEnrichmentEnabled bool   `json:"prestaciones_enrichment_enabled"`
 }
 
+type PortalConfig struct {
+	SessionTimeoutMinutes int `json:"session_timeout_minutes"`
+}
+
 func main() {
 	cfg := Config{
 		AppEnv:        envOrDefault("APP_ENV", "dev"),
@@ -1466,6 +1484,7 @@ func main() {
 	mux.HandleFunc("/api/system/events", app.handleSystemEvents)
 	mux.HandleFunc("/api/config", app.handleConfig(appliedMigrations))
 	mux.HandleFunc("/api/patient/send-code", app.handlePatientSendCode)
+	mux.HandleFunc("/api/patient/login", app.handlePatientLogin)
 	mux.HandleFunc("/api/patient/search", app.handlePatientSearch)
 	mux.HandleFunc("/api/patient/studies", app.handlePatientStudies)
 	mux.HandleFunc("/api/patient/download", app.handlePatientDownload)
@@ -1668,6 +1687,7 @@ func (a *App) handleConfig(appliedMigrations []string) http.HandlerFunc {
 				DocumentLookupPath:            a.externalConfig.HIS.DocumentLookupPath,
 				PrestacionesEnrichmentEnabled: a.externalConfig.HIS.PrestacionesEnrichmentEnabled,
 			},
+			Portal:       a.externalConfig.Portal,
 			Patient:      a.externalConfig.Patient,
 			Professional: a.externalConfig.Professional,
 			Cache:        a.externalConfig.Cache,
@@ -1873,7 +1893,7 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 		})
 		writeJSON(w, http.StatusOK, PatientSendCodeResponse{
 			Status:  "ready_to_send",
-			Message: "Ingrese la llave maestra configurada para continuar.",
+			Message: patientSendCodeReadyMessage("", true),
 		})
 		return
 	}
@@ -1899,6 +1919,72 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, PatientSendCodeResponse{
 		Status:  "ready_to_send",
 		Message: patientSendCodeReadyMessage(maskPatientEmail(identity.Email), false),
+	})
+}
+
+func (a *App) handlePatientLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var reqBody PatientLoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		http.Error(w, "invalid json body", http.StatusBadRequest)
+		return
+	}
+
+	reqBody.DocumentNumber = strings.TrimSpace(reqBody.DocumentNumber)
+	reqBody.Code = strings.TrimSpace(reqBody.Code)
+	if reqBody.DocumentNumber == "" {
+		http.Error(w, "document_number is required", http.StatusBadRequest)
+		return
+	}
+	if reqBody.Code == "" {
+		http.Error(w, "code is required", http.StatusBadRequest)
+		return
+	}
+	if err := validateDocumentNumber(reqBody.DocumentNumber); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	patient, _, err := a.ensurePatientRecordWithIdentity(ctx, reqBody.DocumentNumber)
+	if err != nil {
+		if errors.Is(err, ErrPatientIdentityNotFound) {
+			writeJSON(w, http.StatusNotFound, PatientLoginResponse{
+				Status:  "patient_not_found",
+				Message: "El paciente no cuenta con registros.",
+			})
+			return
+		}
+		http.Error(w, "failed to validate patient", http.StatusBadGateway)
+		return
+	}
+
+	patientAuthMode := PatientAuthModeFakeAuth
+	if a.externalConfig != nil {
+		patientAuthMode = a.externalConfig.Patient.ResolvedAuthMode()
+	}
+
+	if patientAuthMode == PatientAuthModeMasterKey {
+		expected := strings.TrimSpace(a.externalConfig.Patient.MasterKey)
+		if subtle.ConstantTimeCompare([]byte(reqBody.Code), []byte(expected)) != 1 {
+			writeJSON(w, http.StatusUnauthorized, PatientLoginResponse{
+				Status:  "invalid_code",
+				Message: "El código ingresado no es válido.",
+			})
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, PatientLoginResponse{
+		Status:  "ok",
+		Message: "Acceso validado.",
+		Patient: patient,
 	})
 }
 
@@ -3235,6 +3321,9 @@ func loadExternalConfig(path string) (*ExternalConfig, error) {
 	}
 
 	cfg := ExternalConfig{
+		Portal: PortalConfig{
+			SessionTimeoutMinutes: 10,
+		},
 		Patient: PatientConfig{
 			AuthMode: PatientAuthModeFakeAuth,
 			FakeAuth: true,
@@ -6459,6 +6548,10 @@ func buildPhysicianDownloadURL(username, studyInstanceUID string) string {
 }
 
 func validateExternalConfig(cfg ExternalConfig) error {
+	if cfg.Portal.SessionTimeoutMinutes <= 0 {
+		return errors.New("portal.session_timeout_minutes must be greater than 0")
+	}
+
 	switch cfg.Patient.ResolvedAuthMode() {
 	case PatientAuthModeMail, PatientAuthModeFakeAuth:
 	case PatientAuthModeMasterKey:

@@ -104,12 +104,32 @@
       }
 
       .auth {
+        position: relative;
         padding: 0;
         overflow: hidden;
         display: grid;
         grid-template-rows: auto 1fr auto;
         max-width: 720px;
         width: 100%;
+      }
+
+      .demo-ribbon {
+        position: absolute;
+        top: 20px;
+        right: -48px;
+        z-index: 2;
+        width: 168px;
+        padding: 8px 0;
+        transform: rotate(45deg);
+        background: #f59e0b;
+        color: #ffffff;
+        text-align: center;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        font-size: 0.72rem;
+        font-weight: 800;
+        box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+        pointer-events: none;
       }
 
       .auth-top {
@@ -1245,6 +1265,7 @@
 
       <main class="hero">
         <section class="panel auth">
+          <div class="demo-ribbon" aria-hidden="true">Demo</div>
           <div class="auth-top">
             <h3>Acceso al portal</h3>
             <p>Seleccione su perfil para continuar.</p>
@@ -1296,7 +1317,7 @@
                 <input id="physician-password" name="physician-password" type="password" autocomplete="current-password" spellcheck="false" placeholder="Ingrese su contraseña">
               </div>
 
-              <button class="action action-primary" type="button" disabled>Continuar</button>
+              <button class="action action-secondary" id="physician-continue" type="button" disabled>Continuar</button>
 
               <div class="note note-neutral">
                 Ingreso institucional.
@@ -1633,7 +1654,7 @@
       const physicianPacsHealthText = document.getElementById("physician-pacs-health-text");
       const physicianPacsOnlineList = document.getElementById("physician-pacs-online-list");
       const physicianPacsOfflineList = document.getElementById("physician-pacs-offline-list");
-      const physicianLoginButton = document.querySelector('[data-flow="physician"] .action-primary');
+      const physicianLoginButton = document.getElementById("physician-continue");
       const physicianNote = document.querySelector('[data-flow="physician"] .note');
       const resetButtons = document.querySelectorAll("[data-reset]");
       const physicianLocalCacheSourceValue = "local_cache";
@@ -1646,7 +1667,10 @@
       let patientRetrieveEventSource = null;
       let physicianRetrieveEventSource = null;
       let systemHealthEventSource = null;
+      let portalSessionExpiresAt = "";
+      let portalSessionTimeoutHandle = null;
       const portalWorkspaceStorageKey = "portalWorkspaceState";
+      let portalSessionDurationMs = 10 * 60 * 1000;
       const patientDateFilter = (() => {
         const now = new Date();
         return {
@@ -1676,23 +1700,6 @@
         flows.forEach(flow => {
           flow.classList.toggle("active", flow.dataset.flow === role);
         });
-
-        if (role === "patient") {
-          window.requestAnimationFrame(() => {
-            if (!hero.classList.contains("hidden")) {
-              patientDocument.focus({ preventScroll: true });
-            }
-          });
-          return;
-        }
-
-        if (role === "physician") {
-          window.requestAnimationFrame(() => {
-            if (!hero.classList.contains("hidden")) {
-              physicianDni.focus({ preventScroll: true });
-            }
-          });
-        }
       }
 
       function showWorkspace(kind) {
@@ -1709,6 +1716,7 @@
         clearPatientSyncPoll();
         clearPatientRetrievePoll();
         clearPhysicianRetrievePoll();
+        clearPortalSession();
         hero.classList.remove("hidden");
         patientWorkspace.classList.add("hidden");
         physicianWorkspace.classList.add("hidden");
@@ -1739,9 +1747,72 @@
         syncPhysicianContinueState();
       }
 
+      function clearPortalSession() {
+        portalSessionExpiresAt = "";
+        if (portalSessionTimeoutHandle) {
+          window.clearTimeout(portalSessionTimeoutHandle);
+          portalSessionTimeoutHandle = null;
+        }
+      }
+
+      function armPortalSessionTimeout() {
+        if (!portalSessionExpiresAt) {
+          return;
+        }
+
+        if (portalSessionTimeoutHandle) {
+          window.clearTimeout(portalSessionTimeoutHandle);
+          portalSessionTimeoutHandle = null;
+        }
+
+        const remainingMs = new Date(portalSessionExpiresAt).getTime() - Date.now();
+        if (remainingMs <= 0) {
+          returnToLandingSoft();
+          return;
+        }
+
+        portalSessionTimeoutHandle = window.setTimeout(() => {
+          returnToLandingSoft();
+        }, remainingMs);
+      }
+
+      function startPortalSession() {
+        portalSessionExpiresAt = new Date(Date.now() + portalSessionDurationMs).toISOString();
+        armPortalSessionTimeout();
+      }
+
+      async function loadPortalRuntimeConfig() {
+        try {
+          const response = await fetch("/api/config", {
+            headers: { Accept: "application/json" }
+          });
+          if (!response.ok) {
+            return;
+          }
+
+          const payload = await response.json().catch(() => ({}));
+          const minutes = Number(payload?.portal?.session_timeout_minutes);
+          if (Number.isFinite(minutes) && minutes > 0) {
+            portalSessionDurationMs = minutes * 60 * 1000;
+          }
+        } catch (_error) {
+        }
+      }
+
       function returnToLandingSoft() {
         resetLanding();
-        focusPatientDocumentInput();
+        focusActiveRoleButton();
+      }
+
+      function focusActiveRoleButton() {
+        window.requestAnimationFrame(() => {
+          if (!hero.classList.contains("hidden")) {
+            const activeRoleButton = document.querySelector(".role-button.active");
+            if (activeRoleButton instanceof HTMLElement) {
+              activeRoleButton.focus({ preventScroll: true });
+            }
+          }
+        });
       }
 
       function focusPatientDocumentInput() {
@@ -1792,7 +1863,7 @@
           return;
         }
 
-        const state = { kind: activeKind };
+        const state = { kind: activeKind, expires_at: portalSessionExpiresAt || "" };
         if (activeKind === "patient" && activePatientDocument) {
           state.patient = {
             document_number: activePatientDocument,
@@ -1836,6 +1907,17 @@
           clearLoginForms();
           return;
         }
+
+        const expiresAt = typeof state?.expires_at === "string" ? state.expires_at : "";
+        if (!expiresAt || Number.isNaN(new Date(expiresAt).getTime()) || new Date(expiresAt).getTime() <= Date.now()) {
+          clearPortalWorkspaceState();
+          clearLoginForms();
+          focusActiveRoleButton();
+          return;
+        }
+
+        portalSessionExpiresAt = expiresAt;
+        armPortalSessionTimeout();
 
         if (state?.kind === "patient" && state.patient?.document_number) {
           activateRole("patient");
@@ -2808,6 +2890,30 @@
         return payload;
       }
 
+      async function loginPatient(documentNumber, code) {
+        const response = await fetch("/api/patient/login", {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            document_number: documentNumber,
+            code
+          })
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const error = new Error(payload.message || "patient login request failed");
+          error.status = response.status;
+          error.payload = payload;
+          throw error;
+        }
+
+        return payload;
+      }
+
       async function triggerPhysicianRetrieve(studyInstanceUID) {
         const response = await fetch("/api/physician/retrieve", {
           method: "POST",
@@ -2933,6 +3039,19 @@
 
       roleButtons.forEach(button => {
         button.addEventListener("click", () => activateRole(button.dataset.role));
+        button.addEventListener("keydown", event => {
+          if (event.key !== "Enter") {
+            return;
+          }
+
+          event.preventDefault();
+          activateRole(button.dataset.role);
+          if (button.dataset.role === "physician") {
+            physicianDni.focus({ preventScroll: true });
+            return;
+          }
+          patientDocument.focus({ preventScroll: true });
+        });
       });
 
       patientFilterPeriod.addEventListener("change", () => {
@@ -3182,7 +3301,7 @@
         }
       });
 
-      patientValidateButton.addEventListener("click", () => {
+      patientValidateButton.addEventListener("click", async () => {
         const documentValue = normalizePatientDocumentInput(patientDocument.value);
         patientDocument.value = documentValue;
         const mailCodeValue = patientMailCode.value.trim();
@@ -3203,11 +3322,22 @@
           return;
         }
 
-        setMailCodeFeedback(
-          "Acceso validado. Estamos cargando sus estudios."
-        );
+        patientValidateButton.disabled = true;
+        patientValidateButton.textContent = "Validando...";
+
+        try {
+          await loginPatient(documentValue, mailCodeValue);
+        } catch (error) {
+          patientValidateButton.textContent = "Continuar";
+          syncPatientContinueState();
+          setMailCodeFeedback(error?.payload?.message || "No se pudo validar el acceso del paciente.", true);
+          return;
+        }
+
+        setMailCodeFeedback("Acceso validado. Estamos cargando sus estudios.");
 
         window.setTimeout(async () => {
+          startPortalSession();
           showWorkspace("patient");
           try {
             const [_, sync] = await Promise.all([
@@ -3219,6 +3349,9 @@
             patientSummary.textContent = "Paciente " + documentValue;
             patientStudyList.innerHTML =
               '<div class="empty-state">No se pudieron cargar los estudios disponibles.</div>';
+          } finally {
+            patientValidateButton.textContent = "Continuar";
+            syncPatientContinueState();
           }
         }, 700);
       });
@@ -3248,6 +3381,7 @@
 
         try {
           const payload = await loginPhysician(dniValue, passwordValue);
+          startPortalSession();
           showWorkspace("physician");
           physicianFullNameValue.textContent = payload.physician?.full_name || "-";
           physicianDniValue.textContent = payload.physician?.dni || dniValue;
@@ -3326,8 +3460,12 @@
       syncPhysicianContinueState();
       renderPhysicianCalendar();
       connectSystemHealthEvents();
-      restorePortalWorkspaceState().catch(() => {});
-      focusPatientDocumentInput();
+      loadPortalRuntimeConfig()
+        .catch(() => {})
+        .finally(() => {
+          restorePortalWorkspaceState().catch(() => {});
+        });
+      focusActiveRoleButton();
     </script>
   </body>
 </html>

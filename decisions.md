@@ -38,6 +38,8 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Patient auth mode must be switchable at runtime through `patient.auth_mode` in `config.json`, supporting at least `mail`, `fake_auth`, and `master_key`.
 - With `patient.auth_mode = "fake_auth"`, the backend still requires the patient to exist but skips real email validation/sending so demos can proceed without the mail dependency.
 - With `patient.auth_mode = "master_key"`, the backend still requires the patient to exist and relies on one configured shared key in `patient.master_key`.
+- The patient `Continuar` action must call backend validation; in `master_key` mode, the entered code is compared against `patient.master_key` while preserving the same visible login flow used in demos.
+- Portal session lifetime is shared by patient and professional surfaces and is configured through `portal.session_timeout_minutes` rather than hardcoded in the frontend.
 - Patient send-code confirmation must show the destination email obfuscated (`first 3 chars + **** + @domain`) both in demo mode and in real mode when an active email exists.
 - Professional auth mode must be switchable at runtime through `professional.fake_auth` in `config.json`, defaulting to `true` for current MVP/demo compatibility.
 - With `professional.fake_auth = true`, the backend keeps the current transitional professional access validation against Mongo `profesional`; with `false`, professional login is reserved for future `LDAP provincial + MFA`.

@@ -144,6 +144,14 @@ Backward compatibility:
 
 - `fake_auth` is still accepted as a legacy fallback. If `auth_mode` is omitted and `fake_auth = true`, the backend resolves the mode as `fake_auth`.
 
+## `portal`
+
+Shared portal runtime behavior.
+
+Fields:
+
+- `session_timeout_minutes`: common session timeout for patient and professional surfaces
+
 ## `professional`
 
 Current professional access behavior flags.

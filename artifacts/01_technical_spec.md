@@ -27,6 +27,7 @@
 - Si `patient.auth_mode` no está presente en `config.json`, el backend puede seguir resolviendo compatibilidad hacia atrás desde `patient.fake_auth`; con `true`, el modo efectivo es `fake_auth`.
 - El modo de auth profesional debe poder alternarse por config (`professional.fake_auth`) para desacoplar la validación transitoria actual del objetivo futuro `LDAP provincial + MFA`.
 - Si `professional.fake_auth` no está presente en `config.json`, el backend debe asumir `true` para preservar compatibilidad con el MVP actual.
+- La sesión del portal debe expirar tanto para paciente como para profesional según `portal.session_timeout_minutes`; el frontend no debe hardcodear ese valor fuera de un fallback por defecto.
 - La carga inicial del panel profesional sin filtros debe usar una ventana relativa configurable mediante `professional.initial_cache_period`.
 - Si las dependencias del backend no están disponibles al arranque, el proceso debe permanecer vivo en modo degradado y publicar `/api/health` con `503` para habilitar el fallback de mantenimiento en Nginx.
 - Docker Compose debe usar un endpoint separado de liveness (`/api/livez`) para la salud del contenedor y dejar `/api/health` como readiness operativa.
@@ -260,9 +261,10 @@ Proveer un portal operativo mínimo capaz de:
 15. El cambio a `available_local` debe confirmarse dentro de la misma transacción que deja `retrieve_jobs=done` y `cached_studies.cache_status=local_complete`; si falla cualquier paso, el estudio conserva `pending_retrieve`.
 16. Con `patient.auth_mode = "fake_auth"`, `POST /api/patient/send-code` sigue validando la existencia del paciente pero omite la validación real del mail y el envío efectivo del código.
 17. Con `patient.auth_mode = "master_key"`, `POST /api/patient/send-code` sigue validando la existencia del paciente y responde `ready_to_send` instruyendo continuar con la llave maestra configurada.
-18. Si QIDO no encuentra estudios, el endpoint debe responder `200` con `studies: []`; la UI no debe tratarlo como error técnico.
-19. El CTA de recarga del paciente debe expresar “Actualizar lista” o equivalente, no “Aplicar filtros”, para dejar claro que también reintenta el sync.
-20. `GET /api/patient/studies` debe incluir `source_node_available` por estudio; si el PACS origen está offline, la acción de retrieve debe renderizarse deshabilitada como `Origen no disponible` y `POST /api/patient/retrieve` debe rechazar el enqueue.
+18. El botón `Continuar` del flujo paciente debe validar contra backend antes de abrir el workspace; en modo `master_key`, el código ingresado se compara contra `patient.master_key`.
+19. Si QIDO no encuentra estudios, el endpoint debe responder `200` con `studies: []`; la UI no debe tratarlo como error técnico.
+20. El CTA de recarga del paciente debe expresar “Actualizar lista” o equivalente, no “Aplicar filtros”, para dejar claro que también reintenta el sync.
+21. `GET /api/patient/studies` debe incluir `source_node_available` por estudio; si el PACS origen está offline, la acción de retrieve debe renderizarse deshabilitada como `Origen no disponible` y `POST /api/patient/retrieve` debe rechazar el enqueue.
 
 ### 5.3.2 Flujo profesional
 1. El profesional ingresa al portal mediante autenticación institucional.
