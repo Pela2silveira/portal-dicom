@@ -2456,7 +2456,7 @@
             }
 
             return (
-              '<article class="result-item">' +
+              '<article class="result-item" data-physician-study="' + escapeHTML(result.study_instance_uid) + '">' +
                 '<div class="item-head">' +
                   '<div>' +
                     '<strong>Descripcion del estudio: ' + escapeHTML(result.study_description || "Estudio sin descripción") + '</strong>' +
@@ -2578,8 +2578,29 @@
         return payload;
       }
 
-      async function loadPhysicianResults(username) {
+      function restorePhysicianResultFocus(studyInstanceUID) {
+        if (!studyInstanceUID) {
+          return;
+        }
+
+        const selector = '[data-physician-study="' + cssEscape(studyInstanceUID) + '"]';
+        const studyCard = physicianResultList.querySelector(selector);
+        if (!studyCard) {
+          return;
+        }
+
+        const focusTarget = studyCard.querySelector("[data-physician-retrieve], a, button");
+        if (focusTarget && typeof focusTarget.focus === "function") {
+          focusTarget.focus({ preventScroll: true });
+        }
+      }
+
+      async function loadPhysicianResults(username, options = {}) {
         activePhysicianUsername = username;
+        const silentRefresh = Boolean(options.silentRefresh);
+        const restoreStudyUID = options.restoreStudyUID || "";
+        const previousScrollX = window.scrollX;
+        const previousScrollY = window.scrollY;
 
         const params = new URLSearchParams({ username });
         if (physicianSearchPatientID.value.trim()) params.set("patient_id", physicianSearchPatientID.value.trim());
@@ -2593,8 +2614,10 @@
         if (physicianSearchModality.value.trim()) params.set("modality", physicianSearchModality.value.trim());
         params.set("source", physicianSearchSource.value || physicianLocalCacheSourceValue);
 
-        physicianResultList.innerHTML =
-          '<div class="empty-state">Actualizando resultados del profesional...</div>';
+        if (!silentRefresh) {
+          physicianResultList.innerHTML =
+            '<div class="empty-state">Actualizando resultados del profesional...</div>';
+        }
 
         const [resultsResponse, healthPayload] = await Promise.all([
           fetch("/api/physician/results?" + params.toString(), {
@@ -2617,6 +2640,10 @@
           physicianSearchSource.value = payload.filters?.source || physicianLocalCacheSourceValue;
         }
         renderPhysicianResults(payload);
+        if (silentRefresh) {
+          window.scrollTo(previousScrollX, previousScrollY);
+          restorePhysicianResultFocus(restoreStudyUID);
+        }
         savePortalWorkspaceState("physician");
       }
 
@@ -2727,7 +2754,7 @@
         };
       }
 
-      function watchPhysicianRetrieveJob(jobID) {
+      function watchPhysicianRetrieveJob(jobID, studyInstanceUID) {
         clearPhysicianRetrievePoll();
         physicianRetrieveEventSource = new EventSource("/api/retrieve/jobs/" + encodeURIComponent(jobID) + "/events");
         physicianRetrieveEventSource.addEventListener("status", async event => {
@@ -2735,14 +2762,20 @@
           if (payload.status === "done" || payload.status === "failed") {
             clearPhysicianRetrievePoll();
             if (activePhysicianUsername) {
-              await loadPhysicianResults(activePhysicianUsername);
+              await loadPhysicianResults(activePhysicianUsername, {
+                silentRefresh: true,
+                restoreStudyUID: payload.study_instance_uid || studyInstanceUID || ""
+              });
             }
           }
         });
         physicianRetrieveEventSource.onerror = async () => {
           clearPhysicianRetrievePoll();
           if (activePhysicianUsername) {
-            await loadPhysicianResults(activePhysicianUsername);
+            await loadPhysicianResults(activePhysicianUsername, {
+              silentRefresh: true,
+              restoreStudyUID: studyInstanceUID || ""
+            });
           }
         };
       }
@@ -2954,7 +2987,7 @@
         try {
           const payload = await triggerPhysicianRetrieve(studyInstanceUID);
           if (payload?.job_id) {
-            watchPhysicianRetrieveJob(payload.job_id);
+            watchPhysicianRetrieveJob(payload.job_id, studyInstanceUID);
           }
         } catch (error) {
           button.disabled = false;

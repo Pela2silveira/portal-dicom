@@ -188,6 +188,7 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 * En el mock actual del portal, el ingreso profesional debe aterrizar primero en esta superficie y no redirigir directamente a la home general de OHIF.
 * La primera implementación funcional de esta superficie consume `GET /api/physician/results?username=<dni>` y, sin filtros, debe mostrar siempre los estudios locales en cache consultando Orthanc local en vivo para la ventana relativa definida por `professional.initial_cache_period`.
 * El primer avance operativo de esta superficie expone `POST /api/physician/retrieve`, reutiliza Orthanc REST para `C-GET` y recalcula `cache_status` / `retrieve_status` desde Postgres y Orthanc local antes de habilitar las acciones de visualización.
+* Cuando un retrieve profesional llega a estado terminal, la grilla debe refrescarse de manera silenciosa: sin vaciar la lista, sin mostrar placeholders intermedios y preservando scroll/foco para evitar parpadeo o pérdida de contexto.
 * Con filtros cargados, `GET /api/physician/results` debe consultar QIDO-RS del nodo remoto configurado y persistir esa búsqueda como reciente para reutilización posterior.
 * El filtro `patient_name` del profesional debe comportarse como búsqueda fuzzy por términos normalizados, no como coincidencia literal exacta.
 
