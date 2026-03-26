@@ -1676,6 +1676,14 @@
         flows.forEach(flow => {
           flow.classList.toggle("active", flow.dataset.flow === role);
         });
+
+        if (role === "patient") {
+          window.requestAnimationFrame(() => {
+            if (!hero.classList.contains("hidden")) {
+              patientDocument.focus({ preventScroll: true });
+            }
+          });
+        }
       }
 
       function showWorkspace(kind) {
@@ -1702,6 +1710,32 @@
         activePatientDocument = "";
         activePhysicianUsername = "";
         clearPortalWorkspaceState();
+        activateRole("patient");
+      }
+
+      function focusPatientDocumentInput() {
+        window.requestAnimationFrame(() => {
+          if (!hero.classList.contains("hidden")) {
+            patientDocument.focus({ preventScroll: true });
+          }
+        });
+      }
+
+      function focusPatientMailCodeInput() {
+        window.requestAnimationFrame(() => {
+          if (!hero.classList.contains("hidden")) {
+            patientMailCode.focus({ preventScroll: true });
+            patientMailCode.select();
+          }
+        });
+      }
+
+      function focusPatientContinueButton() {
+        window.requestAnimationFrame(() => {
+          if (!hero.classList.contains("hidden")) {
+            patientValidateButton.focus({ preventScroll: true });
+          }
+        });
       }
 
       function savePortalWorkspaceState(kindOverride = "") {
@@ -3091,6 +3125,9 @@
           mailCodeButton.disabled = false;
           mailCodeButton.textContent = "Enviar código";
           syncPatientContinueState();
+          if (patientMailCodeReady) {
+            focusPatientMailCodeInput();
+          }
         }
       });
 
@@ -3188,7 +3225,27 @@
         patientMailCodeReady = false;
         syncPatientContinueState();
       });
+      patientDocument.addEventListener("keydown", event => {
+        if (event.key === "Tab" && !event.shiftKey) {
+          event.preventDefault();
+          mailCodeButton.focus({ preventScroll: true });
+          return;
+        }
+
+        if (event.key === "Enter") {
+          event.preventDefault();
+          if (!mailCodeButton.disabled) {
+            mailCodeButton.click();
+          }
+        }
+      });
       patientMailCode.addEventListener("input", syncPatientContinueState);
+      patientMailCode.addEventListener("keydown", event => {
+        if ((event.key === "Tab" && !event.shiftKey) || event.key === "Enter") {
+          event.preventDefault();
+          focusPatientContinueButton();
+        }
+      });
       physicianDni.addEventListener("input", () => {
         physicianDni.value = normalizePhysicianDocumentInput(physicianDni.value);
         syncPhysicianContinueState();
@@ -3207,6 +3264,7 @@
       renderPhysicianCalendar();
       connectSystemHealthEvents();
       restorePortalWorkspaceState().catch(() => {});
+      focusPatientDocumentInput();
     </script>
   </body>
 </html>
