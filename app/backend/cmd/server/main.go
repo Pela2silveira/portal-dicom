@@ -1724,7 +1724,6 @@ func (a *App) reconcileStalePatientSearches(ctx context.Context) error {
 	rows, err := a.db.QueryContext(ctx, `
 		UPDATE search_requests
 		SET status = 'failed',
-		    error = 'search interrupted by backend restart',
 		    finished_at = now()
 		WHERE actor_type = 'patient'
 		  AND status IN ('queued', 'running')
