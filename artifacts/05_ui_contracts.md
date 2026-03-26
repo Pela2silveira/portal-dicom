@@ -133,6 +133,7 @@ Allow a patient to see only their authorized studies and open one selected study
 
 - `Recuperar estudio` when `availabilityStatus = pending_retrieve`
 - once a retrieve is `queued` or `running`, the patient action must render as disabled `Recuperando` and must not enqueue duplicate jobs for the same study
+- when `source_node_available = false`, the patient retrieve action must render disabled as `Origen no disponible`
 - `Ver estudio` when `availabilityStatus = available_local`
 - `Buscar` to call `POST /api/patient/search` with the current patient filters while keeping cached results visible
 - the patient result area must differentiate QIDO search feedback from per-study retrieve state without adding parallel UI state machines
@@ -156,6 +157,7 @@ Allow a patient to see only their authorized studies and open one selected study
   - returns only studies authorized for the active patient session
   - includes sync state for the current filter set (`idle|queued|running|done|failed`)
   - includes per-study `retrieve_status` resolved from `retrieve_jobs`
+  - includes per-study `source_node_available` so the UI can block retrieve when the origin PACS is offline
 - `POST /api/patient/search`
   - receives `document_number` plus the current patient filters
   - enqueues background QIDO work and returns `request_id`
@@ -164,6 +166,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - `POST /api/patient/retrieve`
   - receives `document_number` + `study_instance_uid`
   - enqueues a background retrieve job that triggers PACS-to-PACS retrieve through Orthanc REST
+  - must reject the request if the origin PACS is currently offline
   - returns `job_id` and the UI follows completion through `GET /api/retrieve/jobs/:id/events` (SSE)
   - the patient list should refresh on retrieve terminal events (`done|failed`), not through unbounded list polling
   - updates local availability before the patient can open OHIF
@@ -291,11 +294,13 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - `GET /api/physician/results`
   - with active filters, runs remote QIDO search against the configured PACS node
   - without filters, may return persisted recent queries as a fallback
+  - includes per-result `source_node_available` so the UI can disable retrieve when the origin PACS is offline
 - `GET /api/search/stream`
   - SSE stream for federated search results
 - `POST /api/physician/retrieve`
   - current first retrieve contract from the physician panel
   - receives `username` + `study_instance_uid`
+  - must reject the request if the origin PACS is currently offline
   - triggers PACS-to-PACS retrieve through Orthanc REST and returns `job_id`
 - `GET /api/retrieve/jobs/:id/events`
   - SSE stream for retrieve lifecycle events (`running`, `done`, `failed`)

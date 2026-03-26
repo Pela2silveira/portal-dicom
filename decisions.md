@@ -83,6 +83,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The first load of the physician panel must come from Orthanc local cache for the configured initial relative period, queried live at login without requiring prior recent-query seed data.
 - The physician panel now exposes a first real `Retrieve` action backed by `POST /api/physician/retrieve`, which enqueues a background job reusing Orthanc `C-GET` and recalculates local state from `cached_studies`, `retrieve_jobs`, and Orthanc.
 - The terminal refresh after a physician retrieve must be silent: keep the current list mounted, preserve viewport/focus, and avoid placeholder flicker when reloading the result set.
+- Retrieve actions must be gated by current source PACS health: if the origin node is offline, patient and physician UIs show a disabled `Origen no disponible` action and the backend refuses to enqueue the retrieve.
 - The current physician panel now switches to real remote QIDO search whenever the operator applies filters; the no-filter state must query Orthanc local for the configured initial relative period.
 - If backend dependencies fail at startup, the backend must stay running in degraded mode, expose `/api/health` as `503`, and retry the Mongo identity providers every 1 minute instead of exiting the process.
 - The same degraded behavior must apply if Mongo becomes unavailable after a successful startup; provider health is continuous, not startup-only.

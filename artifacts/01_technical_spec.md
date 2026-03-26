@@ -260,6 +260,7 @@ Proveer un portal operativo mínimo capaz de:
 16. Con `patient.fake_auth = true`, `POST /api/patient/send-code` sigue validando la existencia del paciente pero omite la validación real del mail y el envío efectivo del código.
 17. Si QIDO no encuentra estudios, el endpoint debe responder `200` con `studies: []`; la UI no debe tratarlo como error técnico.
 18. El CTA de recarga del paciente debe expresar “Actualizar lista” o equivalente, no “Aplicar filtros”, para dejar claro que también reintenta el sync.
+19. `GET /api/patient/studies` debe incluir `source_node_available` por estudio; si el PACS origen está offline, la acción de retrieve debe renderizarse deshabilitada como `Origen no disponible` y `POST /api/patient/retrieve` debe rechazar el enqueue.
 
 ### 5.3.2 Flujo profesional
 1. El profesional ingresa al portal mediante autenticación institucional.
@@ -282,15 +283,16 @@ Proveer un portal operativo mínimo capaz de:
 14. El retrieve profesional sobre resultados remotos debe resolver el `source_node_id` a partir del snapshot persistido de la búsqueda reciente para reinyectar el estudio desde el mismo PACS que devolvió el resultado.
 15. Cuando un retrieve profesional cierre en `done` o `failed`, la UI debe rehidratar la grilla sin desmontarla ni mostrar un estado vacío transitorio; debe preservar scroll y foco sobre el estudio involucrado.
 16. El filtro `patient_name` del profesional debe resolverse como búsqueda fuzzy por términos normalizados; no debe requerir coincidencia literal exacta.
-17. El enriquecimiento ANDES de resultados debe quedar detrás de la feature flag `his.prestaciones_enrichment_enabled`, deshabilitada por defecto; con la flag en `false`, la búsqueda no debe conectarse a Mongo `prestaciones`.
-18. Tanto la tarjeta de paciente como la de profesional deben exponer, cuando la flag esté activa y exista match en Mongo `prestaciones`, los campos `Prestación en ANDES` y `Profesional en ANDES`.
-19. Para paciente, el enriquecimiento ANDES debe resolver por `metadata.pacs-uid == StudyInstanceUID` y por el identificador ANDES/Mongo del paciente persistido en `patient_identifiers` como `mongo_object_id`.
-20. Para profesional, el enriquecimiento ANDES debe resolver por `metadata.pacs-uid == StudyInstanceUID`, por rango diario de `StudyDate` y por `solicitud.organizacion.id == pacs_nodes[].andes_organization_id`.
-21. Cuando exista match en Mongo `prestaciones`, el portal también debe persistir el `_id` de la prestación ANDES como `andes_prestacion_id` dentro de los payloads persistidos de estudios/resultados para reutilización posterior.
-22. Los resultados QIDO remotos deben persistirse en PostgreSQL en una cache compartida `qido_study_cache`, clave primaria `study_instance_uid + source_node_id`, con metadatos reutilizables del estudio y timestamps `first_seen_at/last_seen_at`.
-23. Paciente y profesional deben reutilizar esa cache compartida antes de volver a consultar datos ya resueltos de enriquecimiento ANDES para el mismo `StudyInstanceUID + nodo`.
-24. La invalidación o purga de entradas de `qido_study_cache` cuando un estudio deje de existir en un PACS, o cuando el enriquecimiento ANDES deba refrescarse, queda explícitamente fuera de alcance en esta iteración y documentada como TO-DO.
-25. TO-DO: cuando el panel profesional habilite multiselect de orígenes, el contrato de resultados debe agregar un array `source_node_ids[]` por `StudyInstanceUID`; `source_node_id` podrá mantenerse solo como hint de retrieve prioritario o compatibilidad transitoria.
+17. `GET /api/physician/results` debe incluir `source_node_available` por resultado remoto; si el nodo origen está offline, el botón de retrieve queda deshabilitado como `Origen no disponible` y `POST /api/physician/retrieve` debe responder rechazo sin crear job.
+18. El enriquecimiento ANDES de resultados debe quedar detrás de la feature flag `his.prestaciones_enrichment_enabled`, deshabilitada por defecto; con la flag en `false`, la búsqueda no debe conectarse a Mongo `prestaciones`.
+19. Tanto la tarjeta de paciente como la de profesional deben exponer, cuando la flag esté activa y exista match en Mongo `prestaciones`, los campos `Prestación en ANDES` y `Profesional en ANDES`.
+20. Para paciente, el enriquecimiento ANDES debe resolver por `metadata.pacs-uid == StudyInstanceUID` y por el identificador ANDES/Mongo del paciente persistido en `patient_identifiers` como `mongo_object_id`.
+21. Para profesional, el enriquecimiento ANDES debe resolver por `metadata.pacs-uid == StudyInstanceUID`, por rango diario de `StudyDate` y por `solicitud.organizacion.id == pacs_nodes[].andes_organization_id`.
+22. Cuando exista match en Mongo `prestaciones`, el portal también debe persistir el `_id` de la prestación ANDES como `andes_prestacion_id` dentro de los payloads persistidos de estudios/resultados para reutilización posterior.
+23. Los resultados QIDO remotos deben persistirse en PostgreSQL en una cache compartida `qido_study_cache`, clave primaria `study_instance_uid + source_node_id`, con metadatos reutilizables del estudio y timestamps `first_seen_at/last_seen_at`.
+24. Paciente y profesional deben reutilizar esa cache compartida antes de volver a consultar datos ya resueltos de enriquecimiento ANDES para el mismo `StudyInstanceUID + nodo`.
+25. La invalidación o purga de entradas de `qido_study_cache` cuando un estudio deje de existir en un PACS, o cuando el enriquecimiento ANDES deba refrescarse, queda explícitamente fuera de alcance en esta iteración y documentada como TO-DO.
+26. TO-DO: cuando el panel profesional habilite multiselect de orígenes, el contrato de resultados debe agregar un array `source_node_ids[]` por `StudyInstanceUID`; `source_node_id` podrá mantenerse solo como hint de retrieve prioritario o compatibilidad transitoria.
 
 ### 5.4 Landing pública y acceso futuro
 1. El usuario accede a `/` y visualiza la landing institucional.

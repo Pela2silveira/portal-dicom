@@ -110,6 +110,7 @@ var ErrProfessionalIdentityNotFound = errors.New("professional identity not foun
 var ErrProfessionalNotLicensed = errors.New("professional not licensed")
 var ErrProfessionalInvalidCredentials = errors.New("professional invalid credentials")
 var ErrProfessionalAuthUnavailable = errors.New("professional auth unavailable")
+var ErrSourceNodeUnavailable = errors.New("source pacs unavailable")
 
 type PatientIdentitySource interface {
 	ProviderName() string
@@ -1006,6 +1007,7 @@ type PatientStudy struct {
 	ViewerURL          string   `json:"viewer_url,omitempty"`
 	OHIFViewerURL      string   `json:"ohif_viewer_url,omitempty"`
 	DownloadURL        string   `json:"download_url,omitempty"`
+	SourceNodeAvailable bool    `json:"source_node_available"`
 	SourceNodeID       string   `json:"-"`
 }
 
@@ -1113,6 +1115,7 @@ type PhysicianResult struct {
 	ViewerURL        string   `json:"viewer_url,omitempty"`
 	OHIFViewerURL    string   `json:"ohif_viewer_url,omitempty"`
 	DownloadURL      string   `json:"download_url,omitempty"`
+	SourceNodeAvailable bool  `json:"source_node_available"`
 }
 
 type ConfigResponse struct {
@@ -2297,13 +2300,17 @@ func (a *App) handlePatientRetrieve(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := a.queuePatientRetrieve(ctx, patient, reqBody.StudyInstanceUID)
 	if err != nil {
+		statusCode := http.StatusBadGateway
+		if errors.Is(err, ErrSourceNodeUnavailable) {
+			statusCode = http.StatusServiceUnavailable
+		}
 		a.log("error", "patient_retrieve_failed", map[string]any{
 			"document_number":   reqBody.DocumentNumber,
 			"patient_id":        patient.ID,
 			"study_instance_uid": reqBody.StudyInstanceUID,
 			"error":             err.Error(),
 		})
-		http.Error(w, "failed to retrieve patient study", http.StatusBadGateway)
+		http.Error(w, err.Error(), statusCode)
 		return
 	}
 
@@ -2578,13 +2585,17 @@ func (a *App) handlePhysicianRetrieve(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := a.queuePhysicianRetrieve(ctx, physician, reqBody.StudyInstanceUID)
 	if err != nil {
+		statusCode := http.StatusBadGateway
+		if errors.Is(err, ErrSourceNodeUnavailable) {
+			statusCode = http.StatusServiceUnavailable
+		}
 		a.log("error", "physician_retrieve_failed", map[string]any{
 			"username":          reqBody.Username,
 			"physician_id":      physician.ID,
 			"study_instance_uid": reqBody.StudyInstanceUID,
 			"error":             err.Error(),
 		})
-		http.Error(w, "failed to retrieve physician study", http.StatusBadGateway)
+		http.Error(w, err.Error(), statusCode)
 		return
 	}
 
@@ -2950,6 +2961,15 @@ func componentHealthy(components []ComponentHealth, name string) bool {
 		}
 	}
 	return false
+}
+
+func (a *App) sourceNodeAvailable(nodeID string) bool {
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" {
+		return true
+	}
+	event := a.currentSystemHealthEvent()
+	return componentHealthy(event.Components, "remote_pacs:"+nodeID)
 }
 
 func overallHealthStatus(components []ComponentHealth) string {
@@ -4246,6 +4266,9 @@ func (a *App) queuePatientRetrieve(ctx context.Context, patient PatientSummary, 
 	if err != nil {
 		return PatientRetrieveResponse{}, err
 	}
+	if !a.sourceNodeAvailable(sourceNodeID) {
+		return PatientRetrieveResponse{}, fmt.Errorf("%w: %s", ErrSourceNodeUnavailable, sourceNodeID)
+	}
 
 	jobID, err := a.insertRetrieveJob(ctx, studyInstanceUID, sourceNodeID, "patient", patient.ID)
 	if err != nil {
@@ -4282,6 +4305,9 @@ func (a *App) queuePhysicianRetrieve(ctx context.Context, physician PhysicianSum
 	_, sourceNodeID, err := a.getPhysicianSourceNode(ctx, physician.ID, studyInstanceUID)
 	if err != nil {
 		return PhysicianRetrieveResponse{}, err
+	}
+	if !a.sourceNodeAvailable(sourceNodeID) {
+		return PhysicianRetrieveResponse{}, fmt.Errorf("%w: %s", ErrSourceNodeUnavailable, sourceNodeID)
 	}
 
 	jobID, err := a.insertRetrieveJob(ctx, studyInstanceUID, sourceNodeID, "physician", physician.ID)
@@ -5479,6 +5505,7 @@ func (a *App) searchPhysicianResultsFromNode(ctx context.Context, physician Phys
 			CacheStatus:      "not_local",
 			RetrieveStatus:   "idle",
 			PartialFilter:    false,
+			SourceNodeAvailable: a.sourceNodeAvailable(node.ID),
 		}
 
 		cacheStatus, retrieveStatus, viewerURL, ohifViewerURL, err := a.getStudyOperationalState(ctx, studyUID, result.CacheStatus, result.RetrieveStatus)
@@ -5709,6 +5736,7 @@ func (a *App) searchPhysicianResultsFromLocalCache(ctx context.Context, username
 			PartialFilter:    false,
 			ViewerURL:        viewerURL,
 			OHIFViewerURL:    ohifViewerURL,
+			SourceNodeAvailable: true,
 			DownloadURL: func() string {
 				if viewerURL == "" {
 					return ""
@@ -6300,6 +6328,7 @@ func (a *App) listPatientStudies(ctx context.Context, patientID, documentNumber 
 			AvailabilityStatus: availabilityStatus,
 			RetrieveStatus:     "idle",
 			AuthorizationBasis: authorizationBasis,
+			SourceNodeAvailable: a.sourceNodeAvailable(source.SourceNodeID),
 			SourceNodeID:       source.SourceNodeID,
 		}
 		if len(study.Locations) == 0 && study.SourceNodeID != "" {
