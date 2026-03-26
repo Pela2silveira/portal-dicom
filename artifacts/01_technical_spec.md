@@ -23,8 +23,8 @@
 - Toda entrada editable del portal debe tener una regla explícita de normalización/saneamiento en frontend según su tipo (`numérico`, `texto libre acotado`, `selector`, `fecha`) y la misma semántica debe revalidarse en backend antes de usar el dato.
 - El paso `Enviar código` debe consultar backend antes del envío real del mail para distinguir tres resultados: `ready_to_send`, `missing_active_email` y `patient_not_found`.
 - Cuando `ready_to_send` y exista email registrado, el mensaje visible debe incluir el correo ofuscado, preservando sólo los primeros 3 caracteres antes de `@`.
-- El modo de auth paciente debe poder alternarse por config (`patient.fake_auth`) para conmutar rápido entre demos y validación real por correo sin cambiar endpoints ni UI principal.
-- Si `patient.fake_auth` no está presente en `config.json`, el backend debe asumir `true` para preservar compatibilidad con el MVP actual.
+- El modo de auth paciente debe poder alternarse por config (`patient.auth_mode`) para conmutar entre validación real por correo (`mail`), demo (`fake_auth`) y acceso por llave maestra (`master_key`) sin cambiar endpoints ni UI principal.
+- Si `patient.auth_mode` no está presente en `config.json`, el backend puede seguir resolviendo compatibilidad hacia atrás desde `patient.fake_auth`; con `true`, el modo efectivo es `fake_auth`.
 - El modo de auth profesional debe poder alternarse por config (`professional.fake_auth`) para desacoplar la validación transitoria actual del objetivo futuro `LDAP provincial + MFA`.
 - Si `professional.fake_auth` no está presente en `config.json`, el backend debe asumir `true` para preservar compatibilidad con el MVP actual.
 - La carga inicial del panel profesional sin filtros debe usar una ventana relativa configurable mediante `professional.initial_cache_period`.
@@ -258,10 +258,11 @@ Proveer un portal operativo mínimo capaz de:
 13. Estas métricas no se persisten en PostgreSQL en esta etapa; se resuelven mediante logs estructurados y futuros endpoints de stats en memoria.
 14. Cuando el estudio queda `pending_retrieve`, la UI del paciente ofrece un botón `Retrieve` que llama `POST /api/patient/retrieve`; al completar o fallar, la lista debe rehidratarse sin desmontarse ni mostrar un estado vacío transitorio, preservando scroll y foco sobre el estudio afectado.
 15. El cambio a `available_local` debe confirmarse dentro de la misma transacción que deja `retrieve_jobs=done` y `cached_studies.cache_status=local_complete`; si falla cualquier paso, el estudio conserva `pending_retrieve`.
-16. Con `patient.fake_auth = true`, `POST /api/patient/send-code` sigue validando la existencia del paciente pero omite la validación real del mail y el envío efectivo del código.
-17. Si QIDO no encuentra estudios, el endpoint debe responder `200` con `studies: []`; la UI no debe tratarlo como error técnico.
-18. El CTA de recarga del paciente debe expresar “Actualizar lista” o equivalente, no “Aplicar filtros”, para dejar claro que también reintenta el sync.
-19. `GET /api/patient/studies` debe incluir `source_node_available` por estudio; si el PACS origen está offline, la acción de retrieve debe renderizarse deshabilitada como `Origen no disponible` y `POST /api/patient/retrieve` debe rechazar el enqueue.
+16. Con `patient.auth_mode = "fake_auth"`, `POST /api/patient/send-code` sigue validando la existencia del paciente pero omite la validación real del mail y el envío efectivo del código.
+17. Con `patient.auth_mode = "master_key"`, `POST /api/patient/send-code` sigue validando la existencia del paciente y responde `ready_to_send` instruyendo continuar con la llave maestra configurada.
+18. Si QIDO no encuentra estudios, el endpoint debe responder `200` con `studies: []`; la UI no debe tratarlo como error técnico.
+19. El CTA de recarga del paciente debe expresar “Actualizar lista” o equivalente, no “Aplicar filtros”, para dejar claro que también reintenta el sync.
+20. `GET /api/patient/studies` debe incluir `source_node_available` por estudio; si el PACS origen está offline, la acción de retrieve debe renderizarse deshabilitada como `Origen no disponible` y `POST /api/patient/retrieve` debe rechazar el enqueue.
 
 ### 5.3.2 Flujo profesional
 1. El profesional ingresa al portal mediante autenticación institucional.

@@ -1193,7 +1193,9 @@ type HISConfig struct {
 }
 
 type PatientConfig struct {
-	FakeAuth bool `json:"fake_auth"`
+	AuthMode  string `json:"auth_mode"`
+	FakeAuth  bool   `json:"fake_auth,omitempty"`
+	MasterKey string `json:"master_key,omitempty"`
 }
 
 type ProfessionalConfig struct {
@@ -1206,6 +1208,27 @@ type ProfessionalConfig struct {
 type CacheConfig struct {
 	OrthancBaseURL string `json:"orthanc_base_url"`
 	RetentionDays  int    `json:"retention_days"`
+}
+
+const (
+	PatientAuthModeMail      = "mail"
+	PatientAuthModeFakeAuth  = "fake_auth"
+	PatientAuthModeMasterKey = "master_key"
+)
+
+func (c PatientConfig) ResolvedAuthMode() string {
+	mode := strings.ToLower(strings.TrimSpace(c.AuthMode))
+	switch mode {
+	case PatientAuthModeMail, PatientAuthModeFakeAuth, PatientAuthModeMasterKey:
+		return mode
+	case "":
+		if c.FakeAuth {
+			return PatientAuthModeFakeAuth
+		}
+		return PatientAuthModeMail
+	default:
+		return mode
+	}
 }
 
 type PACSNodeResponse struct {
@@ -1823,7 +1846,12 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if a.externalConfig != nil && a.externalConfig.Patient.FakeAuth {
+	patientAuthMode := PatientAuthModeFakeAuth
+	if a.externalConfig != nil {
+		patientAuthMode = a.externalConfig.Patient.ResolvedAuthMode()
+	}
+
+	if patientAuthMode == PatientAuthModeFakeAuth {
 		maskedEmail := maskPatientEmail(identity.Email)
 		a.log("info", "patient_send_code_ready_fake_auth", map[string]any{
 			"document_number": reqBody.DocumentNumber,
@@ -1833,6 +1861,19 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, PatientSendCodeResponse{
 			Status:  "ready_to_send",
 			Message: patientSendCodeReadyMessage(maskedEmail, true),
+		})
+		return
+	}
+
+	if patientAuthMode == PatientAuthModeMasterKey {
+		a.log("info", "patient_send_code_ready_master_key", map[string]any{
+			"document_number": reqBody.DocumentNumber,
+			"patient_id":      patient.ID,
+			"provider":        a.identitySource.ProviderName(),
+		})
+		writeJSON(w, http.StatusOK, PatientSendCodeResponse{
+			Status:  "ready_to_send",
+			Message: "Ingrese la llave maestra configurada para continuar.",
 		})
 		return
 	}
@@ -3195,6 +3236,7 @@ func loadExternalConfig(path string) (*ExternalConfig, error) {
 
 	cfg := ExternalConfig{
 		Patient: PatientConfig{
+			AuthMode: PatientAuthModeFakeAuth,
 			FakeAuth: true,
 		},
 		Professional: ProfessionalConfig{
@@ -6417,6 +6459,16 @@ func buildPhysicianDownloadURL(username, studyInstanceUID string) string {
 }
 
 func validateExternalConfig(cfg ExternalConfig) error {
+	switch cfg.Patient.ResolvedAuthMode() {
+	case PatientAuthModeMail, PatientAuthModeFakeAuth:
+	case PatientAuthModeMasterKey:
+		if strings.TrimSpace(cfg.Patient.MasterKey) == "" {
+			return errors.New(`patient.master_key is required when patient.auth_mode = "master_key"`)
+		}
+	default:
+		return fmt.Errorf("invalid patient auth mode %q", cfg.Patient.AuthMode)
+	}
+
 	if len(cfg.PACSNodes) == 0 {
 		return errors.New("config must include at least one PACS node")
 	}

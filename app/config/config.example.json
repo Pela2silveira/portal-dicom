@@ -38,7 +38,8 @@
     "prestaciones_enrichment_enabled": false
   },
   "patient": {
-    "fake_auth": true
+    "auth_mode": "mail",
+    "master_key": ""
   },
   "professional": {
     "fake_auth": true,

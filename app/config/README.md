@@ -134,7 +134,15 @@ Current patient access behavior flags.
 
 Fields:
 
-- `fake_auth`: when `true`, patient access keeps the current demo behavior and skips real mail-code delivery
+- `auth_mode`: patient auth mode. Accepted values:
+  - `mail`: normal flow, requires an active patient email and keeps the mail-code UX
+  - `fake_auth`: demo flow, validates patient existence but skips real mail-code delivery
+  - `master_key`: validates patient existence and uses one shared configured key for patient access
+- `master_key`: required when `auth_mode` is `master_key`
+
+Backward compatibility:
+
+- `fake_auth` is still accepted as a legacy fallback. If `auth_mode` is omitted and `fake_auth = true`, the backend resolves the mode as `fake_auth`.
 
 ## `professional`
 
@@ -170,6 +178,17 @@ Accepted `initial_cache_period` values:
 - `year`
 
 Recommended default:
+
+Patient example:
+
+```json
+{
+  "auth_mode": "mail",
+  "master_key": ""
+}
+```
+
+Professional example:
 
 ```json
 {
