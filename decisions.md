@@ -46,7 +46,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Login abuse protection uses a compromise approach for now: lightweight in-memory rate limiting in the backend, keyed by client IP and normalized identifier, instead of adding Redis or CAPTCHA at this stage.
 - In deployments behind Cloudflare and a second Nginx, the edge proxy must restore and forward the real client IP so backend rate limiting can use `CF-Connecting-IP` / `X-Forwarded-For` meaningfully.
 - DIMSE health/retrieve through Orthanc should not re-register the same remote modality on every check; the backend keeps an in-memory modality cache by node and refreshes it only when the configuration changes or Orthanc reports the modality as missing.
-- Optional remote PACS health checks should not run immediately at backend startup; they use a short startup grace period before the first real probe, and DIMSE C-ECHO gets a slightly higher timeout than the previous default to reduce cold-start false negatives.
+- DIMSE C-ECHO health checks use a slightly higher timeout than the previous default to reduce false negatives without adding startup delay or background warm-up behavior.
 - Patient send-code confirmation must show the destination email obfuscated (`first 3 chars + **** + @domain`) both in demo mode and in real mode when an active email exists.
 - Professional auth mode must be switchable at runtime through `professional.fake_auth` in `config.json`, defaulting to `true` for current MVP/demo compatibility.
 - With `professional.fake_auth = true`, the backend keeps the current transitional professional access validation against Mongo `profesional`; with `false`, professional login is reserved for future `LDAP provincial + MFA`.

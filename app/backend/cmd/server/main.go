@@ -1371,9 +1371,8 @@ type AuthQIDOHealthAdapter struct{}
 type DIMSECechoHealthAdapter struct{}
 
 const (
-	startupRemotePACSHealthGrace = 20 * time.Second
-	systemHealthCheckTimeout     = 8 * time.Second
-	dimseEchoHealthTimeout       = 7 * time.Second
+	systemHealthCheckTimeout = 8 * time.Second
+	dimseEchoHealthTimeout   = 7 * time.Second
 )
 
 type PACSAuthResponse struct {
@@ -2945,22 +2944,6 @@ func (a *App) mongoIdentityComponent() (ComponentHealth, bool) {
 func (a *App) remotePACSComponents(ctx context.Context) []ComponentHealth {
 	if a.externalConfig == nil {
 		return nil
-	}
-
-	if time.Since(a.configLoadedAt) < startupRemotePACSHealthGrace {
-		components := make([]ComponentHealth, 0, len(a.externalConfig.PACSNodes))
-		for _, node := range a.externalConfig.PACSNodes {
-			resolved := node.Resolved()
-			components = append(components, ComponentHealth{
-				Name:        "remote_pacs:" + node.ID,
-				DisplayName: strings.TrimSpace(resolved.Name),
-				Category:    "optional",
-				Severity:    ComponentSeverityOptional,
-				Status:      ComponentStatusUnknown,
-				Message:     "health check delayed during startup grace period",
-			})
-		}
-		return components
 	}
 
 	components := make([]ComponentHealth, 0, len(a.externalConfig.PACSNodes))
