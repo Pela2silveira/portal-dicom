@@ -1674,8 +1674,6 @@
       let activePhysicianUsername = "";
       let activePatientSearchRequestID = "";
       let activePatientSearchKey = "";
-      let activePatientRetrieveStates = Object.create(null);
-      let activePhysicianRetrieveStates = Object.create(null);
       let patientMailCodeReady = false;
       let patientSyncPollHandle = null;
       let patientRetrieveEventSource = null;
@@ -1781,25 +1779,6 @@
           return "Recuperación en curso. " + labelForRetrieveStatus(status, phase, progress) + ".";
         }
         return "";
-      }
-
-      function rememberRetrieveState(store, payload) {
-        const studyUID = payload?.study_instance_uid || "";
-        if (!studyUID) {
-          return;
-        }
-        store[studyUID] = {
-          status: payload.status || "",
-          phase: payload.phase || "",
-          progress: typeof payload.progress === "number" ? payload.progress : 0
-        };
-      }
-
-      function clearRetrieveState(store, studyUID) {
-        if (!studyUID) {
-          return;
-        }
-        delete store[studyUID];
       }
 
       function clearPortalSession() {
@@ -2467,23 +2446,10 @@
         patientBirthDateValue.textContent = payload.patient.birth_date || "-";
         patientSexValue.textContent = payload.patient.sex || "-";
         patientGenderIdentityValue.textContent = payload.patient.gender_identity || "-";
-        const activeRetrieve = (payload.studies || []).find(study => {
-          const visualState = activePatientRetrieveStates[study.study_instance_uid];
-          const status = visualState?.status || study.retrieve_status;
-          return status === "queued" || status === "running";
-        });
+        const activeRetrieve = (payload.studies || []).find(study => study.retrieve_status === "queued" || study.retrieve_status === "running");
         setRetrieveNotice(
           patientRetrieveNotice,
-          activeRetrieve
-            ? (() => {
-                const visualState = activePatientRetrieveStates[activeRetrieve.study_instance_uid];
-                return retrieveNoticeText(
-                  visualState?.status || activeRetrieve.retrieve_status,
-                  visualState?.phase || activeRetrieve.retrieve_phase,
-                  typeof visualState?.progress === "number" ? visualState.progress : activeRetrieve.retrieve_progress
-                );
-              })()
-            : ""
+          activeRetrieve ? retrieveNoticeText(activeRetrieve.retrieve_status, activeRetrieve.retrieve_phase, activeRetrieve.retrieve_progress) : ""
         );
 
         if (!payload.studies.length) {
@@ -2501,10 +2467,6 @@
         patientStudyList.innerHTML =
           payload.studies
             .map(study => {
-              const visualState = activePatientRetrieveStates[study.study_instance_uid];
-              const retrieveStatus = visualState?.status || study.retrieve_status;
-              const retrievePhase = visualState?.phase || study.retrieve_phase;
-              const retrieveProgress = typeof visualState?.progress === "number" ? visualState.progress : study.retrieve_progress;
               const modalities = (study.modalities_in_study || [])
                 .map(modality => '<div class="chip info">' + escapeHTML(modalityLabel(modality)) + "</div>")
                 .join("");
@@ -2513,11 +2475,11 @@
                 ? '<a class="action action-viewer-preferred" href="' + escapeHTML(study.viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar estudio</a>'
                 : study.source_node_available === false
                   ? '<button class="action action-secondary" type="button" disabled>Origen no disponible</button>'
-                : (retrieveStatus === "running" || retrieveStatus === "queued")
-                  ? '<button class="action action-secondary" type="button" disabled data-patient-retrieve-button="' + escapeHTML(study.study_instance_uid) + '">' + escapeHTML(retrieveActionLabel(retrieveStatus, retrievePhase, retrieveProgress)) + '</button>'
-                : retrieveStatus === "done"
+                : (study.retrieve_status === "running" || study.retrieve_status === "queued")
+                  ? '<button class="action action-secondary" type="button" disabled data-patient-retrieve-button="' + escapeHTML(study.study_instance_uid) + '">' + escapeHTML(retrieveActionLabel(study.retrieve_status, study.retrieve_phase, study.retrieve_progress)) + '</button>'
+                : study.retrieve_status === "done"
                     ? '<button class="action action-secondary" type="button" disabled data-patient-retrieve-button="' + escapeHTML(study.study_instance_uid) + '">Recuperado</button>'
-                    : retrieveStatus === "failed"
+                    : study.retrieve_status === "failed"
                       ? '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '" data-patient-retrieve-button="' + escapeHTML(study.study_instance_uid) + '">Reintentar recuperación</button>'
                       : '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '" data-patient-retrieve-button="' + escapeHTML(study.study_instance_uid) + '">Recuperar estudio</button>';
               const ohifAction = study.ohif_viewer_url
@@ -2532,9 +2494,9 @@
                   '<div class="' + chipClassForStatus(study.availability_status) + '">' +
                     escapeHTML(labelForStatus(study.availability_status)) +
                   '</div>' +
-                  (retrieveStatus && retrieveStatus !== "idle"
-                    ? '<div class="' + chipClassForRetrieve(retrieveStatus) + '" data-patient-retrieve-chip="' + escapeHTML(study.study_instance_uid) + '">' +
-                        escapeHTML(labelForRetrieveStatus(retrieveStatus, retrievePhase, retrieveProgress)) +
+                  (study.retrieve_status && study.retrieve_status !== "idle"
+                    ? '<div class="' + chipClassForRetrieve(study.retrieve_status) + '" data-patient-retrieve-chip="' + escapeHTML(study.study_instance_uid) + '">' +
+                        escapeHTML(labelForRetrieveStatus(study.retrieve_status, study.retrieve_phase, study.retrieve_progress)) +
                       '</div>'
                     : "") +
                 '</div>';
@@ -2716,23 +2678,10 @@
         physicianFullNameValue.textContent = payload.physician.full_name || "-";
         physicianDniValue.textContent = payload.physician.dni || "-";
         physicianLicenseValue.textContent = payload.physician.license_number || "-";
-        const activeRetrieve = (payload.results || []).find(result => {
-          const visualState = activePhysicianRetrieveStates[result.study_instance_uid];
-          const status = visualState?.status || result.retrieve_status;
-          return status === "queued" || status === "running";
-        });
+        const activeRetrieve = (payload.results || []).find(result => result.retrieve_status === "queued" || result.retrieve_status === "running");
         setRetrieveNotice(
           physicianRetrieveNotice,
-          activeRetrieve
-            ? (() => {
-                const visualState = activePhysicianRetrieveStates[activeRetrieve.study_instance_uid];
-                return retrieveNoticeText(
-                  visualState?.status || activeRetrieve.retrieve_status,
-                  visualState?.phase || activeRetrieve.retrieve_phase,
-                  typeof visualState?.progress === "number" ? visualState.progress : activeRetrieve.retrieve_progress
-                );
-              })()
-            : ""
+          activeRetrieve ? retrieveNoticeText(activeRetrieve.retrieve_status, activeRetrieve.retrieve_phase, activeRetrieve.retrieve_progress) : ""
         );
 
         if (!payload.results.length) {
@@ -2745,10 +2694,6 @@
 
         physicianResultList.innerHTML = payload.results
           .map(result => {
-            const visualState = activePhysicianRetrieveStates[result.study_instance_uid];
-            const retrieveStatus = visualState?.status || result.retrieve_status;
-            const retrievePhase = visualState?.phase || result.retrieve_phase;
-            const retrieveProgress = typeof visualState?.progress === "number" ? visualState.progress : result.retrieve_progress;
             const modalities = (result.modalities || [])
               .map(modality => '<div class="chip info">' + escapeHTML(modalityLabel(modality)) + "</div>")
               .join("");
@@ -2763,16 +2708,16 @@
               ? '<a class="action action-primary" href="' + escapeHTML(result.download_url) + '" rel="noopener noreferrer">Descargar DICOM</a>'
               : "";
             let retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '" data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">Recuperar estudio</button>';
-            if (retrieveStatus === "done" && result.viewer_url) {
+            if (result.retrieve_status === "done" && result.viewer_url) {
               retrieveAction = '<button class="action action-secondary" type="button" disabled data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">Recuperado</button>';
             } else if (result.source_node_available === false) {
               retrieveAction = '<button class="action action-secondary" type="button" disabled>Origen no disponible</button>';
-            } else if (retrieveStatus === "running" || retrieveStatus === "queued") {
-              retrieveAction = '<button class="action action-secondary" type="button" disabled data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">' + escapeHTML(retrieveActionLabel(retrieveStatus, retrievePhase, retrieveProgress)) + '</button>';
-            } else if (retrieveStatus === "failed") {
+            } else if (result.retrieve_status === "running" || result.retrieve_status === "queued") {
+              retrieveAction = '<button class="action action-secondary" type="button" disabled data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">' + escapeHTML(retrieveActionLabel(result.retrieve_status, result.retrieve_phase, result.retrieve_progress)) + '</button>';
+            } else if (result.retrieve_status === "failed") {
               retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '" data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">Reintentar recuperación</button>';
             }
-            if (retrieveStatus !== "done" && retrieveStatus !== "running" && retrieveStatus !== "queued" && retrieveStatus !== "failed") {
+            if (result.retrieve_status !== "done" && result.retrieve_status !== "running" && result.retrieve_status !== "queued" && result.retrieve_status !== "failed") {
               retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '" data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">Recuperar estudio</button>';
             }
 
@@ -2783,8 +2728,8 @@
                     '<strong>Descripción del estudio: ' + escapeHTML(result.study_description || "Estudio sin descripción") + '</strong>' +
                     '<span>' + escapeHTML(result.patient_name) + " · " + escapeHTML(result.study_date || "Sin fecha") + '</span>' +
                   '</div>' +
-                  '<div class="' + chipClassForRetrieve(retrieveStatus) + '" data-physician-retrieve-chip="' + escapeHTML(result.study_instance_uid) + '">' +
-                    escapeHTML(labelForRetrieveStatus(retrieveStatus, retrievePhase, retrieveProgress)) +
+                  '<div class="' + chipClassForRetrieve(result.retrieve_status) + '" data-physician-retrieve-chip="' + escapeHTML(result.study_instance_uid) + '">' +
+                    escapeHTML(labelForRetrieveStatus(result.retrieve_status, result.retrieve_phase, result.retrieve_progress)) +
                   '</div>' +
                 '</div>' +
                 '<div class="meta-grid">' +
@@ -2948,10 +2893,6 @@
         if (!studyUID) {
           return;
         }
-        rememberRetrieveState(activePatientRetrieveStates, payload);
-        if (payload.status === "done" || payload.status === "failed") {
-          clearRetrieveState(activePatientRetrieveStates, studyUID);
-        }
 
         let chip = patientStudyList.querySelector('[data-patient-retrieve-chip="' + cssEscape(studyUID) + '"]');
         if (!chip && payload.status && payload.status !== "idle") {
@@ -2988,10 +2929,6 @@
         const studyUID = payload.study_instance_uid || "";
         if (!studyUID) {
           return;
-        }
-        rememberRetrieveState(activePhysicianRetrieveStates, payload);
-        if (payload.status === "done" || payload.status === "failed") {
-          clearRetrieveState(activePhysicianRetrieveStates, studyUID);
         }
 
         const chip = physicianResultList.querySelector('[data-physician-retrieve-chip="' + cssEscape(studyUID) + '"]');
