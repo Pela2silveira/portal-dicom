@@ -2541,17 +2541,12 @@
         if (status === "done") return "Recuperación completa";
         if (status === "running") {
           const phaseLabel = retrievePhaseLabel(phase);
-          if (typeof progress === "number" && progress >= 0 && progress < 100) {
+          if (typeof progress === "number" && progress > 0 && progress < 100) {
             return (phaseLabel || "Recuperación en curso") + " (" + progress + "%)";
           }
           return phaseLabel || "Recuperación en curso";
         }
-        if (status === "queued") {
-          if (typeof progress === "number" && progress >= 0 && progress < 100) {
-            return (retrievePhaseLabel(phase) || "Recuperación en cola") + " (" + progress + "%)";
-          }
-          return retrievePhaseLabel(phase) || "Recuperación en cola";
-        }
+        if (status === "queued") return retrievePhaseLabel(phase) || "Recuperación en cola";
         if (status === "failed") return "Recuperación con error";
         return status || "Estado desconocido";
       }
@@ -2565,7 +2560,7 @@
 
       function retrieveActionLabel(status, phase, progress) {
         if (status === "running" || status === "queued") {
-          if (typeof progress === "number" && progress >= 0 && progress < 100) {
+          if (typeof progress === "number" && progress > 0 && progress < 100) {
             return "Recuperando " + progress + "%";
           }
           return retrievePhaseLabel(phase) || "Recuperando";
