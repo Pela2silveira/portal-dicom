@@ -581,6 +581,9 @@ Problema: Orthanc puede recibir instancias progresivamente.
 ### 11.3 Constraints
 - El compose debe levantar “one command” en dev.
 - Logs accesibles por `docker compose logs`.
+- El flujo de deploy remoto soportado por `Makefile.deploy.local` debe conservar la salida de `docker compose up -d --build` en un archivo remoto con timestamp, además de imprimirla al operador al finalizar.
+- `remote-up` debe aceptar una flag explícita (`WIPE_VOLUMES=1`) para ejecutar `docker compose down -v` antes del nuevo `up`, reutilizando el mismo archivo de log remoto para dejar trazabilidad del borrado de volúmenes.
+- El mismo `Makefile.deploy.local` debe ofrecer `remote-tail-deploy` para seguir el último log remoto de deploy y `remote-logs` para ejecutar `docker compose logs -f` remoto, con filtro opcional por servicio.
 
 ---
 
