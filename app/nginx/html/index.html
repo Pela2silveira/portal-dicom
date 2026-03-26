@@ -1246,7 +1246,7 @@
       <main class="hero">
         <section class="panel auth">
           <div class="auth-top">
-            <h3>El acceso comienza aca.</h3>
+            <h3>Acceso al portal</h3>
             <p>Seleccione su perfil para continuar.</p>
           </div>
 
@@ -1258,11 +1258,11 @@
             <div class="role-switch" aria-label="Seleccion de perfil">
               <button class="role-button active" type="button" data-role="patient">
                 <strong>Paciente</strong>
-                <span>Ingreso personal y acceso a su lista de estudios.</span>
+                <span>Consulte y recupere sus estudios.</span>
               </button>
               <button class="role-button" type="button" data-role="physician">
                 <strong>Profesional</strong>
-                <span>Búsqueda clínica, seguimiento de disponibilidad y recuperación.</span>
+                <span>Busque, revise y recupere estudios.</span>
               </button>
             </div>
 
@@ -1416,7 +1416,7 @@
               <h4>Resultados</h4>
               <div class="sync-status" id="patient-sync-status" aria-live="polite"></div>
               <div class="study-list" id="patient-study-list">
-                <div class="empty-state">Ingrese por el flujo paciente para cargar estudios desde la API del portal.</div>
+                <div class="empty-state">Ingrese con su documento para ver sus estudios.</div>
               </div>
             </section>
           </div>
@@ -1428,17 +1428,17 @@
           <div class="workspace-header">
             <div>
               <p class="eyebrow">Profesional</p>
-              <h3>Resultados y recuperación</h3>
+              <h3>Búsqueda y recuperación</h3>
             </div>
             <button class="action action-secondary" type="button" data-reset>Salir</button>
           </div>
           <div class="workspace-stack">
             <section class="workspace-card workspace-card-primary">
-              <h4>Datos del profesional</h4>
+              <h4>Profesional</h4>
               <div class="summary-grid summary-grid-compact">
                 <div class="summary-item summary-item-wide">
                   <span>Nombre y apellido</span>
-                  <strong id="physician-full-name-value">Sin profesional cargado</strong>
+                  <strong id="physician-full-name-value">Sin datos cargados</strong>
                 </div>
                 <div class="summary-item">
                   <span>DNI</span>
@@ -1458,7 +1458,7 @@
                   <label for="physician-search-patient-id">Datos del paciente</label>
                   <div class="field-group-grouped-body field-group-grouped-body-patient-lookup">
                     <div class="field-group">
-                      <input id="physician-search-patient-id" type="text" inputmode="numeric" maxlength="11" autocomplete="off" spellcheck="false" placeholder="Identificador del paciente">
+                      <input id="physician-search-patient-id" type="text" inputmode="numeric" maxlength="11" autocomplete="off" spellcheck="false" placeholder="DNI del paciente">
                     </div>
                     <div class="field-group">
                       <input id="physician-search-patient" type="text" value="" autocomplete="off" spellcheck="false" placeholder="Nombre del paciente">
@@ -1519,9 +1519,9 @@
                       <option value="CT">Tomografía computada (CT)</option>
                       <option value="DX">Radiografía digital (DX)</option>
                       <option value="MG">Mamografía (MG)</option>
-                      <option value="MR">Resonancia magnetica (MR)</option>
+                      <option value="MR">Resonancia magnética (MR)</option>
                       <option value="US">Ecografía (US)</option>
-                      <option value="XA">Angiografia (XA)</option>
+                      <option value="XA">Angiografía (XA)</option>
                       <option value="OT">Otros estudios (OT)</option>
                     </select>
                   </div>
@@ -1558,7 +1558,7 @@
                 </div>
               </div>
               <div class="result-list" id="physician-result-list">
-                <div class="empty-state">Ingrese por el flujo profesional para cargar resultados desde la API del portal.</div>
+                <div class="empty-state">Ingrese con sus credenciales para ver resultados.</div>
               </div>
             </section>
           </div>
@@ -1567,7 +1567,7 @@
 
       <footer class="site-footer">
         <div class="site-footer-copy">
-          <strong>Portal de Imágenes</strong> integra acceso, consulta y visualizacion de estudios por imagen desde un unico portal.
+          <strong>Portal de Imágenes</strong> integra acceso, consulta y visualización de estudios por imágenes desde un único portal.
           <div class="site-footer-links">
             <a href="https://salud.neuquen.gob.ar/" target="_blank" rel="noopener noreferrer">Salud Neuquen</a>
             <a href="https://play.google.com/store/apps/details?id=org.andes.mobile" target="_blank" rel="noopener noreferrer">App Android de Salud</a>
@@ -1886,7 +1886,7 @@
             );
           }
           patientSyncStatus.classList.add("active");
-          patientSyncStatus.textContent = sync.message || "Buscando...";
+          patientSyncStatus.textContent = sync.message || "Actualizando estudios...";
           clearPatientSyncPoll();
           patientSyncPollHandle = window.setTimeout(() => {
             if (activePatientDocument && activePatientSearchRequestID) {
@@ -1901,7 +1901,7 @@
         activePatientSearchKey = "";
         if (status === "failed") {
           patientSyncStatus.classList.add("active", "error");
-          patientSyncStatus.textContent = sync.message || "No se pudo completar la búsqueda remota.";
+          patientSyncStatus.textContent = sync.message || "No se pudo actualizar la lista de estudios.";
         }
       }
 
@@ -2509,7 +2509,7 @@
         if (patientFilterModality.value) params.set("modality", patientFilterModality.value);
 
         patientStudyList.innerHTML =
-          '<div class="empty-state">Actualizando estudios del paciente...</div>';
+          '<div class="empty-state">Cargando estudios...</div>';
 
         const response = await fetch("/api/patient/studies?" + params.toString(), {
           headers: { Accept: "application/json" }
@@ -2621,7 +2621,7 @@
 
         if (!silentRefresh) {
           physicianResultList.innerHTML =
-            '<div class="empty-state">Actualizando resultados del profesional...</div>';
+            '<div class="empty-state">Buscando estudios...</div>';
         }
 
         const [resultsResponse, healthPayload] = await Promise.all([
@@ -3003,7 +3003,7 @@
       physicianApplyFiltersButton.addEventListener("click", async () => {
         if (!activePhysicianUsername) {
           physicianResultList.innerHTML =
-            '<div class="empty-state">Ingrese primero por el flujo profesional para aplicar filtros.</div>';
+            '<div class="empty-state">Primero debe ingresar como profesional para aplicar filtros.</div>';
           return;
         }
         if ((physicianSearchSource.value || physicianLocalCacheSourceValue) !== physicianLocalCacheSourceValue &&
@@ -3083,9 +3083,7 @@
         }
 
         setMailCodeFeedback(
-          "Ingreso confirmado para el documento " +
-          documentValue +
-          ". Abriendo su espacio de estudios..."
+          "Acceso validado. Estamos cargando sus estudios."
         );
 
         window.setTimeout(async () => {
@@ -3125,7 +3123,7 @@
 
         physicianLoginButton.disabled = true;
         physicianLoginButton.textContent = "Validando...";
-        physicianNote.textContent = "Validando matrícula profesional...";
+        physicianNote.textContent = "Validando acceso profesional...";
 
         try {
           const payload = await loginPhysician(dniValue, passwordValue);
@@ -3133,7 +3131,7 @@
           physicianFullNameValue.textContent = payload.physician?.full_name || "-";
           physicianDniValue.textContent = payload.physician?.dni || dniValue;
           physicianLicenseValue.textContent = payload.physician?.license_number || "-";
-          physicianNote.textContent = payload.message || "Ingreso profesional validado.";
+          physicianNote.textContent = payload.message || "Acceso validado.";
           try {
             await loadPhysicianResults(dniValue);
           } catch (error) {
