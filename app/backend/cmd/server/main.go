@@ -1144,7 +1144,12 @@ type ConfigResponse struct {
 }
 
 type RuntimeConfigResponse struct {
-	Portal PortalConfig `json:"portal"`
+	Portal  PortalConfig               `json:"portal"`
+	Patient RuntimePatientConfigResponse `json:"patient"`
+}
+
+type RuntimePatientConfigResponse struct {
+	AuthMode string `json:"auth_mode"`
 }
 
 type ExternalConfig struct {
@@ -1761,6 +1766,9 @@ func (a *App) handleRuntimeConfig(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, RuntimeConfigResponse{
 		Portal: a.externalConfig.Portal,
+		Patient: RuntimePatientConfigResponse{
+			AuthMode: a.externalConfig.Patient.ResolvedAuthMode(),
+		},
 	})
 }
 

@@ -30,6 +30,7 @@
 - La sesión del portal debe expirar tanto para paciente como para profesional según `portal.session_timeout_minutes`; el frontend no debe hardcodear ese valor fuera de un fallback por defecto.
 - La UI pública debe obtener ese valor desde un endpoint mínimo de runtime (`/api/runtime-config`) y no desde `/api/config`.
 - La misma carga mínima de runtime puede exponer flags visuales no sensibles del portal, por ejemplo `portal.show_demo_ribbon`, para mantener consistencia entre landing y workspaces.
+- Esa carga mínima también puede exponer el `patient.auth_mode` efectivo cuando sea necesario para adaptar el comportamiento visual del login, por ejemplo ocultar el campo de código en `master_key`.
 - La carga inicial del panel profesional sin filtros debe usar una ventana relativa configurable mediante `professional.initial_cache_period`.
 - Si las dependencias del backend no están disponibles al arranque, el proceso debe permanecer vivo en modo degradado y publicar `/api/health` con `503` para habilitar el fallback de mantenimiento en Nginx.
 - Docker Compose debe usar un endpoint separado de liveness (`/api/livez`) para la salud del contenedor y dejar `/api/health` como readiness operativa.

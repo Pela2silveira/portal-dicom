@@ -39,6 +39,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - With `patient.auth_mode = "fake_auth"`, the backend still requires the patient to exist but skips real email validation/sending so demos can proceed without the mail dependency.
 - With `patient.auth_mode = "master_key"`, the backend still requires the patient to exist and relies on one configured shared key in `patient.master_key`.
 - The patient `Continuar` action must call backend validation; in `master_key` mode, the entered code is compared against `patient.master_key` while preserving the same visible login flow used in demos.
+- The public runtime payload may expose the effective patient auth mode so the landing can mask the patient code field when `master_key` is active, without exposing the full config payload.
 - Portal session lifetime is shared by patient and professional surfaces and is configured through `portal.session_timeout_minutes` rather than hardcoded in the frontend.
 - Public UI runtime config must be exposed through a minimal endpoint (`/api/runtime-config`) instead of publishing `/api/config`; only non-sensitive values needed by the landing/workspace shell belong there.
 - The diagonal `Demo` ribbon is controlled by `portal.show_demo_ribbon` and, when enabled, must appear consistently on the landing auth card and on both patient/professional workspaces.

@@ -1303,7 +1303,7 @@
 
               <div class="field-group">
                   <label for="patient-mail-code">Código por mail</label>
-                  <input id="patient-mail-code" name="patient-mail-code" type="text" inputmode="numeric" placeholder="Ingrese el código recibido por mail">
+                  <input id="patient-mail-code" name="patient-mail-code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="Ingrese el código recibido por mail">
               </div>
 
               <button class="action action-secondary" id="patient-continue" type="button" disabled>Continuar</button>
@@ -1680,6 +1680,7 @@
       const portalWorkspaceStorageKey = "portalWorkspaceState";
       let portalSessionDurationMs = 10 * 60 * 1000;
       let portalShowDemoRibbon = false;
+      let patientAuthMode = "mail";
       const patientDateFilter = (() => {
         const now = new Date();
         return {
@@ -1805,7 +1806,9 @@
             portalSessionDurationMs = minutes * 60 * 1000;
           }
           portalShowDemoRibbon = Boolean(payload?.portal?.show_demo_ribbon);
+          patientAuthMode = String(payload?.patient?.auth_mode || "mail").trim().toLowerCase() || "mail";
           applyDemoRibbonVisibility();
+          applyPatientCodeInputMode();
         } catch (_error) {
         }
       }
@@ -1814,6 +1817,13 @@
         demoRibbons.forEach(ribbon => {
           ribbon.classList.toggle("hidden", !portalShowDemoRibbon);
         });
+      }
+
+      function applyPatientCodeInputMode() {
+        const useMaskedInput = patientAuthMode === "master_key";
+        patientMailCode.type = useMaskedInput ? "password" : "text";
+        patientMailCode.inputMode = useMaskedInput ? "text" : "numeric";
+        patientMailCode.autocomplete = useMaskedInput ? "off" : "one-time-code";
       }
 
       function returnToLandingSoft() {

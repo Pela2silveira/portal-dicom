@@ -35,6 +35,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - The patient auth mode must be switchable through backend config (`patient.auth_mode`) without changing the visible patient flow.
 - With `patient.auth_mode = "fake_auth"`, the UI contract remains the same but backend may return `ready_to_send` in demo mode after validating patient existence.
 - With `patient.auth_mode = "master_key"`, the visible flow may remain the same while the backend returns `ready_to_send` for a shared-key access path after validating patient existence.
+- With `patient.auth_mode = "master_key"`, the code-entry input should render as masked/secret input in the landing while preserving the same field position and overall flow.
 - The `Enviar código` button must stay visually associated with the `Documento` input, not with the mail-code input.
 - The patient and professional `Continuar` actions must share the same visual treatment on the public landing.
 - The `Continuar` action should use the same primary blue CTA language and must stay disabled until the mail-code request succeeds and the patient enters a code value.

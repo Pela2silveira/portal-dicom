@@ -157,7 +157,7 @@ Fields:
 Public exposure note:
 
 - The full `/api/config` endpoint is operational/internal and stays blocked by public Nginx.
-- The landing UI reads only a minimal public runtime payload from `/api/runtime-config`, currently limited to safe `portal` fields such as `session_timeout_minutes` and `show_demo_ribbon`.
+- The landing UI reads only a minimal public runtime payload from `/api/runtime-config`, currently limited to safe `portal` fields such as `session_timeout_minutes` and `show_demo_ribbon`, plus the effective patient `auth_mode` needed to adapt the code-entry input.
 
 ## `professional`
 
