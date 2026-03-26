@@ -5583,16 +5583,8 @@ func (a *App) retrieveProgressPollInterval() time.Duration {
 	return time.Duration(a.externalConfig.Portal.RetrieveProgressPollSeconds) * time.Second
 }
 
-func (a *App) fetchOrthancJobStatus(ctx context.Context, portalJobID, orthancJobID string) (orthancRetrieveStatus, error) {
-	jobURL := strings.TrimRight(a.cfg.OrthancURL, "/") + "/jobs/" + url.PathEscape(orthancJobID)
-	requestStartedAt := time.Now()
-	a.log("info", "orthanc_retrieve_job_poll_started", map[string]any{
-		"job_id":         portalJobID,
-		"orthanc_job_id": orthancJobID,
-		"url":            jobURL,
-	})
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, jobURL, nil)
+func (a *App) fetchOrthancJobStatus(ctx context.Context, orthancJobID string) (orthancRetrieveStatus, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(a.cfg.OrthancURL, "/")+"/jobs/"+url.PathEscape(orthancJobID), nil)
 	if err != nil {
 		return orthancRetrieveStatus{}, err
 	}
@@ -5607,24 +5599,11 @@ func (a *App) fetchOrthancJobStatus(ctx context.Context, portalJobID, orthancJob
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
-		bodyText := strings.TrimSpace(string(body))
-		a.log("error", "orthanc_retrieve_job_poll_failed", map[string]any{
-			"job_id":         portalJobID,
-			"orthanc_job_id": orthancJobID,
-			"status_code":    res.StatusCode,
-			"body":           bodyText,
-			"duration_ms":    time.Since(requestStartedAt).Milliseconds(),
-		})
-		return orthancRetrieveStatus{}, fmt.Errorf("orthanc job bad status %d: %s", res.StatusCode, bodyText)
-	}
-
-	body, err := io.ReadAll(io.LimitReader(res.Body, 8192))
-	if err != nil {
-		return orthancRetrieveStatus{}, err
+		return orthancRetrieveStatus{}, fmt.Errorf("orthanc job bad status %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	var payload orthancJobResponse
-	if err := json.Unmarshal(body, &payload); err != nil {
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
 		return orthancRetrieveStatus{}, err
 	}
 
@@ -5635,25 +5614,6 @@ func (a *App) fetchOrthancJobStatus(ctx context.Context, portalJobID, orthancJob
 	if progress > 100 {
 		progress = 100
 	}
-
-	contentPreview := ""
-	if len(payload.Content) > 0 {
-		contentPreview = strings.TrimSpace(string(payload.Content))
-		if len(contentPreview) > 1024 {
-			contentPreview = contentPreview[:1024] + "...(truncated)"
-		}
-	}
-
-	a.log("info", "orthanc_retrieve_job_poll_completed", map[string]any{
-		"job_id":             portalJobID,
-		"orthanc_job_id":     orthancJobID,
-		"state":              strings.TrimSpace(payload.State),
-		"progress":           progress,
-		"error_code":         payload.ErrorCode,
-		"error_description":  strings.TrimSpace(payload.ErrorDescription),
-		"content":            contentPreview,
-		"duration_ms":        time.Since(requestStartedAt).Milliseconds(),
-	})
 
 	return orthancRetrieveStatus{
 		State:    strings.TrimSpace(payload.State),
@@ -5671,7 +5631,7 @@ func (a *App) monitorOrthancRetrieveJob(ctx context.Context, jobID, orthancJobID
 	lastProgress := -1
 
 	checkOnce := func() (string, bool, error) {
-		status, err := a.fetchOrthancJobStatus(ctx, jobID, orthancJobID)
+		status, err := a.fetchOrthancJobStatus(ctx, orthancJobID)
 		if err != nil {
 			return "", false, err
 		}
