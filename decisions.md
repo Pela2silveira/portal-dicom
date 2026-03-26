@@ -40,6 +40,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - With `patient.auth_mode = "master_key"`, the backend still requires the patient to exist and relies on one configured shared key in `patient.master_key`.
 - The patient `Continuar` action must call backend validation; in `master_key` mode, the entered code is compared against `patient.master_key` while preserving the same visible login flow used in demos.
 - Portal session lifetime is shared by patient and professional surfaces and is configured through `portal.session_timeout_minutes` rather than hardcoded in the frontend.
+- Public UI runtime config must be exposed through a minimal endpoint (`/api/runtime-config`) instead of publishing `/api/config`; only non-sensitive values needed by the landing/workspace shell belong there.
 - Patient send-code confirmation must show the destination email obfuscated (`first 3 chars + **** + @domain`) both in demo mode and in real mode when an active email exists.
 - Professional auth mode must be switchable at runtime through `professional.fake_auth` in `config.json`, defaulting to `true` for current MVP/demo compatibility.
 - With `professional.fake_auth = true`, the backend keeps the current transitional professional access validation against Mongo `profesional`; with `false`, professional login is reserved for future `LDAP provincial + MFA`.
@@ -103,6 +104,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Observability metrics should not be persisted in PostgreSQL for now; use structured logs and optional in-memory stats instead.
 - The native OHIF study list is a UX choice only and must not be treated as an access-control mechanism.
 - Future real access control must be enforced by backend/proxy using active portal session and allowed `StudyInstanceUID`, not by viewer visibility rules alone.
+- The current session timeout in the main UI is only a portal-shell control; real expiration of patient/professional access and viewer/image access remains a future backend/proxy responsibility.
 - The explicit patient and physician UI contracts live in `artifacts/05_ui_contracts.md`.
 - The explicit relational model lives in `artifacts/06_data_model.md` and the initial SQL baseline in `app/backend/migrations/001_initial_schema.sql`.
 - The initial remote dcm4chee node uses `AE Title = PACSHPN`.

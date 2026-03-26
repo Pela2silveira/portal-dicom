@@ -1143,6 +1143,10 @@ type ConfigResponse struct {
 	Migrations []string           `json:"migrations"`
 }
 
+type RuntimeConfigResponse struct {
+	Portal PortalConfig `json:"portal"`
+}
+
 type ExternalConfig struct {
 	PACSNodes    []PACSNodeConfig   `json:"pacs_nodes"`
 	HIS          HISConfig          `json:"his"`
@@ -1483,6 +1487,7 @@ func main() {
 	mux.HandleFunc("/api/health", app.handleHealth)
 	mux.HandleFunc("/api/system/events", app.handleSystemEvents)
 	mux.HandleFunc("/api/config", app.handleConfig(appliedMigrations))
+	mux.HandleFunc("/api/runtime-config", app.handleRuntimeConfig)
 	mux.HandleFunc("/api/patient/send-code", app.handlePatientSendCode)
 	mux.HandleFunc("/api/patient/login", app.handlePatientLogin)
 	mux.HandleFunc("/api/patient/search", app.handlePatientSearch)
@@ -1740,6 +1745,22 @@ func (a *App) handleConfig(appliedMigrations []string) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(resp)
 	}
+}
+
+func (a *App) handleRuntimeConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if a.externalConfig == nil {
+		http.Error(w, "config not loaded", http.StatusServiceUnavailable)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, RuntimeConfigResponse{
+		Portal: a.externalConfig.Portal,
+	})
 }
 
 func (a *App) startPatientSearchWorker() {

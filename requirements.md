@@ -94,6 +94,7 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 * **Semántica del modo `master_key`:** con `patient.auth_mode = "master_key"`, el backend valida la existencia del paciente y habilita un acceso común basado en una llave maestra configurada en `patient.master_key`.
 * **Validación efectiva en `Continuar`:** el flujo paciente debe validar el ingreso al confirmar `Continuar`; en modo `master_key` el código ingresado debe compararse contra `patient.master_key`, mientras que la visual del login permanece estable para demos.
 * **Expiración de sesión configurable:** la sesión del portal debe expirar para paciente y profesional según `portal.session_timeout_minutes` en `config.json`; el valor por defecto actual es 10 minutos.
+* **Config pública mínima:** la landing pública no debe leer `config.json` completo ni depender de `/api/config`; solo puede consumir un endpoint mínimo de runtime (`/api/runtime-config`) con los valores estrictamente necesarios para la UI principal, comenzando por `portal.session_timeout_minutes`.
 * **Mensajes funcionales requeridos:** si el paciente no tiene mail activo, la UI debe indicar que concurra a su centro de salud más cercano para actualizar los datos de contacto; si el paciente no existe, debe informar que el paciente no cuenta con registros.
 * **Confirmación visible de destinatario:** cuando el paciente tenga mail registrado y solicite el código, la UI debe mostrar el correo ofuscado en el mensaje de confirmación, preservando los primeros 3 caracteres del local-part y ocultando desde el cuarto hasta `@`.
 * **Restricción funcional futura:** el paciente no debe navegar la base completa del caché local ni la lista nativa de estudios de OHIF.
@@ -300,6 +301,7 @@ El sistema debe estar preparado para recibir por configuración:
 * El acceso a OHIF debe estar vinculado a la sesión activa del portal.
 * Implementación de JWT en el proxy de imágenes para restringir el acceso a nivel de StudyInstanceUID en OHIF.
 * La autorización efectiva no debe depender de ocultar la study list del visor: el backend/proxy debe validar sesión activa + `StudyInstanceUID` permitido en cada acceso de viewer e imágenes.
+* **TO-DO de seguridad real:** la expiración actual en la UI principal es una medida de experiencia y no reemplaza sesiones backend reales; queda pendiente implementar sesiones de servidor para paciente y profesional, expiración validada del lado backend y control efectivo de acceso a Stone/OHIF/DICOMweb por sesión activa + `StudyInstanceUID` autorizado.
 
 ---
 

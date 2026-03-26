@@ -28,6 +28,7 @@
 - El modo de auth profesional debe poder alternarse por config (`professional.fake_auth`) para desacoplar la validación transitoria actual del objetivo futuro `LDAP provincial + MFA`.
 - Si `professional.fake_auth` no está presente en `config.json`, el backend debe asumir `true` para preservar compatibilidad con el MVP actual.
 - La sesión del portal debe expirar tanto para paciente como para profesional según `portal.session_timeout_minutes`; el frontend no debe hardcodear ese valor fuera de un fallback por defecto.
+- La UI pública debe obtener ese valor desde un endpoint mínimo de runtime (`/api/runtime-config`) y no desde `/api/config`.
 - La carga inicial del panel profesional sin filtros debe usar una ventana relativa configurable mediante `professional.initial_cache_period`.
 - Si las dependencias del backend no están disponibles al arranque, el proceso debe permanecer vivo en modo degradado y publicar `/api/health` con `503` para habilitar el fallback de mantenimiento en Nginx.
 - Docker Compose debe usar un endpoint separado de liveness (`/api/livez`) para la salud del contenedor y dejar `/api/health` como readiness operativa.
@@ -38,6 +39,7 @@
 - Si una UI ya abierta recibe `unavailable` por SSE de salud del sistema, o confirma `503` al consultar `/api/health` tras un error del stream, debe volver a la landing propia del portal mediante reset suave de la SPA y no mediante recarga completa del navegador.
 - El backend debe publicar `GET /api/system/events` como SSE de salud del sistema, pero el payload público debe limitarse al estado agregado y timestamp.
 - `/api/config` debe considerarse endpoint interno/operativo y no debe quedar publicado por la superficie pública de Nginx.
+- `/api/runtime-config` puede quedar publicado solo para exponer configuración no sensible estrictamente necesaria para la shell del portal.
 - El watcher agregado que recalcula salud de componentes debe correr cada 1 minuto; el SSE puede usar heartbeats separados para sostener la conexión.
 - El health de PACS remotos debe soportar explícitamente `auth_qido` y `dimse_c_echo`; este último puede ejecutarse a través de Orthanc REST sobre `/modalities/{id}/echo`.
 - Las fechas de estudio que llegan desde DICOM/QIDO deben normalizarse a `YYYY-MM-DD` antes de persistirse o filtrarse en superficies del portal.
@@ -151,6 +153,7 @@ Proveer un portal operativo mínimo capaz de:
 - **OHIF** solo visualiza estudios puntuales ya autorizados o seleccionados.
 - La study list nativa de OHIF no constituye control de acceso ni debe usarse como frontera funcional para pacientes.
 - Ocultar la study list nativa de OHIF es una decisión de **UX**, no una medida de seguridad real.
+- La expiración actual de la shell del portal no constituye control de seguridad suficiente para viewers ni descargas; la restricción real por sesión backend y `StudyInstanceUID` queda como trabajo futuro.
 
 ---
 

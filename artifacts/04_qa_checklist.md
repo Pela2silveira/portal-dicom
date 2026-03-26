@@ -43,6 +43,7 @@
 - [Ready] **Demo ribbon on landing**: the public auth card shows a diagonal `Demo` ribbon on the right without interfering with focus, clicks, or responsive layout.
 - [Ready] **Patient continue backend validation**: the patient `Continuar` action validates against backend before opening the workspace; in `master_key` mode the entered code must match the configured shared key.
 - [Ready] **Configurable shared session timeout**: patient and professional workspaces expire according to `portal.session_timeout_minutes`; when the timeout is reached, the app returns to the landing and clears the restorable workspace state.
+- [Ready] **Minimal public runtime config**: the landing/workspace shell reads `portal.session_timeout_minutes` from `/api/runtime-config` without exposing the broader `/api/config` payload.
 - [Ready] **Landing form cleanup on exit/reset**: when the user presses `Salir`, or when the portal returns to the public landing without a restorable workspace, patient and professional login fields are cleared and do not retain the prior DNI, code, or password values.
 - [Ready] **Soft landing reset on health degradation**: if the open portal UI receives system-health `unavailable` or confirms `/api/health = 503` after an SSE error, it returns to the landing without a full browser navigation or visible hard reload.
 - [Ready] **Professional access exceptions by config**: `professional.license_exceptions` can authorize a bounded list of DNI/username entries bypassing both active matrícula and `habilitado == true`.
@@ -75,6 +76,8 @@
 - [Ready] **System health SSE**: portal and maintenance page react to `GET /api/system/events` so they switch automatically when the backend becomes unavailable or recovers.
 - [Ready] **Logs accessible via compose**: `docker compose logs` is the primary inspection path; backend logs are JSON.
 - [Missing] **Retention automation**: backend cron for Orthanc purge (7 days) + DB cleanup (30 days) not implemented (Milestone 7 pending).
+- [Open] **Real backend portal sessions**: current timeout control lives in the main UI shell; server-side session persistence, expiry validation, and logout invalidation remain pending.
+- [Open] **Viewer/image authorization enforcement**: Stone, OHIF, DICOMweb, and related image routes still need backend/proxy enforcement by active session and allowed `StudyInstanceUID`.
 - [Missing] **SSE proxy correctness**: Nginx config must explicitly disable buffering for SSE routes and set correct headers/timeouts (otherwise intermittent UI failures).
 - [Missing] **Operational limits**: explicit concurrency limits and per-job deadlines for retrieve (`max_concurrent_retrieves_global`, per-node limits, retryability states).
 - [Missing] **Runbook + troubleshooting**: documented procedures for adding nodes, validating QIDO/auth, retrieve debugging, common Orthanc issues, and expected log/audit entries.

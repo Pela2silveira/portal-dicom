@@ -25,6 +25,7 @@ The file currently supports:
 {
   "pacs_nodes": [],
   "his": {},
+  "portal": {},
   "patient": {},
   "professional": {},
   "cache": {}
@@ -151,6 +152,11 @@ Shared portal runtime behavior.
 Fields:
 
 - `session_timeout_minutes`: common session timeout for patient and professional surfaces
+
+Public exposure note:
+
+- The full `/api/config` endpoint is operational/internal and stays blocked by public Nginx.
+- The landing UI reads only a minimal public runtime payload from `/api/runtime-config`, currently limited to `portal.session_timeout_minutes`.
 
 ## `professional`
 

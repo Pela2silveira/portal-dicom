@@ -45,6 +45,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - Returning to the public landing, whether by explicit `Salir` or by a session/workspace reset, must clear both patient and professional login forms instead of preserving previous credentials or codes in the browser-rendered inputs.
 - If the portal UI is already open and system health falls to `unavailable`, or the health SSE fails and `/api/health` confirms `503`, the app must return to the public landing through an in-place UI reset instead of forcing a full browser reload.
 - Patient and professional portal sessions must expire after the configured `portal.session_timeout_minutes`; when that happens, the UI returns to the landing and clears the stored workspace state.
+- The main UI may obtain `portal.session_timeout_minutes` from a minimal public runtime endpoint, but it must not depend on public exposure of the full `/api/config` payload.
 - Required patient outcomes:
   - `ready_to_send`: proceed with mail-code UX
   - `missing_active_email`: show contact-update guidance in a prominent warning style
@@ -186,6 +187,7 @@ Allow a patient to see only their authorized studies and open one selected study
 
 - Backend and proxy must restrict OHIF/image access by active session and allowed `StudyInstanceUID`
 - Patient visibility in the portal is necessary but not sufficient without this enforcement
+- Until that server-side enforcement exists, the current landing/workspace timeout should be treated as UI-shell behavior only, not as final viewer security.
 
 ## Physician Contract
 
@@ -210,6 +212,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - Institutional links may appear in the footer as secondary navigation, provided they do not compete visually with the access form. The current shared footer keeps `Salud Neuquén` and the Android app link available across login, patient, and physician surfaces.
 - Institutional logos such as ANDES and RedTICS may appear in the footer as secondary brand references and should remain non-interactive.
 - Future real implementation target: `LDAP provincial + MFA`
+- Future real implementation also requires backend-managed portal sessions and viewer/image gating by active session plus allowed `StudyInstanceUID`; the current timeout in the shell does not satisfy that requirement by itself.
 
 ### Screen Model
 
