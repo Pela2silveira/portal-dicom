@@ -50,6 +50,8 @@ type App struct {
 	httpClient     *http.Client
 	logger         *log.Logger
 	loginRateLimiter *InMemoryRateLimiter
+	orthancModalityMu sync.Mutex
+	orthancModalities map[string]string
 	externalConfig *ExternalConfig
 	configLoadedAt time.Time
 	identitySource PatientIdentitySource
@@ -80,6 +82,13 @@ type LoginRateLimitRule struct {
 type LoginRateLimitPolicy struct {
 	Endpoint string
 	Rules    []LoginRateLimitRule
+}
+
+type orthancModalityRequest struct {
+	AET            string `json:"AET"`
+	Host           string `json:"Host"`
+	Port           int    `json:"Port"`
+	RetrieveMethod string `json:"RetrieveMethod"`
 }
 
 type ComponentSeverity string
@@ -1491,6 +1500,7 @@ func main() {
 			Timeout: 15 * time.Second,
 		},
 		loginRateLimiter: newInMemoryRateLimiter(),
+		orthancModalities: make(map[string]string),
 		logger:         logger,
 		externalConfig: externalConfig,
 		configLoadedAt: time.Now().UTC(),
@@ -3114,29 +3124,7 @@ func (a *App) checkRemotePACSViaOrthancEcho(parent context.Context, node PACSNod
 		req.SetBasicAuth(a.cfg.OrthancUser, a.cfg.OrthancPass)
 	}
 
-	res, err := a.httpClient.Do(req)
-	if err != nil {
-		a.log("error", "remote_pacs_echo_unreachable", map[string]any{
-			"node_id": resolved.ID,
-			"mode":    resolved.HealthMode,
-			"error":   err.Error(),
-		})
-		return false
-	}
-	defer res.Body.Close()
-
-	ok := res.StatusCode >= 200 && res.StatusCode < 300
-	if !ok {
-		body, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
-		a.log("error", "remote_pacs_echo_bad_status", map[string]any{
-			"node_id":     resolved.ID,
-			"mode":        resolved.HealthMode,
-			"status_code": res.StatusCode,
-			"body":        strings.TrimSpace(string(body)),
-		})
-	}
-
-	return ok
+	return a.executeOrthancEcho(ctx, node, resolved, req, true)
 }
 
 func componentHealthy(components []ComponentHealth, name string) bool {
@@ -3542,6 +3530,55 @@ func newInMemoryRateLimiter() *InMemoryRateLimiter {
 	return &InMemoryRateLimiter{
 		entries: make(map[string][]time.Time),
 	}
+}
+
+func (a *App) orthancModalityPayload(node PACSNodeConfig) ([]byte, string, error) {
+	resolved := node.Resolved()
+	payload, err := json.Marshal(orthancModalityRequest{
+		AET:            resolved.AET,
+		Host:           resolved.DICOMHost,
+		Port:           resolved.DICOMPort,
+		RetrieveMethod: "C-GET",
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	return payload, string(payload), nil
+}
+
+func (a *App) isOrthancModalityCached(nodeID, signature string) bool {
+	if a == nil {
+		return false
+	}
+	a.orthancModalityMu.Lock()
+	defer a.orthancModalityMu.Unlock()
+	return a.orthancModalities[nodeID] == signature
+}
+
+func (a *App) cacheOrthancModality(nodeID, signature string) {
+	if a == nil {
+		return
+	}
+	a.orthancModalityMu.Lock()
+	defer a.orthancModalityMu.Unlock()
+	a.orthancModalities[nodeID] = signature
+}
+
+func (a *App) invalidateOrthancModality(nodeID string) {
+	if a == nil {
+		return
+	}
+	a.orthancModalityMu.Lock()
+	defer a.orthancModalityMu.Unlock()
+	delete(a.orthancModalities, nodeID)
+}
+
+func orthancModalityMissing(statusCode int, body string) bool {
+	if statusCode != http.StatusNotFound {
+		return false
+	}
+	normalized := strings.ToLower(strings.TrimSpace(body))
+	return normalized == "" || strings.Contains(normalized, "unknown modality") || strings.Contains(normalized, "not found")
 }
 
 func (l *InMemoryRateLimiter) allow(key string, limit int, window time.Duration, now time.Time) (bool, time.Duration) {
@@ -5468,14 +5505,13 @@ func (a *App) updateRetrieveJobStatus(ctx context.Context, jobID, status, errMsg
 
 func (a *App) ensureOrthancModality(ctx context.Context, node PACSNodeConfig) error {
 	resolved := node.Resolved()
-	payload, err := json.Marshal(map[string]any{
-		"AET":            resolved.AET,
-		"Host":           resolved.DICOMHost,
-		"Port":           resolved.DICOMPort,
-		"RetrieveMethod": "C-GET",
-	})
+	payload, signature, err := a.orthancModalityPayload(node)
 	if err != nil {
 		return err
+	}
+
+	if a.isOrthancModalityCached(node.ID, signature) {
+		return nil
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, strings.TrimRight(a.cfg.OrthancURL, "/")+"/modalities/"+url.PathEscape(node.ID), strings.NewReader(string(payload)))
@@ -5496,10 +5532,70 @@ func (a *App) ensureOrthancModality(ctx context.Context, node PACSNodeConfig) er
 		body, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
 		return fmt.Errorf("orthanc modality put bad status %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
 	}
+	a.cacheOrthancModality(node.ID, signature)
 	return nil
 }
 
+func (a *App) executeOrthancEcho(ctx context.Context, node PACSNodeConfig, resolved PACSNodeResolvedConfig, req *http.Request, allowRefresh bool) bool {
+	res, err := a.httpClient.Do(req)
+	if err != nil {
+		a.log("error", "remote_pacs_echo_unreachable", map[string]any{
+			"node_id": resolved.ID,
+			"mode":    resolved.HealthMode,
+			"error":   err.Error(),
+		})
+		return false
+	}
+	defer res.Body.Close()
+
+	ok := res.StatusCode >= 200 && res.StatusCode < 300
+	if ok {
+		return true
+	}
+
+	body, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+	bodyText := strings.TrimSpace(string(body))
+	if allowRefresh && orthancModalityMissing(res.StatusCode, bodyText) {
+		a.invalidateOrthancModality(node.ID)
+		if err := a.ensureOrthancModality(ctx, node); err != nil {
+			a.log("error", "remote_pacs_echo_modality_refresh_failed", map[string]any{
+				"node_id": resolved.ID,
+				"mode":    resolved.HealthMode,
+				"error":   err.Error(),
+			})
+			return false
+		}
+
+		retryReq, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(a.cfg.OrthancURL, "/")+"/modalities/"+url.PathEscape(resolved.ID)+"/echo", strings.NewReader(`{"Timeout":5}`))
+		if err != nil {
+			a.log("error", "remote_pacs_echo_request_build_failed", map[string]any{
+				"node_id": resolved.ID,
+				"mode":    resolved.HealthMode,
+				"error":   err.Error(),
+			})
+			return false
+		}
+		retryReq.Header.Set("Content-Type", "application/json")
+		if a.cfg.OrthancUser != "" {
+			retryReq.SetBasicAuth(a.cfg.OrthancUser, a.cfg.OrthancPass)
+		}
+		return a.executeOrthancEcho(ctx, node, resolved, retryReq, false)
+	}
+
+	a.log("error", "remote_pacs_echo_bad_status", map[string]any{
+		"node_id":     resolved.ID,
+		"mode":        resolved.HealthMode,
+		"status_code": res.StatusCode,
+		"body":        bodyText,
+	})
+	return false
+}
+
 func (a *App) startOrthancCGet(ctx context.Context, node PACSNodeConfig, studyInstanceUID string) error {
+	return a.startOrthancCGetWithRefresh(ctx, node, studyInstanceUID, true)
+}
+
+func (a *App) startOrthancCGetWithRefresh(ctx context.Context, node PACSNodeConfig, studyInstanceUID string, allowRefresh bool) error {
 	resolved := node.Resolved()
 	payload, err := json.Marshal(map[string]any{
 		"Level": "Study",
@@ -5529,7 +5625,15 @@ func (a *App) startOrthancCGet(ctx context.Context, node PACSNodeConfig, studyIn
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
-		return fmt.Errorf("orthanc c-get bad status %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
+		bodyText := strings.TrimSpace(string(body))
+		if allowRefresh && orthancModalityMissing(res.StatusCode, bodyText) {
+			a.invalidateOrthancModality(node.ID)
+			if err := a.ensureOrthancModality(ctx, node); err != nil {
+				return fmt.Errorf("orthanc c-get modality refresh failed: %w", err)
+			}
+			return a.startOrthancCGetWithRefresh(ctx, node, studyInstanceUID, false)
+		}
+		return fmt.Errorf("orthanc c-get bad status %d: %s", res.StatusCode, bodyText)
 	}
 	return nil
 }
