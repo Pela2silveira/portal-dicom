@@ -3065,7 +3065,14 @@
       }
 
       roleButtons.forEach(button => {
-        button.addEventListener("click", () => activateRole(button.dataset.role));
+        button.addEventListener("click", () => {
+          activateRole(button.dataset.role);
+          if (button.dataset.role === "physician") {
+            physicianDni.focus({ preventScroll: true });
+            return;
+          }
+          patientDocument.focus({ preventScroll: true });
+        });
         button.addEventListener("keydown", event => {
           if (event.key !== "Enter") {
             return;
