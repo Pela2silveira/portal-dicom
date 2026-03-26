@@ -1730,6 +1730,11 @@
         syncPhysicianContinueState();
       }
 
+      function returnToLandingSoft() {
+        resetLanding();
+        focusPatientDocumentInput();
+      }
+
       function focusPatientDocumentInput() {
         window.requestAnimationFrame(() => {
           if (!hero.classList.contains("hidden")) {
@@ -2883,7 +2888,7 @@
         systemHealthEventSource.addEventListener("health_status_changed", event => {
           const payload = JSON.parse(event.data);
           if (payload.status === "unavailable") {
-            window.location.href = "/";
+            returnToLandingSoft();
             return;
           }
           if (!physicianWorkspace.classList.contains("hidden")) {
@@ -2894,10 +2899,9 @@
           try {
             const response = await fetch("/api/health", { cache: "no-store" });
             if (response.status === 503) {
-              window.location.href = "/";
+              returnToLandingSoft();
             }
-          } catch (error) {
-            window.location.href = "/";
+          } catch (_error) {
           }
         };
       }

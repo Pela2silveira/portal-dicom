@@ -93,6 +93,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Remote PACS health is informative and must not trigger maintenance mode by itself.
 - `/api/health` must serve the latest cached system-health snapshot instead of recalculating remote PACS checks inline on every request.
 - The portal must use an SSE system-health stream to react to backend state changes in real time instead of periodic polling.
+- If the open UI receives system-health `unavailable` (or confirms `/api/health = 503` after an SSE error), it must return to the portal landing through an in-app soft reset instead of forcing `window.location` navigation.
 - The system-health component watcher should run every 1 minute; SSE heartbeats may be more frequent, but full dependency checks should stay conservative.
 - The database must cache patient identity anchors, alternate identifiers from HIS, known authorized study UIDs, physician recent searches, and future session state.
 - Physician credentials must not be stored in clear text; only session state, auth events, and encrypted provider-issued auth material are allowed.
