@@ -1262,7 +1262,7 @@
               </button>
               <button class="role-button" type="button" data-role="physician">
                 <strong>Profesional</strong>
-                <span>Busqueda clinica, seguimiento de disponibilidad y recuperacion.</span>
+                <span>Búsqueda clínica, seguimiento de disponibilidad y recuperación.</span>
               </button>
             </div>
 
@@ -1272,12 +1272,12 @@
                   <label for="patient-document">Documento</label>
                   <input id="patient-document" name="patient-document" type="text" inputmode="numeric" maxlength="11" autocomplete="off" spellcheck="false" placeholder="Ingrese su DNI sin puntos">
                 </div>
-                <button class="action action-secondary" id="send-mail-code" type="button">Enviar codigo</button>
+                <button class="action action-secondary" id="send-mail-code" type="button">Enviar código</button>
               </div>
 
               <div class="field-group">
-                  <label for="patient-mail-code">Codigo por mail</label>
-                  <input id="patient-mail-code" name="patient-mail-code" type="text" inputmode="numeric" placeholder="Ingrese el codigo recibido por mail">
+                  <label for="patient-mail-code">Código por mail</label>
+                  <input id="patient-mail-code" name="patient-mail-code" type="text" inputmode="numeric" placeholder="Ingrese el código recibido por mail">
               </div>
 
               <button class="action action-secondary" id="patient-continue" type="button" disabled>Continuar</button>
@@ -1292,8 +1292,8 @@
               </div>
 
               <div class="field-group">
-                <label for="physician-password">Contrasena</label>
-                <input id="physician-password" name="physician-password" type="password" autocomplete="current-password" spellcheck="false" placeholder="Ingrese su contrasena">
+                <label for="physician-password">Contraseña</label>
+                <input id="physician-password" name="physician-password" type="password" autocomplete="current-password" spellcheck="false" placeholder="Ingrese su contraseña">
               </div>
 
               <button class="action action-primary" type="button" disabled>Continuar</button>
@@ -1395,12 +1395,12 @@
                   <div class="field-group">
                     <select id="patient-filter-modality">
                       <option value="">Todas</option>
-                      <option value="CR">Radiografia computada (CR)</option>
-                      <option value="CT">Tomografia computada (CT)</option>
-                      <option value="DX">Radiografia digital (DX)</option>
-                      <option value="MG">Mamografia (MG)</option>
+                      <option value="CR">Radiografía computada (CR)</option>
+                      <option value="CT">Tomografía computada (CT)</option>
+                      <option value="DX">Radiografía digital (DX)</option>
+                      <option value="MG">Mamografía (MG)</option>
                       <option value="MR">Resonancia magnetica (MR)</option>
-                      <option value="US">Ecografia (US)</option>
+                      <option value="US">Ecografía (US)</option>
                       <option value="XA">Angiografia (XA)</option>
                       <option value="OT">Otros estudios (OT)</option>
                     </select>
@@ -1445,7 +1445,7 @@
                   <strong id="physician-dni-value">-</strong>
                 </div>
                 <div class="summary-item">
-                  <span>Matricula</span>
+                  <span>Matrícula</span>
                   <strong id="physician-license-value">-</strong>
                 </div>
               </div>
@@ -1496,10 +1496,10 @@
                               <div class="calendar-weekdays">
                                 <span>Lun</span>
                                 <span>Mar</span>
-                                <span>Mie</span>
+                                <span>Mié</span>
                                 <span>Jue</span>
                                 <span>Vie</span>
-                                <span>Sab</span>
+                                <span>Sáb</span>
                                 <span>Dom</span>
                               </div>
                               <div class="calendar-grid" id="physician-calendar-grid"></div>
@@ -1515,19 +1515,19 @@
                   <div class="field-group">
                     <select id="physician-search-modality">
                       <option value="">Todas</option>
-                      <option value="CR">Radiografia computada (CR)</option>
-                      <option value="CT">Tomografia computada (CT)</option>
-                      <option value="DX">Radiografia digital (DX)</option>
-                      <option value="MG">Mamografia (MG)</option>
+                      <option value="CR">Radiografía computada (CR)</option>
+                      <option value="CT">Tomografía computada (CT)</option>
+                      <option value="DX">Radiografía digital (DX)</option>
+                      <option value="MG">Mamografía (MG)</option>
                       <option value="MR">Resonancia magnetica (MR)</option>
-                      <option value="US">Ecografia (US)</option>
+                      <option value="US">Ecografía (US)</option>
                       <option value="XA">Angiografia (XA)</option>
                       <option value="OT">Otros estudios (OT)</option>
                     </select>
                   </div>
                 </div>
                 <div class="field-group-grouped field-group-grouped-single professional-filter-block-source">
-                  <label for="physician-search-source">Origen de busqueda</label>
+                  <label for="physician-search-source">Origen de búsqueda</label>
                   <div class="field-group">
                     <select id="physician-search-source">
                       <option value="local_cache">Caché local</option>
@@ -1925,8 +1925,8 @@
       }
 
       function labelForStatus(status) {
-        if (status === "available_local") return "Disponible en cache";
-        if (status === "pending_retrieve") return "Recuperacion pendiente";
+        if (status === "available_local") return "Disponible en caché";
+        if (status === "pending_retrieve") return "Recuperación pendiente";
         if (status === "remote_available") return "Disponible en remoto";
         if (status === "unavailable") return "No disponible";
         return status || "Estado desconocido";
@@ -1935,22 +1935,22 @@
       function modalityLabel(modality) {
         const code = (modality || "").trim().toUpperCase();
         const labels = {
-          CR: "Radiografia computada",
-          CT: "Tomografia computada",
+          CR: "Radiografía computada",
+          CT: "Tomografía computada",
           DOC: "Documento",
-          DX: "Radiografia digital",
+          DX: "Radiografía digital",
           KO: "Objetos clave",
-          MG: "Mamografia",
-          MR: "Resonancia magnetica",
+          MG: "Mamografía",
+          MR: "Resonancia magnética",
           NM: "Medicina nuclear",
           OT: "Otros estudios",
           PR: "Estado de presentacion",
-          PT: "Tomografia por emision de positrones",
-          PX: "Radiografia panoramica",
+          PT: "Tomografía por emisión de positrones",
+          PX: "Radiografía panorámica",
           RF: "Radioscopia",
           SC: "Captura secundaria",
           SR: "Informe estructurado",
-          US: "Ecografia",
+          US: "Ecografía",
           XA: "Angiografia por rayos X"
         };
 
@@ -2256,7 +2256,7 @@
                   : study.retrieve_status === "done"
                     ? '<button class="action action-secondary" type="button" disabled>Recuperado</button>'
                     : study.retrieve_status === "failed"
-                      ? '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '">Reintentar recuperacion</button>'
+                      ? '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '">Reintentar recuperación</button>'
                       : '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '">Recuperar estudio</button>';
               const ohifAction = study.ohif_viewer_url
                 ? '<a class="action action-primary" href="' + escapeHTML(study.ohif_viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar con OHIF Viewer</a>'
@@ -2281,14 +2281,14 @@
                 '<article class="study-item">' +
                   '<div class="item-head">' +
                     '<div>' +
-                      '<strong>Descripcion del estudio: ' + escapeHTML(study.study_description || "Estudio sin descripción") + '</strong>' +
+                      '<strong>Descripción del estudio: ' + escapeHTML(study.study_description || "Estudio sin descripción") + '</strong>' +
                       '<span>' + escapeHTML(study.study_date || "Sin fecha") + '</span>' +
                     '</div>' +
                     statusChips +
                   '</div>' +
                   '<div class="meta-grid">' +
                   '<div><span>Hospitales</span><strong>' + escapeHTML((study.locations || []).join(", ") || "-") + '</strong></div>' +
-                  '<div><span>Prestacion en ANDES</span><strong>' + escapeHTML(study.andes_prestacion || "-") + '</strong></div>' +
+                  '<div><span>Prestación en ANDES</span><strong>' + escapeHTML(study.andes_prestacion || "-") + '</strong></div>' +
                   '<div><span>Profesional en ANDES</span><strong>' + escapeHTML(study.andes_professional || "-") + '</strong></div>' +
                 '</div>' +
                   '<div class="chip-row">' +
@@ -2304,11 +2304,11 @@
       }
 
       function labelForRetrieveStatus(status) {
-        if (status === "idle") return "Recuperacion pendiente";
-        if (status === "done") return "Recuperacion completa";
-        if (status === "running") return "Recuperacion en curso";
-        if (status === "queued") return "Recuperacion en cola";
-        if (status === "failed") return "Recuperacion con error";
+        if (status === "idle") return "Recuperación pendiente";
+        if (status === "done") return "Recuperación completa";
+        if (status === "running") return "Recuperación en curso";
+        if (status === "queued") return "Recuperación en cola";
+        if (status === "failed") return "Recuperación con error";
         return status || "Estado desconocido";
       }
 
@@ -2454,7 +2454,7 @@
             } else if (result.retrieve_status === "running" || result.retrieve_status === "queued") {
               retrieveAction = '<button class="action action-secondary" type="button" disabled>Recuperando</button>';
             } else if (result.retrieve_status === "failed") {
-              retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '">Reintentar recuperacion</button>';
+              retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '">Reintentar recuperación</button>';
             }
             if (result.retrieve_status !== "done" && result.retrieve_status !== "running" && result.retrieve_status !== "queued" && result.retrieve_status !== "failed") {
               retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '">Recuperar estudio</button>';
@@ -2464,7 +2464,7 @@
               '<article class="result-item" data-physician-study="' + escapeHTML(result.study_instance_uid) + '">' +
                 '<div class="item-head">' +
                   '<div>' +
-                    '<strong>Descripcion del estudio: ' + escapeHTML(result.study_description || "Estudio sin descripción") + '</strong>' +
+                    '<strong>Descripción del estudio: ' + escapeHTML(result.study_description || "Estudio sin descripción") + '</strong>' +
                     '<span>' + escapeHTML(result.patient_name) + " · " + escapeHTML(result.study_date || "Sin fecha") + '</span>' +
                   '</div>' +
                   '<div class="' + chipClassForRetrieve(result.retrieve_status) + '">' +
@@ -2475,7 +2475,7 @@
                   '<div><span>Paciente</span><strong>' + escapeHTML(result.patient_id) + '</strong></div>' +
                   '<div><span>Modalidades</span><strong>' + escapeHTML(formatModalityList(result.modalities || [])) + '</strong></div>' +
                   '<div><span>Hospitales</span><strong>' + escapeHTML((result.locations || []).join(", ") || "-") + '</strong></div>' +
-                  '<div><span>Prestacion en ANDES</span><strong>' + escapeHTML(result.andes_prestacion || "-") + '</strong></div>' +
+                  '<div><span>Prestación en ANDES</span><strong>' + escapeHTML(result.andes_prestacion || "-") + '</strong></div>' +
                   '<div><span>Profesional en ANDES</span><strong>' + escapeHTML(result.andes_professional || "-") + '</strong></div>' +
                   '<div><span>Caché local</span><strong>' + escapeHTML(labelForCacheStatus(result.cache_status)) + '</strong></div>' +
                 '</div>' +
@@ -2971,7 +2971,7 @@
           }
         } catch (error) {
           button.disabled = false;
-          button.textContent = "Recuperar";
+          button.textContent = "Recuperar estudio";
         }
       });
 
@@ -2996,7 +2996,7 @@
           }
         } catch (error) {
           button.disabled = false;
-          button.textContent = "Recuperar";
+          button.textContent = "Recuperar estudio";
         }
       });
 
@@ -3034,7 +3034,7 @@
         mailCodeFeedback.classList.remove("hidden", "warning");
 
         if (!documentValue) {
-          setMailCodeFeedback("Ingrese su documento antes de solicitar el codigo por mail.", true);
+          setMailCodeFeedback("Ingrese su documento antes de solicitar el código por mail.", true);
           return;
         }
         if (documentValue.length < 7) {
@@ -3056,7 +3056,7 @@
           setMailCodeFeedback(error?.payload?.message || fallbackMessage, true);
         } finally {
           mailCodeButton.disabled = false;
-          mailCodeButton.textContent = "Enviar codigo";
+          mailCodeButton.textContent = "Enviar código";
           syncPatientContinueState();
         }
       });
@@ -3078,7 +3078,7 @@
         }
 
         if (!mailCodeValue) {
-          setMailCodeFeedback("Ingrese el codigo para continuar.", true);
+          setMailCodeFeedback("Ingrese el código para continuar.", true);
           return;
         }
 
@@ -3125,7 +3125,7 @@
 
         physicianLoginButton.disabled = true;
         physicianLoginButton.textContent = "Validando...";
-        physicianNote.textContent = "Validando matricula profesional...";
+        physicianNote.textContent = "Validando matrícula profesional...";
 
         try {
           const payload = await loginPhysician(dniValue, passwordValue);
