@@ -257,6 +257,10 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - `done`
 - `failed`
 
+### Retrieve State Labels
+
+- `idle` must never surface literally in the UI; the visible label should be in Spanish, for example `Recuperación pendiente`
+
 ### Allowed Actions
 
 - `Buscar`

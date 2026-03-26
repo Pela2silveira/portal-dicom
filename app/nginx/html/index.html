@@ -2304,6 +2304,7 @@
       }
 
       function labelForRetrieveStatus(status) {
+        if (status === "idle") return "Recuperacion pendiente";
         if (status === "done") return "Recuperacion completa";
         if (status === "running") return "Recuperacion en curso";
         if (status === "queued") return "Recuperacion en cola";
