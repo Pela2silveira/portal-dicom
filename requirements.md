@@ -167,6 +167,7 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 * En el mock actual del portal, el ingreso de paciente debe aterrizar primero en esta superficie y no redirigir directamente a la home general de OHIF.
 * La primera implementación funcional de esta superficie consume `GET /api/patient/studies?document=<dni>` y renderiza la lista desde datos del backend.
 * La búsqueda remota de estudios del paciente debe ejecutarse mediante workers Go en background, persistiendo estado en `search_requests` y `search_node_runs`, mientras la UI sigue mostrando la lista cacheada y un indicador de búsqueda en curso.
+* La UI paciente debe reutilizar la búsqueda remota en curso cuando el operador repita el mismo `documento + filtros`, evitando emitir `POST /api/patient/search` redundantes mientras exista un `request_id` activo para esa combinación.
 * Los estudios remotos de esta lista deben quedar inicialmente como `pending_retrieve`, con botón explícito `Retrieve` para traerlos a Orthanc antes de habilitar `Visualizar estudio`.
 
 ### 6.1.2 Superficie Médico

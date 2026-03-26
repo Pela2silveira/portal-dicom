@@ -1640,6 +1640,7 @@
       let activePatientDocument = "";
       let activePhysicianUsername = "";
       let activePatientSearchRequestID = "";
+      let activePatientSearchKey = "";
       let patientMailCodeReady = false;
       let patientSyncPollHandle = null;
       let patientRetrieveEventSource = null;
@@ -1697,6 +1698,7 @@
         patientSyncStatus.classList.remove("active", "error");
         patientSyncStatus.textContent = "";
         activePatientSearchRequestID = "";
+        activePatientSearchKey = "";
         activePatientDocument = "";
         activePhysicianUsername = "";
         clearPortalWorkspaceState();
@@ -1878,6 +1880,11 @@
         patientSyncStatus.textContent = "";
 
         if (status === "queued" || status === "running") {
+          if (activePatientDocument) {
+            activePatientSearchKey = patientSearchKeyForPayload(
+              buildPatientSearchPayload(activePatientDocument)
+            );
+          }
           patientSyncStatus.classList.add("active");
           patientSyncStatus.textContent = sync.message || "Buscando...";
           clearPatientSyncPoll();
@@ -1890,10 +1897,25 @@
         }
 
         clearPatientSyncPoll();
+        activePatientSearchRequestID = "";
+        activePatientSearchKey = "";
         if (status === "failed") {
           patientSyncStatus.classList.add("active", "error");
           patientSyncStatus.textContent = sync.message || "No se pudo completar la búsqueda remota.";
         }
+      }
+
+      function buildPatientSearchPayload(documentNumber) {
+        return {
+          document_number: documentNumber,
+          date_from: patientDateFilter.from || "",
+          date_to: patientDateFilter.to || (patientDateFilter.from || ""),
+          modality: patientFilterModality.value || ""
+        };
+      }
+
+      function patientSearchKeyForPayload(payload) {
+        return JSON.stringify(payload);
       }
 
       function chipClassForStatus(status) {
@@ -2497,29 +2519,7 @@
         savePortalWorkspaceState("patient");
       }
 
-      async function startPatientSearch(documentNumber) {
-        const response = await fetch("/api/patient/search", {
-          method: "POST",
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            document_number: documentNumber,
-            date_from: patientDateFilter.from || "",
-            date_to: patientDateFilter.to || (patientDateFilter.from || ""),
-            modality: patientFilterModality.value || ""
-          })
-        });
-
-        if (!response.ok) {
-          throw new Error("patient search request failed");
-        }
-
-        return response.json();
-      }
-
-      async function loadPatientSearchStatus(requestID) {
+      async function fetchPatientSearchStatus(requestID) {
         const response = await fetch("/api/patient/search?request_id=" + encodeURIComponent(requestID), {
           headers: { Accept: "application/json" }
         });
@@ -2528,10 +2528,49 @@
           throw new Error("patient search status request failed");
         }
 
+        return response.json();
+      }
+
+      async function startPatientSearch(documentNumber) {
+        const requestPayload = buildPatientSearchPayload(documentNumber);
+        const requestKey = patientSearchKeyForPayload(requestPayload);
+
+        if (activePatientSearchRequestID && activePatientSearchKey === requestKey) {
+          const current = await fetchPatientSearchStatus(activePatientSearchRequestID);
+          if (current.status === "queued" || current.status === "running") {
+            renderPatientSyncStatus(current);
+            return current;
+          }
+          activePatientSearchRequestID = "";
+          activePatientSearchKey = "";
+        }
+
+        const response = await fetch("/api/patient/search", {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(requestPayload)
+        });
+
+        if (!response.ok) {
+          throw new Error("patient search request failed");
+        }
+
         const payload = await response.json();
+        if (payload?.status === "queued" || payload?.status === "running") {
+          activePatientSearchKey = requestKey;
+        }
+        return payload;
+      }
+
+      async function loadPatientSearchStatus(requestID) {
+        const payload = await fetchPatientSearchStatus(requestID);
         renderPatientSyncStatus(payload);
         if (payload.status === "done" || payload.status === "failed") {
           activePatientSearchRequestID = "";
+          activePatientSearchKey = "";
           if (activePatientDocument) {
             await loadPatientStudies(activePatientDocument);
           }

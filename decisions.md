@@ -64,6 +64,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Patient access must use a portal-owned study list filtered to authorized patient studies.
 - Patient access must not rely on the native OHIF study list.
 - The patient surface now separates search orchestration from result reads: `POST /api/patient/search` enqueues background QIDO work, `GET /api/patient/search?request_id=...` reports worker state, and `GET /api/patient/studies` remains a read contract over cached rows plus current sync state.
+- The patient UI should not enqueue duplicate remote searches for the same `document + filters` while one request is already `queued` or `running`; it must reuse the active `request_id` and continue polling that job instead.
 - The patient surface now exposes a manual `Retrieve` action backed by `POST /api/patient/retrieve`.
 - The current patient retrieve implementation enqueues a background retrieve job, then a Go worker uses Orthanc REST to `PUT /modalities/{id}` and `POST /modalities/{id}/get`, polling Orthanc until the study becomes local.
 - Retrieve completion feedback in the browser should follow a per-job SSE stream (`GET /api/retrieve/jobs/:id/events`) instead of unbounded full-list polling.
