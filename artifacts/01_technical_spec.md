@@ -303,9 +303,10 @@ Proveer un portal operativo mínimo capaz de:
 22. Cuando exista match en Mongo `prestaciones`, el portal también debe persistir el `_id` de la prestación ANDES como `andes_prestacion_id` dentro de los payloads persistidos de estudios/resultados para reutilización posterior.
 23. Los resultados QIDO remotos deben persistirse en PostgreSQL en una cache compartida `qido_study_cache`, clave primaria `study_instance_uid + source_node_id`, con metadatos reutilizables del estudio y timestamps `first_seen_at/last_seen_at`.
 24. Paciente y profesional deben reutilizar esa cache compartida antes de volver a consultar datos ya resueltos de enriquecimiento ANDES para el mismo `StudyInstanceUID + nodo`.
-25. La invalidación o purga de entradas de `qido_study_cache` cuando un estudio deje de existir en un PACS, o cuando el enriquecimiento ANDES deba refrescarse, queda explícitamente fuera de alcance en esta iteración y documentada como TO-DO.
-26. TO-DO: cuando el panel profesional habilite multiselect de orígenes, el contrato de resultados debe agregar un array `source_node_ids[]` por `StudyInstanceUID`; `source_node_id` podrá mantenerse solo como hint de retrieve prioritario o compatibilidad transitoria.
-27. TO-DO: confirmar primero si el viewer actual usa solo integración estándar `dicom-web` contra Orthanc local o si participa algún plugin específico; a partir de esa respuesta, evaluar si existe una estrategia de carga más lazy/on-demand de metadata que mejore la primera apertura sin introducir complejidad o costo extra injustificado.
+25. TO-DO: investigar si el enriquecimiento ANDES debe además recuperar PDFs de prestaciones por API, definiendo endpoint, autenticación, contrato de descarga y reglas de visibilidad por actor.
+26. La invalidación o purga de entradas de `qido_study_cache` cuando un estudio deje de existir en un PACS, o cuando el enriquecimiento ANDES deba refrescarse, queda explícitamente fuera de alcance en esta iteración y documentada como TO-DO.
+27. TO-DO: cuando el panel profesional habilite multiselect de orígenes, el contrato de resultados debe agregar un array `source_node_ids[]` por `StudyInstanceUID`; `source_node_id` podrá mantenerse solo como hint de retrieve prioritario o compatibilidad transitoria.
+28. TO-DO: confirmar primero si el viewer actual usa solo integración estándar `dicom-web` contra Orthanc local o si participa algún plugin específico; a partir de esa respuesta, evaluar si existe una estrategia de carga más lazy/on-demand de metadata que mejore la primera apertura sin introducir complejidad o costo extra injustificado.
 
 ### 5.4 Landing pública y acceso futuro
 1. El usuario accede a `/` y visualiza la landing institucional.

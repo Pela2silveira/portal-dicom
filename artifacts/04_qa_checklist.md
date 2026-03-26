@@ -27,6 +27,7 @@
 - [Ready] **ANDES prestación id persistence**: when Mongo `prestaciones` returns a match, the portal persists the prestación `_id` as `andes_prestacion_id` in the stored study/result payloads, even if the UI does not render that identifier.
 - [Ready] **Shared QIDO cache**: remote QIDO results are persisted in PostgreSQL by `study_instance_uid + source_node_id`, so patient and professional flows can reuse the same canonical study metadata cache.
 - [Ready] **Shared ANDES reuse**: when ANDES enrichment has already been resolved for a cached `study_instance_uid + source_node_id`, subsequent patient/professional searches reuse the persisted values instead of requiring a fresh Mongo lookup.
+- [Open] **ANDES PDF recovery by API**: investigate whether prestaciones-related PDFs should be retrievable through an ANDES API as part of the enrichment layer, including endpoint/auth details and actor-visible UX rules.
 - [Open] **Cache invalidation policy**: the product still needs a defined mechanism to purge cached studies that disappear from a PACS and to refresh stale ANDES enrichment.
 - [Open] **Multiorigin result contract**: before enabling professional multiselect PACS, the API contract still needs to evolve from single `source_node_id` to aggregated `source_node_ids[]` by `StudyInstanceUID`.
 - [Ready] **Professional PACS health legend**: the physician results card shows `PACS en línea X/Y` from remote PACS health checks and exposes online/offline node names on hover/focus.
