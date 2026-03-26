@@ -83,6 +83,7 @@
 - [Missing] **Retention automation**: backend cron for Orthanc purge (7 days) + DB cleanup (30 days) not implemented (Milestone 7 pending).
 - [Open] **Real backend portal sessions**: current timeout control lives in the main UI shell; server-side session persistence, expiry validation, and logout invalidation remain pending.
 - [Open] **Viewer/image authorization enforcement**: Stone, OHIF, DICOMweb, and related image routes still need backend/proxy enforcement by active session and allowed `StudyInstanceUID`.
+- [Open] **OHIF lazy-loading strategy**: investigate whether the current `dicom-web` datasource should remain as-is or whether a lazier metadata strategy such as `dicom-json` with `Preload=false` would improve the first-open/perceived performance tradeoff on Orthanc local.
 - [Missing] **SSE proxy correctness**: Nginx config must explicitly disable buffering for SSE routes and set correct headers/timeouts (otherwise intermittent UI failures).
 - [Missing] **Operational limits**: explicit concurrency limits and per-job deadlines for retrieve (`max_concurrent_retrieves_global`, per-node limits, retryability states).
 - [Missing] **Runbook + troubleshooting**: documented procedures for adding nodes, validating QIDO/auth, retrieve debugging, common Orthanc issues, and expected log/audit entries.

@@ -305,6 +305,7 @@ Proveer un portal operativo mínimo capaz de:
 24. Paciente y profesional deben reutilizar esa cache compartida antes de volver a consultar datos ya resueltos de enriquecimiento ANDES para el mismo `StudyInstanceUID + nodo`.
 25. La invalidación o purga de entradas de `qido_study_cache` cuando un estudio deje de existir en un PACS, o cuando el enriquecimiento ANDES deba refrescarse, queda explícitamente fuera de alcance en esta iteración y documentada como TO-DO.
 26. TO-DO: cuando el panel profesional habilite multiselect de orígenes, el contrato de resultados debe agregar un array `source_node_ids[]` por `StudyInstanceUID`; `source_node_id` podrá mantenerse solo como hint de retrieve prioritario o compatibilidad transitoria.
+27. TO-DO: investigar si el stack actual debería mantener OHIF sobre `dicom-web` o evaluar una estrategia más lazy/on-demand de metadata, por ejemplo `dicom-json` con `Preload=false`, comparando impacto en primera apertura, reaperturas y costo de precálculo en Orthanc.
 
 ### 5.4 Landing pública y acceso futuro
 1. El usuario accede a `/` y visualiza la landing institucional.
