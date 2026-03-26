@@ -1683,6 +1683,15 @@
               patientDocument.focus({ preventScroll: true });
             }
           });
+          return;
+        }
+
+        if (role === "physician") {
+          window.requestAnimationFrame(() => {
+            if (!hero.classList.contains("hidden")) {
+              physicianDni.focus({ preventScroll: true });
+            }
+          });
         }
       }
 
@@ -1756,6 +1765,22 @@
         window.requestAnimationFrame(() => {
           if (!hero.classList.contains("hidden")) {
             patientValidateButton.focus({ preventScroll: true });
+          }
+        });
+      }
+
+      function focusPhysicianPasswordInput() {
+        window.requestAnimationFrame(() => {
+          if (!hero.classList.contains("hidden")) {
+            physicianPassword.focus({ preventScroll: true });
+          }
+        });
+      }
+
+      function focusPhysicianContinueButton() {
+        window.requestAnimationFrame(() => {
+          if (!hero.classList.contains("hidden")) {
+            physicianLoginButton.focus({ preventScroll: true });
           }
         });
       }
@@ -3276,7 +3301,19 @@
         physicianDni.value = normalizePhysicianDocumentInput(physicianDni.value);
         syncPhysicianContinueState();
       });
+      physicianDni.addEventListener("keydown", event => {
+        if ((event.key === "Tab" && !event.shiftKey) || event.key === "Enter") {
+          event.preventDefault();
+          focusPhysicianPasswordInput();
+        }
+      });
       physicianPassword.addEventListener("input", syncPhysicianContinueState);
+      physicianPassword.addEventListener("keydown", event => {
+        if ((event.key === "Tab" && !event.shiftKey) || event.key === "Enter") {
+          event.preventDefault();
+          focusPhysicianContinueButton();
+        }
+      });
       physicianSearchPatientID.addEventListener("input", () => {
         physicianSearchPatientID.value = normalizePatientLookupIdentifierInput(physicianSearchPatientID.value);
         savePortalWorkspaceState();

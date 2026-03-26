@@ -192,6 +192,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - Public landing flow: `DNI + contraseña`
 - Current implementation already opens the portal-owned physician surface
 - Browser refresh inside the physician workspace should restore the physician surface and its active filters from session state instead of sending the user back to the public landing.
+- Keyboard flow on the public physician entry must be deterministic: initial focus on `DNI` when that role is active, `Tab`/`Enter` from `DNI` moves to `Contraseña`, and `Tab`/`Enter` from `Contraseña` moves focus to `Continuar`.
 - The visible language of the entry flow should read as operational product language, not as internal demo text
 - The institutional strapline in the public header should read `Ministerio de Salud - Provincia del Neuquén`.
 - The public landing should keep supporting context concise so the professional access form remains the dominant visual element.
