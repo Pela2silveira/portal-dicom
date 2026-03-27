@@ -168,6 +168,21 @@ Todavía hay piezas transitorias o de demo, sobre todo en autenticación final y
 - [app/config/README.md](app/config/README.md)
 - [app/config/config.example.json](app/config/config.example.json)
 
+## Versionado
+
+El proyecto usa **Semantic Versioning** con formato `MAJOR.MINOR.PATCH`.
+
+- `MAJOR`: cambios incompatibles en contratos externos u operación esperada.
+- `MINOR`: features nuevas compatibles hacia atrás.
+- `PATCH`: fixes y ajustes compatibles hacia atrás.
+
+Reglas iniciales para este repositorio:
+
+- La versión fuente de verdad vive en [`VERSION`](VERSION).
+- Mientras el producto siga en etapa inicial, la línea base arranca en `0.y.z`.
+- Cambios en endpoints públicos, comportamiento de login, retrieve, viewers o deploy que rompan compatibilidad deben subir `MAJOR` cuando el proyecto pase a `1.x`.
+- Cambios de configuración local no versionada no alteran por sí solos la versión; la suben solo los cambios de producto efectivamente releaseables.
+
 ## Topología runtime
 
 ```mermaid
