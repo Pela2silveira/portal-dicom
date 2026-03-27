@@ -219,6 +219,16 @@ cd /Users/psilveira/src/salud/pacs/portal2/app
 docker compose up --build
 ```
 
+Atajos operativos útiles dentro de [`app/`](app/):
+
+```bash
+make ps
+make logs SERVICE=backend
+make logs-follow SERVICE=orthanc
+make logs-save SERVICE=nginx SINCE=48h
+make logs-list
+```
+
 El entrypoint público del stack local es:
 
 - `http://localhost:8081`

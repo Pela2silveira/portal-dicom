@@ -1,6 +1,7 @@
 services:
   nginx:
     image: nginx:1.27-alpine
+    container_name: app-nginx
     depends_on:
       backend:
         condition: service_healthy
@@ -18,6 +19,7 @@ services:
   backend:
     build:
       context: ./backend
+    container_name: app-backend
     env_file:
       - .env
     environment:
@@ -44,6 +46,7 @@ services:
 
   postgres:
     image: postgres:16-alpine
+    container_name: app-postgres
     env_file:
       - .env
     environment:
@@ -64,6 +67,7 @@ services:
 
   orthanc:
     image: jodogne/orthanc-plugins:latest
+    container_name: app-orthanc
     env_file:
       - .env
     environment:
@@ -88,6 +92,7 @@ services:
 
   ohif:
     image: ohif/app:v3.11.1
+    container_name: app-ohif
     volumes:
       - ./ohif/app-config.js:/usr/share/nginx/html/app-config.js:ro
       - ./ohif/mjs.types.conf:/etc/nginx/conf.d/zz-mjs-types.conf:ro
