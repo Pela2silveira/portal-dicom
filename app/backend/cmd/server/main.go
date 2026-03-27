@@ -746,6 +746,8 @@ func mongoValueIsNull(value any) bool {
 		return true
 	}
 	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed) == ""
 	case primitive.Null:
 		return true
 	case primitive.DateTime:
