@@ -1668,6 +1668,8 @@
       const physicianLocalCacheSourceValue = "local_cache";
       let activePatientDocument = "";
       let activePhysicianUsername = "";
+      let activePatientSessionToken = "";
+      let activePhysicianSessionToken = "";
       let activePatientSearchRequestID = "";
       let activePatientSearchKey = "";
       let patientMailCodeReady = false;
@@ -1736,6 +1738,8 @@
         activePatientSearchKey = "";
         activePatientDocument = "";
         activePhysicianUsername = "";
+        activePatientSessionToken = "";
+        activePhysicianSessionToken = "";
         clearLoginForms();
         clearPortalWorkspaceState();
         activateRole("patient");
@@ -1894,6 +1898,7 @@
         if (activeKind === "patient" && activePatientDocument) {
           state.patient = {
             document_number: activePatientDocument,
+            session_token: activePatientSessionToken || "",
             date_from: patientDateFilter.from || "",
             date_to: patientDateFilter.to || "",
             modality: patientFilterModality.value || "",
@@ -1903,6 +1908,7 @@
         if (activeKind === "physician" && activePhysicianUsername) {
           state.physician = {
             username: activePhysicianUsername,
+            session_token: activePhysicianSessionToken || "",
             patient_id: physicianSearchPatientID.value.trim(),
             patient_name: physicianSearchPatient.value.trim(),
             date_from: physicianDateFilter.from || "",
@@ -1948,6 +1954,7 @@
 
         if (state?.kind === "patient" && state.patient?.document_number) {
           activateRole("patient");
+          activePatientSessionToken = String(state.patient.session_token || "");
           patientDocument.value = state.patient.document_number;
           patientFilterModality.value = state.patient.modality || "";
           if (state.patient.date_from || state.patient.date_to) {
@@ -1974,6 +1981,7 @@
 
         if (state?.kind === "physician" && state.physician?.username) {
           activateRole("physician");
+          activePhysicianSessionToken = String(state.physician.session_token || "");
           physicianDni.value = state.physician.username;
           physicianSearchPatientID.value = state.physician.patient_id || "";
           physicianSearchPatient.value = state.physician.patient_name || "";
@@ -2443,7 +2451,7 @@
                 .join("");
 
               const action = study.viewer_url
-                ? '<a class="action action-viewer-preferred" href="' + escapeHTML(study.viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar estudio</a>'
+                ? '<button class="action action-viewer-preferred" type="button" data-patient-viewer="' + escapeHTML(study.study_instance_uid) + '" data-viewer-kind="stone">Visualizar estudio</button>'
                 : study.source_node_available === false
                   ? '<button class="action action-secondary" type="button" disabled>Origen no disponible</button>'
                 : (study.retrieve_status === "running" || study.retrieve_status === "queued")
@@ -2454,7 +2462,7 @@
                       ? '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '" data-patient-retrieve-button="' + escapeHTML(study.study_instance_uid) + '">Reintentar recuperación</button>'
                       : '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '" data-patient-retrieve-button="' + escapeHTML(study.study_instance_uid) + '">Recuperar estudio</button>';
               const ohifAction = study.ohif_viewer_url
-                ? '<a class="action action-primary" href="' + escapeHTML(study.ohif_viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar con OHIF Viewer</a>'
+                ? '<button class="action action-primary" type="button" data-patient-viewer="' + escapeHTML(study.study_instance_uid) + '" data-viewer-kind="ohif">Visualizar con OHIF Viewer</button>'
                 : "";
               const downloadAction = study.download_url
                 ? '<a class="action action-primary" href="' + escapeHTML(study.download_url) + '" rel="noopener noreferrer">Descargar DICOM</a>'
@@ -2660,10 +2668,10 @@
               .join("");
 
             const action = result.viewer_url
-              ? '<a class="action action-viewer-preferred" href="' + escapeHTML(result.viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar estudio</a>'
+              ? '<button class="action action-viewer-preferred" type="button" data-physician-viewer="' + escapeHTML(result.study_instance_uid) + '" data-viewer-kind="stone">Visualizar estudio</button>'
               : "";
             const ohifAction = result.ohif_viewer_url
-              ? '<a class="action action-primary" href="' + escapeHTML(result.ohif_viewer_url) + '" target="_blank" rel="noopener noreferrer">Visualizar con OHIF Viewer</a>'
+              ? '<button class="action action-primary" type="button" data-physician-viewer="' + escapeHTML(result.study_instance_uid) + '" data-viewer-kind="ohif">Visualizar con OHIF Viewer</button>'
               : "";
             const downloadAction = result.download_url
               ? '<a class="action action-primary" href="' + escapeHTML(result.download_url) + '" rel="noopener noreferrer">Descargar DICOM</a>'
@@ -3032,6 +3040,48 @@
         return payload;
       }
 
+      async function fetchViewerAccessURL(role, studyInstanceUID, viewerKind) {
+        const sessionToken = role === "patient" ? activePatientSessionToken : activePhysicianSessionToken;
+        if (!sessionToken) {
+          throw new Error("missing viewer session token");
+        }
+
+        const basePath = role === "patient" ? "/api/patient/studies/" : "/api/physician/studies/";
+        const response = await fetch(basePath + encodeURIComponent(studyInstanceUID) + "/access?viewer=" + encodeURIComponent(viewerKind), {
+          headers: {
+            Accept: "application/json",
+            Authorization: "Bearer " + sessionToken
+          }
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload?.url) {
+          const error = new Error(payload?.message || "viewer access request failed");
+          error.status = response.status;
+          error.payload = payload;
+          throw error;
+        }
+
+        return payload.url;
+      }
+
+      async function openViewer(role, studyInstanceUID, viewerKind) {
+        const viewerTab = window.open("about:blank", "_blank", "noopener");
+        try {
+          const accessURL = await fetchViewerAccessURL(role, studyInstanceUID, viewerKind);
+          if (viewerTab) {
+            viewerTab.location.replace(accessURL);
+            return;
+          }
+          window.location.assign(accessURL);
+        } catch (error) {
+          if (viewerTab) {
+            viewerTab.close();
+          }
+          throw error;
+        }
+      }
+
       async function triggerPhysicianRetrieve(studyInstanceUID) {
         const response = await fetch("/api/physician/retrieve", {
           method: "POST",
@@ -3315,6 +3365,24 @@
       });
 
       patientStudyList.addEventListener("click", async event => {
+        const viewerButton = event.target.closest("[data-patient-viewer]");
+        if (viewerButton) {
+          const studyInstanceUID = viewerButton.getAttribute("data-patient-viewer");
+          const viewerKind = viewerButton.getAttribute("data-viewer-kind") || "stone";
+          if (!studyInstanceUID) {
+            return;
+          }
+          viewerButton.disabled = true;
+          try {
+            await openViewer("patient", studyInstanceUID, viewerKind);
+          } catch (_error) {
+            alert("No se pudo abrir el visor para el estudio seleccionado.");
+          } finally {
+            viewerButton.disabled = false;
+          }
+          return;
+        }
+
         const button = event.target.closest("[data-patient-retrieve]");
         if (!button) {
           return;
@@ -3340,6 +3408,24 @@
       });
 
       physicianResultList.addEventListener("click", async event => {
+        const viewerButton = event.target.closest("[data-physician-viewer]");
+        if (viewerButton) {
+          const studyInstanceUID = viewerButton.getAttribute("data-physician-viewer");
+          const viewerKind = viewerButton.getAttribute("data-viewer-kind") || "stone";
+          if (!studyInstanceUID) {
+            return;
+          }
+          viewerButton.disabled = true;
+          try {
+            await openViewer("physician", studyInstanceUID, viewerKind);
+          } catch (_error) {
+            alert("No se pudo abrir el visor para el estudio seleccionado.");
+          } finally {
+            viewerButton.disabled = false;
+          }
+          return;
+        }
+
         const button = event.target.closest("[data-physician-retrieve]");
         if (!button) {
           return;
@@ -3453,7 +3539,8 @@
         patientValidateButton.textContent = "Validando...";
 
         try {
-          await loginPatient(documentValue, mailCodeValue);
+          const payload = await loginPatient(documentValue, mailCodeValue);
+          activePatientSessionToken = String(payload?.session_token || "");
         } catch (error) {
           patientValidateButton.textContent = "Continuar";
           syncPatientContinueState();
@@ -3508,6 +3595,7 @@
 
         try {
           const payload = await loginPhysician(dniValue, passwordValue);
+          activePhysicianSessionToken = String(payload?.session_token || "");
           startPortalSession();
           showWorkspace("physician");
           physicianFullNameValue.textContent = payload.physician?.full_name || "-";

@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1074,9 +1077,10 @@ type PatientLoginRequest struct {
 }
 
 type PatientLoginResponse struct {
-	Status  string         `json:"status"`
-	Message string         `json:"message"`
-	Patient PatientSummary `json:"patient,omitempty"`
+	Status       string         `json:"status"`
+	Message      string         `json:"message"`
+	Patient      PatientSummary `json:"patient,omitempty"`
+	SessionToken string         `json:"session_token,omitempty"`
 }
 
 type qidoResponseItem map[string]dicomJSONAttribute
@@ -1097,9 +1101,18 @@ type PhysicianLoginRequest struct {
 }
 
 type PhysicianLoginResponse struct {
-	Status    string           `json:"status"`
-	Message   string           `json:"message"`
-	Physician PhysicianSummary `json:"physician,omitempty"`
+	Status       string           `json:"status"`
+	Message      string           `json:"message"`
+	Physician    PhysicianSummary `json:"physician,omitempty"`
+	SessionToken string           `json:"session_token,omitempty"`
+}
+
+type ViewerAccessGrantResponse struct {
+	Status           string `json:"status"`
+	URL              string `json:"url"`
+	StudyInstanceUID string `json:"study_instance_uid"`
+	ViewerKind       string `json:"viewer_kind"`
+	ExpiresAt        string `json:"expires_at"`
 }
 
 type PhysicianResultsErrorResponse struct {
@@ -1126,6 +1139,34 @@ type retrieveJobSnapshot struct {
 	Phase            string
 	Progress         int
 	Error            string
+}
+
+type patientSessionSnapshot struct {
+	SessionID string
+	PatientID string
+	ExpiresAt time.Time
+	Status    string
+}
+
+type physicianSessionSnapshot struct {
+	SessionID string
+	PhysicianID string
+	ExpiresAt time.Time
+	Status    string
+}
+
+type viewerAccessGrantSnapshot struct {
+	GrantID             string
+	SubjectType         string
+	PatientSessionID    string
+	PhysicianSessionID  string
+	StudyInstanceUID    string
+	ViewerKind          string
+	Status              string
+	MaxUses             int
+	ConsumedUses        int
+	ExpiresAt           time.Time
+	RevokedAt           sql.NullTime
 }
 
 type PhysicianSummary struct {
@@ -1557,13 +1598,16 @@ func main() {
 	mux.HandleFunc("/api/patient/login", app.handlePatientLogin)
 	mux.HandleFunc("/api/patient/search", app.handlePatientSearch)
 	mux.HandleFunc("/api/patient/studies", app.handlePatientStudies)
+	mux.HandleFunc("/api/patient/studies/", app.handlePatientStudyAccess)
 	mux.HandleFunc("/api/patient/download", app.handlePatientDownload)
 	mux.HandleFunc("/api/patient/retrieve", app.handlePatientRetrieve)
 	mux.HandleFunc("/api/physician/login", app.handlePhysicianLogin)
 	mux.HandleFunc("/api/retrieve/jobs/", app.handleRetrieveJobEvents)
 	mux.HandleFunc("/api/physician/results", app.handlePhysicianResults)
+	mux.HandleFunc("/api/physician/studies/", app.handlePhysicianStudyAccess)
 	mux.HandleFunc("/api/physician/download", app.handlePhysicianDownload)
 	mux.HandleFunc("/api/physician/retrieve", app.handlePhysicianRetrieve)
+	mux.HandleFunc("/viewer-access/", app.handleViewerAccess)
 
 	if closer, ok := app.identitySource.(patientIdentitySourceCloser); ok {
 		defer func() {
@@ -2119,10 +2163,17 @@ func (a *App) handlePatientLogin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	_, rawSessionToken, _, err := a.createPatientSession(ctx, patient.ID, r)
+	if err != nil {
+		http.Error(w, "failed to create patient session", http.StatusInternalServerError)
+		return
+	}
+
 	writeJSON(w, http.StatusOK, PatientLoginResponse{
-		Status:  "ok",
-		Message: "Acceso validado.",
-		Patient: patient,
+		Status:       "ok",
+		Message:      "Acceso validado.",
+		Patient:      patient,
+		SessionToken: rawSessionToken,
 	})
 }
 
@@ -2327,6 +2378,215 @@ func (a *App) handlePatientDownload(w http.ResponseWriter, r *http.Request) {
 		})
 		http.Error(w, "failed to download study archive", http.StatusBadGateway)
 	}
+}
+
+func studyUIDFromAccessPath(path, prefix string) string {
+	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, "/access") {
+		return ""
+	}
+	value := strings.TrimSuffix(strings.TrimPrefix(path, prefix), "/access")
+	return strings.Trim(strings.TrimSpace(value), "/")
+}
+
+func (a *App) handlePatientStudyAccess(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	studyUID := studyUIDFromAccessPath(r.URL.Path, "/api/patient/studies/")
+	if studyUID == "" {
+		http.NotFound(w, r)
+		return
+	}
+	viewerKind := normalizeViewerKind(r.URL.Query().Get("viewer"))
+	if viewerKind == "" {
+		http.Error(w, "invalid viewer", http.StatusBadRequest)
+		return
+	}
+	rawSessionToken := sessionBearerToken(r)
+	if rawSessionToken == "" {
+		http.Error(w, "missing session token", http.StatusUnauthorized)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	session, err := a.patientSessionByToken(ctx, rawSessionToken)
+	if err != nil {
+		http.Error(w, "invalid session", http.StatusUnauthorized)
+		return
+	}
+
+	authorized, err := a.patientStudyAvailableLocal(ctx, session.PatientID, studyUID)
+	if err != nil {
+		http.Error(w, "failed to validate patient study access", http.StatusInternalServerError)
+		return
+	}
+	if !authorized {
+		http.Error(w, "study not authorized for patient viewer", http.StatusNotFound)
+		return
+	}
+
+	accessURL, expiresAt, err := a.createViewerAccessGrant(ctx, "patient", session.SessionID, "", studyUID, viewerKind, r, session.ExpiresAt)
+	if err != nil {
+		http.Error(w, "failed to create viewer access grant", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, ViewerAccessGrantResponse{
+		Status:           "ok",
+		URL:              accessURL,
+		StudyInstanceUID: studyUID,
+		ViewerKind:       viewerKind,
+		ExpiresAt:        expiresAt.UTC().Format(time.RFC3339),
+	})
+}
+
+func (a *App) handlePhysicianStudyAccess(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	studyUID := studyUIDFromAccessPath(r.URL.Path, "/api/physician/studies/")
+	if studyUID == "" {
+		http.NotFound(w, r)
+		return
+	}
+	viewerKind := normalizeViewerKind(r.URL.Query().Get("viewer"))
+	if viewerKind == "" {
+		http.Error(w, "invalid viewer", http.StatusBadRequest)
+		return
+	}
+	rawSessionToken := sessionBearerToken(r)
+	if rawSessionToken == "" {
+		http.Error(w, "missing session token", http.StatusUnauthorized)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	session, err := a.physicianSessionByToken(ctx, rawSessionToken)
+	if err != nil {
+		http.Error(w, "invalid session", http.StatusUnauthorized)
+		return
+	}
+
+	isLocal, _, err := a.findOrthancStudy(ctx, studyUID)
+	if err != nil {
+		http.Error(w, "failed to validate physician study access", http.StatusInternalServerError)
+		return
+	}
+	if !isLocal {
+		http.Error(w, "study not available for physician viewer", http.StatusNotFound)
+		return
+	}
+
+	accessURL, expiresAt, err := a.createViewerAccessGrant(ctx, "physician", "", session.SessionID, studyUID, viewerKind, r, session.ExpiresAt)
+	if err != nil {
+		http.Error(w, "failed to create viewer access grant", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, ViewerAccessGrantResponse{
+		Status:           "ok",
+		URL:              accessURL,
+		StudyInstanceUID: studyUID,
+		ViewerKind:       viewerKind,
+		ExpiresAt:        expiresAt.UTC().Format(time.RFC3339),
+	})
+}
+
+func (a *App) handleViewerAccess(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	rawToken := strings.Trim(strings.TrimPrefix(r.URL.Path, "/viewer-access/"), "/")
+	if rawToken == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	grant, err := a.viewerAccessGrantByToken(ctx, rawToken)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "viewer access grant not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "failed to load viewer access grant", http.StatusInternalServerError)
+		return
+	}
+	if grant.Status != "active" || grant.RevokedAt.Valid || time.Now().UTC().After(grant.ExpiresAt) || grant.ConsumedUses >= grant.MaxUses {
+		http.Error(w, "viewer access grant expired", http.StatusForbidden)
+		return
+	}
+
+	switch grant.SubjectType {
+	case "patient":
+		if grant.PatientSessionID == "" {
+			http.Error(w, "viewer access grant invalid", http.StatusForbidden)
+			return
+		}
+		var expiresAt time.Time
+		var status string
+		err = a.db.QueryRowContext(ctx, `
+			SELECT expires_at, status
+			FROM patient_sessions
+			WHERE id = $1::uuid
+		`, grant.PatientSessionID).Scan(&expiresAt, &status)
+		if err != nil || status != "active" || time.Now().UTC().After(expiresAt) {
+			http.Error(w, "patient session expired", http.StatusForbidden)
+			return
+		}
+	case "physician":
+		if grant.PhysicianSessionID == "" {
+			http.Error(w, "viewer access grant invalid", http.StatusForbidden)
+			return
+		}
+		var expiresAt time.Time
+		var status string
+		err = a.db.QueryRowContext(ctx, `
+			SELECT expires_at, status
+			FROM physician_sessions
+			WHERE id = $1::uuid
+		`, grant.PhysicianSessionID).Scan(&expiresAt, &status)
+		if err != nil || status != "active" || time.Now().UTC().After(expiresAt) {
+			http.Error(w, "physician session expired", http.StatusForbidden)
+			return
+		}
+	default:
+		http.Error(w, "unsupported viewer grant subject", http.StatusForbidden)
+		return
+	}
+
+	isLocal, _, err := a.findOrthancStudy(ctx, grant.StudyInstanceUID)
+	if err != nil {
+		http.Error(w, "failed to validate local study availability", http.StatusInternalServerError)
+		return
+	}
+	if !isLocal {
+		http.Error(w, "study no longer available locally", http.StatusNotFound)
+		return
+	}
+
+	if err := a.consumeViewerAccessGrant(ctx, grant); err != nil {
+		http.Error(w, "failed to consume viewer access grant", http.StatusInternalServerError)
+		return
+	}
+
+	redirectURL := buildStoneViewerURL(grant.StudyInstanceUID)
+	if grant.ViewerKind == "ohif" {
+		redirectURL = buildOHIFViewerURL(grant.StudyInstanceUID)
+	}
+	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
 func patientSearchQueryJSON(documentNumber string, filters PatientStudiesFilter) (string, error) {
@@ -2786,10 +3046,17 @@ func (a *App) handlePhysicianLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	_, rawSessionToken, _, err := a.createPhysicianSession(ctx, physician.ID, r)
+	if err != nil {
+		http.Error(w, "failed to create physician session", http.StatusInternalServerError)
+		return
+	}
+
 	writeJSON(w, http.StatusOK, PhysicianLoginResponse{
-		Status:    "ready",
-		Message:   "Ingreso profesional validado.",
-		Physician: physician,
+		Status:       "ready",
+		Message:      "Ingreso profesional validado.",
+		Physician:    physician,
+		SessionToken: rawSessionToken,
 	})
 }
 
@@ -3739,6 +4006,58 @@ func clientIPForRateLimit(r *http.Request) string {
 	return strings.TrimSpace(r.RemoteAddr)
 }
 
+func sessionBearerToken(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+	if authHeader != "" {
+		const prefix = "Bearer "
+		if strings.HasPrefix(authHeader, prefix) {
+			return strings.TrimSpace(strings.TrimPrefix(authHeader, prefix))
+		}
+	}
+	return strings.TrimSpace(r.Header.Get("X-Portal-Session"))
+}
+
+func randomToken(numBytes int) (string, error) {
+	if numBytes <= 0 {
+		numBytes = 32
+	}
+	buf := make([]byte, numBytes)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buf), nil
+}
+
+func tokenHash(raw string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(raw)))
+	return hex.EncodeToString(sum[:])
+}
+
+func (a *App) portalSessionDuration() time.Duration {
+	if a.externalConfig == nil || a.externalConfig.Portal.SessionTimeoutMinutes <= 0 {
+		return 10 * time.Minute
+	}
+	return time.Duration(a.externalConfig.Portal.SessionTimeoutMinutes) * time.Minute
+}
+
+func viewerAccessGrantDuration() time.Duration {
+	return 5 * time.Minute
+}
+
+func normalizeViewerKind(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "stone", "":
+		return "stone"
+	case "ohif":
+		return "ohif"
+	default:
+		return ""
+	}
+}
+
 func patientLoginRateLimitPolicy(endpoint string) LoginRateLimitPolicy {
 	switch endpoint {
 	case "patient_send_code":
@@ -4094,6 +4413,162 @@ func writeJSON(w http.ResponseWriter, statusCode int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func (a *App) createPatientSession(ctx context.Context, patientID string, r *http.Request) (string, string, time.Time, error) {
+	rawToken, err := randomToken(32)
+	if err != nil {
+		return "", "", time.Time{}, err
+	}
+	expiresAt := time.Now().UTC().Add(a.portalSessionDuration())
+	var sessionID string
+	err = a.db.QueryRowContext(ctx, `
+		INSERT INTO patient_sessions (
+			patient_id, status, verification_channel, verification_completed_at,
+			expires_at, last_seen_at, client_ip, user_agent, token_hash
+		) VALUES (
+			$1::uuid, 'active', 'portal_login', now(),
+			$2, now(), NULLIF($3, '')::inet, NULLIF($4, ''), $5
+		)
+		RETURNING id::text
+	`, patientID, expiresAt, clientIPForRateLimit(r), strings.TrimSpace(r.UserAgent()), tokenHash(rawToken)).Scan(&sessionID)
+	if err != nil {
+		return "", "", time.Time{}, err
+	}
+	return sessionID, rawToken, expiresAt, nil
+}
+
+func (a *App) createPhysicianSession(ctx context.Context, physicianID string, r *http.Request) (string, string, time.Time, error) {
+	rawToken, err := randomToken(32)
+	if err != nil {
+		return "", "", time.Time{}, err
+	}
+	expiresAt := time.Now().UTC().Add(a.portalSessionDuration())
+	var sessionID string
+	err = a.db.QueryRowContext(ctx, `
+		INSERT INTO physician_sessions (
+			physician_id, status, auth_provider, mfa_status,
+			expires_at, last_seen_at, client_ip, user_agent, token_hash
+		) VALUES (
+			$1::uuid, 'active', 'portal_login', 'not_required',
+			$2, now(), NULLIF($3, '')::inet, NULLIF($4, ''), $5
+		)
+		RETURNING id::text
+	`, physicianID, expiresAt, clientIPForRateLimit(r), strings.TrimSpace(r.UserAgent()), tokenHash(rawToken)).Scan(&sessionID)
+	if err != nil {
+		return "", "", time.Time{}, err
+	}
+	return sessionID, rawToken, expiresAt, nil
+}
+
+func (a *App) patientSessionByToken(ctx context.Context, rawToken string) (patientSessionSnapshot, error) {
+	var session patientSessionSnapshot
+	err := a.db.QueryRowContext(ctx, `
+		SELECT id::text, patient_id::text, expires_at, status
+		FROM patient_sessions
+		WHERE token_hash = $1
+		ORDER BY created_at DESC, id DESC
+		LIMIT 1
+	`, tokenHash(rawToken)).Scan(&session.SessionID, &session.PatientID, &session.ExpiresAt, &session.Status)
+	if err != nil {
+		return patientSessionSnapshot{}, err
+	}
+	if session.Status != "active" || time.Now().UTC().After(session.ExpiresAt) {
+		return patientSessionSnapshot{}, sql.ErrNoRows
+	}
+	_, _ = a.db.ExecContext(ctx, `UPDATE patient_sessions SET last_seen_at = now() WHERE id = $1::uuid`, session.SessionID)
+	return session, nil
+}
+
+func (a *App) physicianSessionByToken(ctx context.Context, rawToken string) (physicianSessionSnapshot, error) {
+	var session physicianSessionSnapshot
+	err := a.db.QueryRowContext(ctx, `
+		SELECT id::text, physician_id::text, expires_at, status
+		FROM physician_sessions
+		WHERE token_hash = $1
+		ORDER BY created_at DESC, id DESC
+		LIMIT 1
+	`, tokenHash(rawToken)).Scan(&session.SessionID, &session.PhysicianID, &session.ExpiresAt, &session.Status)
+	if err != nil {
+		return physicianSessionSnapshot{}, err
+	}
+	if session.Status != "active" || time.Now().UTC().After(session.ExpiresAt) {
+		return physicianSessionSnapshot{}, sql.ErrNoRows
+	}
+	_, _ = a.db.ExecContext(ctx, `UPDATE physician_sessions SET last_seen_at = now() WHERE id = $1::uuid`, session.SessionID)
+	return session, nil
+}
+
+func (a *App) createViewerAccessGrant(ctx context.Context, subjectType, patientSessionID, physicianSessionID, studyUID, viewerKind string, r *http.Request, maxExpiresAt time.Time) (string, time.Time, error) {
+	rawToken, err := randomToken(32)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	expiresAt := time.Now().UTC().Add(viewerAccessGrantDuration())
+	if !maxExpiresAt.IsZero() && maxExpiresAt.Before(expiresAt) {
+		expiresAt = maxExpiresAt
+	}
+	if time.Now().UTC().After(expiresAt) {
+		return "", time.Time{}, errors.New("viewer access grant already expired")
+	}
+	_, err = a.db.ExecContext(ctx, `
+		INSERT INTO viewer_access_grants (
+			token_hash, subject_type, patient_session_id, physician_session_id,
+			study_instance_uid, viewer_kind, status, max_uses, consumed_uses,
+			expires_at, client_ip, user_agent
+		) VALUES (
+			$1, $2, CASE WHEN $3 = '' THEN NULL ELSE $3::uuid END, CASE WHEN $4 = '' THEN NULL ELSE $4::uuid END,
+			$5, $6, 'active', 1, 0,
+			$7, NULLIF($8, '')::inet, NULLIF($9, '')
+		)
+	`, tokenHash(rawToken), subjectType, patientSessionID, physicianSessionID, studyUID, viewerKind, expiresAt, clientIPForRateLimit(r), strings.TrimSpace(r.UserAgent()))
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return "/viewer-access/" + url.PathEscape(rawToken), expiresAt, nil
+}
+
+func (a *App) viewerAccessGrantByToken(ctx context.Context, rawToken string) (viewerAccessGrantSnapshot, error) {
+	var snapshot viewerAccessGrantSnapshot
+	err := a.db.QueryRowContext(ctx, `
+		SELECT id::text, subject_type,
+		       COALESCE(patient_session_id::text, ''),
+		       COALESCE(physician_session_id::text, ''),
+		       study_instance_uid, viewer_kind, status, max_uses, consumed_uses, expires_at, revoked_at
+		FROM viewer_access_grants
+		WHERE token_hash = $1
+		ORDER BY created_at DESC, id DESC
+		LIMIT 1
+	`, tokenHash(rawToken)).Scan(
+		&snapshot.GrantID,
+		&snapshot.SubjectType,
+		&snapshot.PatientSessionID,
+		&snapshot.PhysicianSessionID,
+		&snapshot.StudyInstanceUID,
+		&snapshot.ViewerKind,
+		&snapshot.Status,
+		&snapshot.MaxUses,
+		&snapshot.ConsumedUses,
+		&snapshot.ExpiresAt,
+		&snapshot.RevokedAt,
+	)
+	return snapshot, err
+}
+
+func (a *App) consumeViewerAccessGrant(ctx context.Context, grant viewerAccessGrantSnapshot) error {
+	status := "active"
+	if grant.ConsumedUses+1 >= grant.MaxUses {
+		status = "consumed"
+	}
+	_, err := a.db.ExecContext(ctx, `
+		UPDATE viewer_access_grants
+		SET consumed_uses = consumed_uses + 1,
+		    first_opened_at = COALESCE(first_opened_at, now()),
+		    last_opened_at = now(),
+		    status = $2
+		WHERE id = $1::uuid
+	`, grant.GrantID, status)
+	return err
 }
 
 func (a *App) ensurePatientRecordWithIdentity(ctx context.Context, documentNumber string) (PatientSummary, PatientIdentity, error) {

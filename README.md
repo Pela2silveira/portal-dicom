@@ -95,6 +95,7 @@ Eso reduce dependencia directa del visor con la latencia o disponibilidad del or
 - `Stone` como visor preferido
 - `OHIF` como visor alternativo
 - apertura puntual por `StudyInstanceUID`
+- primera capa de handoff con grants efímeros vía `/viewer-access/<token>`
 - OHIF publicado bajo `/ohif/`
 - Stone publicado bajo `/stone-webviewer/`
 - DICOMweb expuesto bajo `/dicom-web/`
