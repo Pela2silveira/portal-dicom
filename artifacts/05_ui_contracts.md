@@ -188,6 +188,23 @@ Allow a patient to see only their authorized studies and open one selected study
   - updates local availability before the patient can open OHIF
 - `GET /api/patient/studies/:studyInstanceUID/access`
   - returns whether the session can open the study and the viewer route or token material needed by the final design
+  - first security iteration should return a short-lived viewer access grant instead of exposing the final OHIF/Stone route directly
+  - the access grant must be scoped to one `studyInstanceUID`, one viewer kind, one active portal session, and one expiration
+  - the grant usage counter, when enabled, must be consumed by the portal handoff event and not by each downstream DICOMweb request
+
+### Viewer Handoff First Iteration
+
+- The first secure viewer iteration should replace direct `viewer_url`/`ohif_viewer_url` handoff with a portal-owned route such as `/viewer-access/<token>`
+- `/viewer-access/<token>` validates:
+  - active patient or physician session
+  - allowed `StudyInstanceUID`
+  - grant status (`active`, not revoked, not expired)
+  - grant use count at handoff time
+- After validation, the portal may redirect to the current study-scoped viewer URL:
+  - `/stone-webviewer/index.html?study=<uid>`
+  - `/ohif/viewer?StudyInstanceUIDs=<uid>`
+- This first iteration improves revocation and auditability even before Orthanc enforces authorization on every DICOMweb request
+- Final enforcement still requires backend/proxy and likely Orthanc-side authorization for `/dicom-web/*`
 
 ### Future Security Constraint
 
@@ -220,6 +237,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - Future real implementation target: `LDAP provincial + MFA`
 - Future real implementation also requires backend-managed portal sessions and viewer/image gating by active session plus allowed `StudyInstanceUID`; the current timeout in the shell does not satisfy that requirement by itself.
 - `POST /api/physician/login` may return `429` with a neutral retry message when backend login rate limits are exceeded.
+- The physician viewer flow should use the same viewer access grant model as the patient flow, differing only in session subject type and authorization basis.
 
 ### Screen Model
 

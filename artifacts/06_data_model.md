@@ -198,6 +198,38 @@ Key fields:
 - `client_ip`
 - `user_agent`
 
+### `viewer_access_grants`
+
+Stores portal-issued grants for opening a specific study in a specific viewer.
+
+Key fields:
+
+- `token_hash`
+- `subject_type`
+- `patient_session_id`
+- `physician_session_id`
+- `study_instance_uid`
+- `viewer_kind`
+- `status`
+- `max_uses`
+- `consumed_uses`
+- `expires_at`
+- `first_opened_at`
+- `last_opened_at`
+- `revoked_at`
+- `client_ip`
+- `user_agent`
+
+Notes:
+
+- `subject_type` should start with `patient`, `physician`, or `magic_link`.
+- `viewer_kind` should start with `stone` or `ohif`.
+- `token_hash` stores only a hash of the grant token; the raw token must not be persisted in plaintext.
+- This table is for viewer-opening grants, not for counting low-level DICOMweb requests.
+- A grant should be scoped to one `study_instance_uid` and one viewer kind.
+- `consumed_uses` must be updated by a portal-controlled open/handoff event, not by each downstream image/frame request made by OHIF or Stone.
+- This table is the bridge for a future Orthanc authorization plugin integration, but the first iteration can use it only for portal-controlled handoff and revocation.
+
 ### `physician_recent_queries`
 
 Stores persisted physician search history for filtered searches.
