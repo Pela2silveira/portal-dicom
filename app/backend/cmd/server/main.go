@@ -2169,17 +2169,17 @@ func (a *App) handlePatientLogin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_, rawSessionToken, _, err := a.createPatientSession(ctx, patient.ID, r)
+	_, rawSessionToken, expiresAt, err := a.createPatientSession(ctx, patient.ID, r)
 	if err != nil {
 		http.Error(w, "failed to create patient session", http.StatusInternalServerError)
 		return
 	}
+	setPortalSessionCookie(w, r, patientSessionCookieName, rawSessionToken, expiresAt)
 
 	writeJSON(w, http.StatusOK, PatientLoginResponse{
-		Status:       "ok",
-		Message:      "Acceso validado.",
-		Patient:      patient,
-		SessionToken: rawSessionToken,
+		Status:  "ok",
+		Message: "Acceso validado.",
+		Patient: patient,
 	})
 }
 
@@ -2410,7 +2410,7 @@ func (a *App) handlePatientStudyAccess(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid viewer", http.StatusBadRequest)
 		return
 	}
-	rawSessionToken := sessionBearerToken(r)
+	rawSessionToken := sessionCookieToken(r, patientSessionCookieName)
 	if rawSessionToken == "" {
 		http.Error(w, "missing session token", http.StatusUnauthorized)
 		return
@@ -2466,7 +2466,7 @@ func (a *App) handlePhysicianStudyAccess(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "invalid viewer", http.StatusBadRequest)
 		return
 	}
-	rawSessionToken := sessionBearerToken(r)
+	rawSessionToken := sessionCookieToken(r, physicianSessionCookieName)
 	if rawSessionToken == "" {
 		http.Error(w, "missing session token", http.StatusUnauthorized)
 		return
@@ -3108,17 +3108,17 @@ func (a *App) handlePhysicianLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, rawSessionToken, _, err := a.createPhysicianSession(ctx, physician.ID, r)
+	_, rawSessionToken, expiresAt, err := a.createPhysicianSession(ctx, physician.ID, r)
 	if err != nil {
 		http.Error(w, "failed to create physician session", http.StatusInternalServerError)
 		return
 	}
+	setPortalSessionCookie(w, r, physicianSessionCookieName, rawSessionToken, expiresAt)
 
 	writeJSON(w, http.StatusOK, PhysicianLoginResponse{
-		Status:       "ready",
-		Message:      "Ingreso profesional validado.",
-		Physician:    physician,
-		SessionToken: rawSessionToken,
+		Status:    "ready",
+		Message:   "Ingreso profesional validado.",
+		Physician: physician,
 	})
 }
 
@@ -4068,18 +4068,46 @@ func clientIPForRateLimit(r *http.Request) string {
 	return strings.TrimSpace(r.RemoteAddr)
 }
 
-func sessionBearerToken(r *http.Request) string {
-	if r == nil {
+const (
+	patientSessionCookieName   = "portal_patient_session"
+	physicianSessionCookieName = "portal_physician_session"
+)
+
+func sessionCookieToken(r *http.Request, cookieName string) string {
+	if r == nil || strings.TrimSpace(cookieName) == "" {
 		return ""
 	}
-	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
-	if authHeader != "" {
-		const prefix = "Bearer "
-		if strings.HasPrefix(authHeader, prefix) {
-			return strings.TrimSpace(strings.TrimPrefix(authHeader, prefix))
-		}
+	cookie, err := r.Cookie(cookieName)
+	if err != nil {
+		return ""
 	}
-	return strings.TrimSpace(r.Header.Get("X-Portal-Session"))
+	return strings.TrimSpace(cookie.Value)
+}
+
+func requestIsSecure(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")
+}
+
+func setPortalSessionCookie(w http.ResponseWriter, r *http.Request, cookieName, token string, expiresAt time.Time) {
+	if w == nil || strings.TrimSpace(cookieName) == "" || strings.TrimSpace(token) == "" {
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   requestIsSecure(r),
+		Expires:  expiresAt.UTC(),
+		MaxAge:   int(time.Until(expiresAt).Seconds()),
+	})
 }
 
 func randomToken(numBytes int) (string, error) {

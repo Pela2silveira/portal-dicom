@@ -1668,8 +1668,6 @@
       const physicianLocalCacheSourceValue = "local_cache";
       let activePatientDocument = "";
       let activePhysicianUsername = "";
-      let activePatientSessionToken = "";
-      let activePhysicianSessionToken = "";
       let activePatientSearchRequestID = "";
       let activePatientSearchKey = "";
       let patientMailCodeReady = false;
@@ -1738,8 +1736,6 @@
         activePatientSearchKey = "";
         activePatientDocument = "";
         activePhysicianUsername = "";
-        activePatientSessionToken = "";
-        activePhysicianSessionToken = "";
         clearLoginForms();
         clearPortalWorkspaceState();
         activateRole("patient");
@@ -1898,7 +1894,6 @@
         if (activeKind === "patient" && activePatientDocument) {
           state.patient = {
             document_number: activePatientDocument,
-            session_token: activePatientSessionToken || "",
             date_from: patientDateFilter.from || "",
             date_to: patientDateFilter.to || "",
             modality: patientFilterModality.value || "",
@@ -1908,7 +1903,6 @@
         if (activeKind === "physician" && activePhysicianUsername) {
           state.physician = {
             username: activePhysicianUsername,
-            session_token: activePhysicianSessionToken || "",
             patient_id: physicianSearchPatientID.value.trim(),
             patient_name: physicianSearchPatient.value.trim(),
             date_from: physicianDateFilter.from || "",
@@ -1954,7 +1948,6 @@
 
         if (state?.kind === "patient" && state.patient?.document_number) {
           activateRole("patient");
-          activePatientSessionToken = String(state.patient.session_token || "");
           patientDocument.value = state.patient.document_number;
           patientFilterModality.value = state.patient.modality || "";
           if (state.patient.date_from || state.patient.date_to) {
@@ -1981,7 +1974,6 @@
 
         if (state?.kind === "physician" && state.physician?.username) {
           activateRole("physician");
-          activePhysicianSessionToken = String(state.physician.session_token || "");
           physicianDni.value = state.physician.username;
           physicianSearchPatientID.value = state.physician.patient_id || "";
           physicianSearchPatient.value = state.physician.patient_name || "";
@@ -3041,16 +3033,10 @@
       }
 
       async function fetchViewerAccessURL(role, studyInstanceUID, viewerKind) {
-        const sessionToken = role === "patient" ? activePatientSessionToken : activePhysicianSessionToken;
-        if (!sessionToken) {
-          throw new Error("missing viewer session token");
-        }
-
         const basePath = role === "patient" ? "/api/patient/studies/" : "/api/physician/studies/";
         const response = await fetch(basePath + encodeURIComponent(studyInstanceUID) + "/access?viewer=" + encodeURIComponent(viewerKind), {
           headers: {
-            Accept: "application/json",
-            Authorization: "Bearer " + sessionToken
+            Accept: "application/json"
           }
         });
 
@@ -3542,8 +3528,7 @@
         patientValidateButton.textContent = "Validando...";
 
         try {
-          const payload = await loginPatient(documentValue, mailCodeValue);
-          activePatientSessionToken = String(payload?.session_token || "");
+          await loginPatient(documentValue, mailCodeValue);
         } catch (error) {
           patientValidateButton.textContent = "Continuar";
           syncPatientContinueState();
@@ -3598,7 +3583,6 @@
 
         try {
           const payload = await loginPhysician(dniValue, passwordValue);
-          activePhysicianSessionToken = String(payload?.session_token || "");
           startPortalSession();
           showWorkspace("physician");
           physicianFullNameValue.textContent = payload.physician?.full_name || "-";
