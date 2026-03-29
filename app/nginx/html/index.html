@@ -3066,18 +3066,21 @@
       }
 
       async function openViewer(role, studyInstanceUID, viewerKind) {
-        const viewerTab = window.open("about:blank", "_blank", "noopener");
+        const viewerTab = window.open("about:blank", "_blank");
+        if (viewerTab) {
+          try {
+            viewerTab.opener = null;
+          } catch (_error) {
+          }
+        }
+        if (!viewerTab) {
+          throw new Error("viewer popup blocked");
+        }
         try {
           const accessURL = await fetchViewerAccessURL(role, studyInstanceUID, viewerKind);
-          if (viewerTab) {
-            viewerTab.location.replace(accessURL);
-            return;
-          }
-          window.location.assign(accessURL);
+          viewerTab.location.replace(accessURL);
         } catch (error) {
-          if (viewerTab) {
-            viewerTab.close();
-          }
+          viewerTab.close();
           throw error;
         }
       }
