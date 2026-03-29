@@ -1169,6 +1169,12 @@ type viewerAccessGrantSnapshot struct {
 	RevokedAt           sql.NullTime
 }
 
+type viewerAccessGrantValidation struct {
+	HTTPStatus int
+	Message    string
+	Reason     string
+}
+
 type PhysicianSummary struct {
 	ID            string `json:"id"`
 	Username      string `json:"username"`
@@ -2518,14 +2524,30 @@ func (a *App) handleViewerAccess(w http.ResponseWriter, r *http.Request) {
 	grant, err := a.viewerAccessGrantByToken(ctx, rawToken)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			a.log("warn", "viewer_access_grant_denied", map[string]any{
+				"reason":    "not_found",
+				"client_ip": clientIPForRateLimit(r),
+				"path":      r.URL.Path,
+			})
 			http.Error(w, "viewer access grant not found", http.StatusNotFound)
 			return
 		}
 		http.Error(w, "failed to load viewer access grant", http.StatusInternalServerError)
 		return
 	}
-	if grant.Status != "active" || grant.RevokedAt.Valid || time.Now().UTC().After(grant.ExpiresAt) || grant.ConsumedUses >= grant.MaxUses {
-		http.Error(w, "viewer access grant expired", http.StatusForbidden)
+	if validation, ok := validateViewerAccessGrant(grant, time.Now().UTC()); ok {
+		a.log("warn", "viewer_access_grant_denied", map[string]any{
+			"grant_id":           grant.GrantID,
+			"reason":             validation.Reason,
+			"subject_type":       grant.SubjectType,
+			"viewer_kind":        grant.ViewerKind,
+			"study_instance_uid": grant.StudyInstanceUID,
+			"consumed_uses":      grant.ConsumedUses,
+			"max_uses":           grant.MaxUses,
+			"expires_at":         grant.ExpiresAt.UTC().Format(time.RFC3339),
+			"client_ip":          clientIPForRateLimit(r),
+		})
+		http.Error(w, validation.Message, validation.HTTPStatus)
 		return
 	}
 
@@ -2543,6 +2565,14 @@ func (a *App) handleViewerAccess(w http.ResponseWriter, r *http.Request) {
 			WHERE id = $1::uuid
 		`, grant.PatientSessionID).Scan(&expiresAt, &status)
 		if err != nil || status != "active" || time.Now().UTC().After(expiresAt) {
+			a.log("warn", "viewer_access_grant_denied", map[string]any{
+				"grant_id":           grant.GrantID,
+				"reason":             "patient_session_expired",
+				"subject_type":       grant.SubjectType,
+				"viewer_kind":        grant.ViewerKind,
+				"study_instance_uid": grant.StudyInstanceUID,
+				"client_ip":          clientIPForRateLimit(r),
+			})
 			http.Error(w, "patient session expired", http.StatusForbidden)
 			return
 		}
@@ -2559,10 +2589,26 @@ func (a *App) handleViewerAccess(w http.ResponseWriter, r *http.Request) {
 			WHERE id = $1::uuid
 		`, grant.PhysicianSessionID).Scan(&expiresAt, &status)
 		if err != nil || status != "active" || time.Now().UTC().After(expiresAt) {
+			a.log("warn", "viewer_access_grant_denied", map[string]any{
+				"grant_id":           grant.GrantID,
+				"reason":             "physician_session_expired",
+				"subject_type":       grant.SubjectType,
+				"viewer_kind":        grant.ViewerKind,
+				"study_instance_uid": grant.StudyInstanceUID,
+				"client_ip":          clientIPForRateLimit(r),
+			})
 			http.Error(w, "physician session expired", http.StatusForbidden)
 			return
 		}
 	default:
+		a.log("warn", "viewer_access_grant_denied", map[string]any{
+			"grant_id":           grant.GrantID,
+			"reason":             "unsupported_subject",
+			"subject_type":       grant.SubjectType,
+			"viewer_kind":        grant.ViewerKind,
+			"study_instance_uid": grant.StudyInstanceUID,
+			"client_ip":          clientIPForRateLimit(r),
+		})
 		http.Error(w, "unsupported viewer grant subject", http.StatusForbidden)
 		return
 	}
@@ -2573,6 +2619,14 @@ func (a *App) handleViewerAccess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !isLocal {
+		a.log("warn", "viewer_access_grant_denied", map[string]any{
+			"grant_id":           grant.GrantID,
+			"reason":             "study_not_local",
+			"subject_type":       grant.SubjectType,
+			"viewer_kind":        grant.ViewerKind,
+			"study_instance_uid": grant.StudyInstanceUID,
+			"client_ip":          clientIPForRateLimit(r),
+		})
 		http.Error(w, "study no longer available locally", http.StatusNotFound)
 		return
 	}
@@ -2586,6 +2640,14 @@ func (a *App) handleViewerAccess(w http.ResponseWriter, r *http.Request) {
 	if grant.ViewerKind == "ohif" {
 		redirectURL = buildOHIFViewerURL(grant.StudyInstanceUID)
 	}
+	a.log("info", "viewer_access_grant_consumed", map[string]any{
+		"grant_id":           grant.GrantID,
+		"subject_type":       grant.SubjectType,
+		"viewer_kind":        grant.ViewerKind,
+		"study_instance_uid": grant.StudyInstanceUID,
+		"redirect_url":       redirectURL,
+		"client_ip":          clientIPForRateLimit(r),
+	})
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
@@ -4525,7 +4587,18 @@ func (a *App) createViewerAccessGrant(ctx context.Context, subjectType, patientS
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	return "/viewer-access/" + url.PathEscape(rawToken), expiresAt, nil
+	accessURL := "/viewer-access/" + url.PathEscape(rawToken)
+	a.log("info", "viewer_access_grant_created", map[string]any{
+		"subject_type":         subjectType,
+		"patient_session_id":   patientSessionID,
+		"physician_session_id": physicianSessionID,
+		"study_instance_uid":   studyUID,
+		"viewer_kind":          viewerKind,
+		"expires_at":           expiresAt.UTC().Format(time.RFC3339),
+		"access_url":           accessURL,
+		"client_ip":            clientIPForRateLimit(r),
+	})
+	return accessURL, expiresAt, nil
 }
 
 func (a *App) viewerAccessGrantByToken(ctx context.Context, rawToken string) (viewerAccessGrantSnapshot, error) {
@@ -4569,6 +4642,38 @@ func (a *App) consumeViewerAccessGrant(ctx context.Context, grant viewerAccessGr
 		WHERE id = $1::uuid
 	`, grant.GrantID, status)
 	return err
+}
+
+func validateViewerAccessGrant(grant viewerAccessGrantSnapshot, now time.Time) (viewerAccessGrantValidation, bool) {
+	if grant.RevokedAt.Valid {
+		return viewerAccessGrantValidation{
+			HTTPStatus: http.StatusForbidden,
+			Message:    "viewer access grant revoked",
+			Reason:     "revoked",
+		}, true
+	}
+	if now.After(grant.ExpiresAt) {
+		return viewerAccessGrantValidation{
+			HTTPStatus: http.StatusForbidden,
+			Message:    "viewer access grant expired",
+			Reason:     "expired",
+		}, true
+	}
+	if grant.ConsumedUses >= grant.MaxUses {
+		return viewerAccessGrantValidation{
+			HTTPStatus: http.StatusForbidden,
+			Message:    "viewer access grant already consumed",
+			Reason:     "already_consumed",
+		}, true
+	}
+	if grant.Status != "active" {
+		return viewerAccessGrantValidation{
+			HTTPStatus: http.StatusForbidden,
+			Message:    "viewer access grant inactive",
+			Reason:     "inactive",
+		}, true
+	}
+	return viewerAccessGrantValidation{}, false
 }
 
 func (a *App) ensurePatientRecordWithIdentity(ctx context.Context, documentNumber string) (PatientSummary, PatientIdentity, error) {
