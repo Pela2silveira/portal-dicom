@@ -1722,7 +1722,30 @@
         savePortalWorkspaceState(kind);
       }
 
-      function resetLanding() {
+      async function logoutPortalSession(kind) {
+        const endpoints = kind === "patient"
+          ? ["/api/patient/logout", "/api/physician/logout"]
+          : kind === "physician"
+            ? ["/api/physician/logout", "/api/patient/logout"]
+            : ["/api/patient/logout", "/api/physician/logout"];
+        for (const endpoint of endpoints) {
+          try {
+            await fetch(endpoint, {
+              method: "POST",
+              headers: {
+                Accept: "application/json"
+              }
+            });
+          } catch (_error) {
+          }
+        }
+      }
+
+      async function resetLanding() {
+        const activeKind =
+          !patientWorkspace.classList.contains("hidden") ? "patient" :
+          (!physicianWorkspace.classList.contains("hidden") ? "physician" : "");
+        await logoutPortalSession(activeKind);
         clearPatientSyncPoll();
         clearPatientRetrievePoll();
         clearPhysicianRetrievePoll();
@@ -1826,8 +1849,8 @@
         patientMailCode.autocomplete = useMaskedInput ? "off" : "one-time-code";
       }
 
-      function returnToLandingSoft() {
-        resetLanding();
+      async function returnToLandingSoft() {
+        await resetLanding();
         focusActiveRoleButton();
       }
 

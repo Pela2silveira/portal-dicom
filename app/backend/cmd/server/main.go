@@ -1602,12 +1602,14 @@ func main() {
 	mux.HandleFunc("/api/runtime-config", app.handleRuntimeConfig)
 	mux.HandleFunc("/api/patient/send-code", app.handlePatientSendCode)
 	mux.HandleFunc("/api/patient/login", app.handlePatientLogin)
+	mux.HandleFunc("/api/patient/logout", app.handlePatientLogout)
 	mux.HandleFunc("/api/patient/search", app.handlePatientSearch)
 	mux.HandleFunc("/api/patient/studies", app.handlePatientStudies)
 	mux.HandleFunc("/api/patient/studies/", app.handlePatientStudyAccess)
 	mux.HandleFunc("/api/patient/download", app.handlePatientDownload)
 	mux.HandleFunc("/api/patient/retrieve", app.handlePatientRetrieve)
 	mux.HandleFunc("/api/physician/login", app.handlePhysicianLogin)
+	mux.HandleFunc("/api/physician/logout", app.handlePhysicianLogout)
 	mux.HandleFunc("/api/retrieve/jobs/", app.handleRetrieveJobEvents)
 	mux.HandleFunc("/api/physician/results", app.handlePhysicianResults)
 	mux.HandleFunc("/api/physician/studies/", app.handlePhysicianStudyAccess)
@@ -2180,6 +2182,29 @@ func (a *App) handlePatientLogin(w http.ResponseWriter, r *http.Request) {
 		Status:  "ok",
 		Message: "Acceso validado.",
 		Patient: patient,
+	})
+}
+
+func (a *App) handlePatientLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	rawToken := sessionCookieToken(r, patientSessionCookieName)
+	if rawToken != "" {
+		if err := a.invalidatePatientSessionByToken(ctx, rawToken); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "failed to logout patient session", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	clearPortalSessionCookie(w, r, patientSessionCookieName)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "logged_out",
 	})
 }
 
@@ -3119,6 +3144,29 @@ func (a *App) handlePhysicianLogin(w http.ResponseWriter, r *http.Request) {
 		Status:    "ready",
 		Message:   "Ingreso profesional validado.",
 		Physician: physician,
+	})
+}
+
+func (a *App) handlePhysicianLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	rawToken := sessionCookieToken(r, physicianSessionCookieName)
+	if rawToken != "" {
+		if err := a.invalidatePhysicianSessionByToken(ctx, rawToken); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "failed to logout physician session", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	clearPortalSessionCookie(w, r, physicianSessionCookieName)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "logged_out",
 	})
 }
 
@@ -4110,6 +4158,22 @@ func setPortalSessionCookie(w http.ResponseWriter, r *http.Request, cookieName, 
 	})
 }
 
+func clearPortalSessionCookie(w http.ResponseWriter, r *http.Request, cookieName string) {
+	if w == nil || strings.TrimSpace(cookieName) == "" {
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   requestIsSecure(r),
+		Expires:  time.Unix(0, 0).UTC(),
+		MaxAge:   -1,
+	})
+}
+
 func randomToken(numBytes int) (string, error) {
 	if numBytes <= 0 {
 		numBytes = 32
@@ -4570,6 +4634,28 @@ func (a *App) patientSessionByToken(ctx context.Context, rawToken string) (patie
 	return session, nil
 }
 
+func (a *App) invalidatePatientSessionByToken(ctx context.Context, rawToken string) error {
+	result, err := a.db.ExecContext(ctx, `
+		UPDATE patient_sessions
+		SET status = 'logged_out',
+		    expires_at = now(),
+		    last_seen_at = now()
+		WHERE token_hash = $1
+		  AND status = 'active'
+	`, tokenHash(rawToken))
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 func (a *App) physicianSessionByToken(ctx context.Context, rawToken string) (physicianSessionSnapshot, error) {
 	var session physicianSessionSnapshot
 	err := a.db.QueryRowContext(ctx, `
@@ -4587,6 +4673,28 @@ func (a *App) physicianSessionByToken(ctx context.Context, rawToken string) (phy
 	}
 	_, _ = a.db.ExecContext(ctx, `UPDATE physician_sessions SET last_seen_at = now() WHERE id = $1::uuid`, session.SessionID)
 	return session, nil
+}
+
+func (a *App) invalidatePhysicianSessionByToken(ctx context.Context, rawToken string) error {
+	result, err := a.db.ExecContext(ctx, `
+		UPDATE physician_sessions
+		SET status = 'logged_out',
+		    expires_at = now(),
+		    last_seen_at = now()
+		WHERE token_hash = $1
+		  AND status = 'active'
+	`, tokenHash(rawToken))
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func (a *App) createViewerAccessGrant(ctx context.Context, subjectType, patientSessionID, physicianSessionID, studyUID, viewerKind string, r *http.Request, maxExpiresAt time.Time) (string, time.Time, error) {
