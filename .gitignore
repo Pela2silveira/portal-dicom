@@ -2,6 +2,7 @@
 .env
 app/.env
 app/config/config.json
+app/config/config-prd.json
 artifacts/*
 !artifacts/
 !artifacts/*.md
