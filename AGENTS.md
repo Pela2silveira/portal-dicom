@@ -25,7 +25,11 @@ This includes, when applicable:
 - Before making a new change, check whether there are pending uncommitted changes from the previous step and commit them first when feasible.
 - Never commit secrets, tokens, passwords, or private environment values into tracked config files.
 - `app/config/config.json` is local-only and must remain ignored by git.
+- `Makefile.deploy.local` is local-only and must remain ignored by git unless the user explicitly asks to start versioning it.
 - Changes to shared config shape must be reflected in `app/config/config.example.json`, not by committing local runtime values.
+- If a release version changes, update `VERSION` and any user-visible version label in the UI in the same task so they stay aligned.
+- For a release request, prefer this order: commit pending releaseable changes, bump `VERSION`, create an annotated tag `vX.Y.Z`, push `main`, push the tag, then create the GitHub release.
+- If `gh release create` fails for missing GitHub scopes, report that explicitly instead of assuming the release exists.
 
 ## Current Documentation Intent
 
