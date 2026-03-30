@@ -4864,7 +4864,31 @@ func requestIsSecure(r *http.Request) bool {
 	if r.TLS != nil {
 		return true
 	}
-	return strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")
+	return strings.EqualFold(firstForwardedValue(r.Header.Get("X-Forwarded-Proto")), "https")
+}
+
+func firstForwardedValue(raw string) string {
+	for _, part := range strings.Split(raw, ",") {
+		value := strings.TrimSpace(part)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func normalizeOriginHost(scheme, rawHost string) string {
+	host := strings.TrimSpace(rawHost)
+	if host == "" {
+		return ""
+	}
+	lowerScheme := strings.ToLower(strings.TrimSpace(scheme))
+	if parsedHost, parsedPort, err := net.SplitHostPort(host); err == nil {
+		if (lowerScheme == "https" && parsedPort == "443") || (lowerScheme == "http" && parsedPort == "80") {
+			return parsedHost
+		}
+	}
+	return host
 }
 
 func requestBaseOrigin(r *http.Request) string {
@@ -4875,7 +4899,7 @@ func requestBaseOrigin(r *http.Request) string {
 	if requestIsSecure(r) {
 		scheme = "https"
 	}
-	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+	host := firstForwardedValue(r.Header.Get("X-Forwarded-Host"))
 	if host == "" {
 		host = strings.TrimSpace(r.Host)
 	}
@@ -4885,6 +4909,7 @@ func requestBaseOrigin(r *http.Request) string {
 	if host == "" {
 		return ""
 	}
+	host = normalizeOriginHost(scheme, host)
 	return scheme + "://" + host
 }
 
@@ -4924,7 +4949,9 @@ func sameOriginRequest(r *http.Request) bool {
 		if parsed.Scheme == "" || parsed.Host == "" {
 			continue
 		}
-		if strings.EqualFold(parsed.Scheme, baseURL.Scheme) && strings.EqualFold(parsed.Host, baseURL.Host) {
+		parsedHost := normalizeOriginHost(parsed.Scheme, parsed.Host)
+		baseHost := normalizeOriginHost(baseURL.Scheme, baseURL.Host)
+		if strings.EqualFold(parsed.Scheme, baseURL.Scheme) && strings.EqualFold(parsedHost, baseHost) {
 			return true
 		}
 	}
@@ -4939,10 +4966,11 @@ func (a *App) withBrowserOriginCheck(next http.HandlerFunc) http.HandlerFunc {
 			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
 				if !sameOriginRequest(r) {
 					a.log("warn", "browser_origin_rejected", map[string]any{
-						"method":  r.Method,
-						"path":    r.URL.Path,
-						"origin":  strings.TrimSpace(r.Header.Get("Origin")),
-						"referer": strings.TrimSpace(r.Referer()),
+						"method":      r.Method,
+						"path":        r.URL.Path,
+						"origin":      strings.TrimSpace(r.Header.Get("Origin")),
+						"referer":     strings.TrimSpace(r.Referer()),
+						"base_origin": requestBaseOrigin(r),
 					})
 					http.Error(w, "cross-site request rejected", http.StatusForbidden)
 					return
