@@ -6458,20 +6458,49 @@ func (a *App) findOrthancStudy(ctx context.Context, studyUID string) (bool, stri
 
 	lookupReq, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(a.cfg.OrthancURL, "/")+"/tools/find", strings.NewReader(`{"Level":"Study","Query":{"StudyInstanceUID":"`+studyUID+`"}}`))
 	if err != nil {
+		a.log("warn", "orthanc_study_lookup_build_failed", map[string]any{
+			"study_instance_uid": studyUID,
+			"stage":              "tools_find_build",
+			"error":              err.Error(),
+		})
 		return true, "", nil
 	}
 	lookupReq.Header.Set("Content-Type", "application/json")
 	a.applyOrthancInternalRequestAuth(lookupReq)
 	lookupRes, err := a.httpClient.Do(lookupReq)
 	if err != nil {
+		a.log("warn", "orthanc_study_lookup_request_failed", map[string]any{
+			"study_instance_uid": studyUID,
+			"stage":              "tools_find_request",
+			"error":              err.Error(),
+		})
 		return true, "", nil
 	}
 	defer lookupRes.Body.Close()
 	if lookupRes.StatusCode < 200 || lookupRes.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(lookupRes.Body, 2048))
+		a.log("warn", "orthanc_study_lookup_bad_status", map[string]any{
+			"study_instance_uid": studyUID,
+			"stage":              "tools_find_status",
+			"status_code":        lookupRes.StatusCode,
+			"body":               strings.TrimSpace(string(body)),
+		})
 		return true, "", nil
 	}
 	var ids []string
-	if err := json.NewDecoder(lookupRes.Body).Decode(&ids); err != nil || len(ids) == 0 {
+	if err := json.NewDecoder(lookupRes.Body).Decode(&ids); err != nil {
+		a.log("warn", "orthanc_study_lookup_decode_failed", map[string]any{
+			"study_instance_uid": studyUID,
+			"stage":              "tools_find_decode",
+			"error":              err.Error(),
+		})
+		return true, "", nil
+	}
+	if len(ids) == 0 {
+		a.log("warn", "orthanc_study_lookup_empty", map[string]any{
+			"study_instance_uid": studyUID,
+			"stage":              "tools_find_empty",
+		})
 		return true, "", nil
 	}
 
@@ -6501,6 +6530,11 @@ func (a *App) streamStudyArchiveByUID(ctx context.Context, w http.ResponseWriter
 		return err
 	}
 	if !isLocal || strings.TrimSpace(orthancStudyID) == "" {
+		a.log("warn", "orthanc_study_archive_unavailable", map[string]any{
+			"study_instance_uid": studyUID,
+			"is_local":           isLocal,
+			"orthanc_study_id":   orthancStudyID,
+		})
 		return errors.New("study is not available in orthanc")
 	}
 
@@ -6518,6 +6552,12 @@ func (a *App) streamStudyArchiveByUID(ctx context.Context, w http.ResponseWriter
 
 	if res.StatusCode < 200 || res.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+		a.log("warn", "orthanc_study_archive_bad_status", map[string]any{
+			"study_instance_uid": studyUID,
+			"orthanc_study_id":   orthancStudyID,
+			"status_code":        res.StatusCode,
+			"body":               strings.TrimSpace(string(body)),
+		})
 		return fmt.Errorf("orthanc archive bad status %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
 	}
 
