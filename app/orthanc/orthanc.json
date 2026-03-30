@@ -17,5 +17,15 @@
   "DicomWeb": {
     "Enable": true,
     "Root": "/dicom-web/"
+  },
+  "Authorization": {
+    "WebServiceTokenValidationUrl": "http://backend:8081/api/orthanc-auth/tokens/validate",
+    "TokenHttpHeaders": [
+      "cookie"
+    ],
+    "CheckedLevel": "studies",
+    "StandardConfigurations": [
+      "stone-webviewer"
+    ]
   }
 }

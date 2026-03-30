@@ -1175,6 +1175,22 @@ type viewerAccessGrantValidation struct {
 	Reason     string
 }
 
+type orthancTokenValidationRequest struct {
+	DICOMUID   string `json:"dicom-uid"`
+	OrthancID  string `json:"orthanc-id"`
+	Level      string `json:"level"`
+	Method     string `json:"method"`
+	URI        string `json:"uri"`
+	TokenKey   string `json:"token-key"`
+	TokenValue string `json:"token-value"`
+	ServerID   string `json:"server-id"`
+}
+
+type orthancTokenValidationResponse struct {
+	Granted  bool `json:"granted"`
+	Validity int  `json:"validity"`
+}
+
 type PhysicianSummary struct {
 	ID            string `json:"id"`
 	Username      string `json:"username"`
@@ -1615,6 +1631,7 @@ func main() {
 	mux.HandleFunc("/api/physician/studies/", app.handlePhysicianStudyAccess)
 	mux.HandleFunc("/api/physician/download", app.handlePhysicianDownload)
 	mux.HandleFunc("/api/physician/retrieve", app.handlePhysicianRetrieve)
+	mux.HandleFunc("/api/orthanc-auth/tokens/validate", app.handleOrthancTokenValidation)
 	mux.HandleFunc("/viewer-access/", app.handleViewerAccess)
 
 	if closer, ok := app.identitySource.(patientIdentitySourceCloser); ok {
@@ -2203,9 +2220,44 @@ func (a *App) handlePatientLogout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	clearPortalSessionCookie(w, r, patientSessionCookieName)
+	clearViewerGrantCookie(w, r)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status": "logged_out",
 	})
+}
+
+func (a *App) handleOrthancTokenValidation(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var payload orthancTokenValidationRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	response, reason, err := a.validateOrthancToken(ctx, payload)
+	if err != nil {
+		http.Error(w, "orthanc token validation failed", http.StatusInternalServerError)
+		return
+	}
+	if !response.Granted {
+		a.log("warn", "orthanc_token_validation_denied", map[string]any{
+			"reason":     reason,
+			"level":      payload.Level,
+			"method":     payload.Method,
+			"dicom_uid":  payload.DICOMUID,
+			"orthanc_id": payload.OrthancID,
+			"uri":        payload.URI,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (a *App) handlePatientSearch(w http.ResponseWriter, r *http.Request) {
@@ -2660,6 +2712,8 @@ func (a *App) handleViewerAccess(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to consume viewer access grant", http.StatusInternalServerError)
 		return
 	}
+
+	setViewerGrantCookie(w, r, append(viewerGrantTokensFromRequest(r), rawToken), grant.ExpiresAt)
 
 	redirectURL := buildStoneViewerURL(grant.StudyInstanceUID)
 	if grant.ViewerKind == "ohif" {
@@ -3165,6 +3219,7 @@ func (a *App) handlePhysicianLogout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	clearPortalSessionCookie(w, r, physicianSessionCookieName)
+	clearViewerGrantCookie(w, r)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status": "logged_out",
 	})
@@ -4119,6 +4174,8 @@ func clientIPForRateLimit(r *http.Request) string {
 const (
 	patientSessionCookieName   = "portal_patient_session"
 	physicianSessionCookieName = "portal_physician_session"
+	viewerGrantCookieName      = "portal_viewer_grants"
+	viewerGrantCookieSeparator = "."
 )
 
 func sessionCookieToken(r *http.Request, cookieName string) string {
@@ -4164,6 +4221,95 @@ func clearPortalSessionCookie(w http.ResponseWriter, r *http.Request, cookieName
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     cookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   requestIsSecure(r),
+		Expires:  time.Unix(0, 0).UTC(),
+		MaxAge:   -1,
+	})
+}
+
+func viewerGrantTokensFromCookieValue(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return uniqueTrimmedStrings(strings.Split(value, viewerGrantCookieSeparator))
+}
+
+func uniqueTrimmedStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	var result []string
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func viewerGrantTokensFromRequest(r *http.Request) []string {
+	if r == nil {
+		return nil
+	}
+	cookie, err := r.Cookie(viewerGrantCookieName)
+	if err != nil {
+		return nil
+	}
+	return viewerGrantTokensFromCookieValue(cookie.Value)
+}
+
+func viewerGrantTokensFromCookieHeader(rawCookieHeader string) []string {
+	rawCookieHeader = strings.TrimSpace(rawCookieHeader)
+	if rawCookieHeader == "" {
+		return nil
+	}
+	req := &http.Request{Header: http.Header{"Cookie": []string{rawCookieHeader}}}
+	for _, cookie := range req.Cookies() {
+		if cookie != nil && cookie.Name == viewerGrantCookieName {
+			return viewerGrantTokensFromCookieValue(cookie.Value)
+		}
+	}
+	return nil
+}
+
+func setViewerGrantCookie(w http.ResponseWriter, r *http.Request, tokens []string, expiresAt time.Time) {
+	if w == nil {
+		return
+	}
+	tokens = uniqueTrimmedStrings(tokens)
+	if len(tokens) == 0 {
+		clearViewerGrantCookie(w, r)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     viewerGrantCookieName,
+		Value:    strings.Join(tokens, viewerGrantCookieSeparator),
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   requestIsSecure(r),
+		Expires:  expiresAt.UTC(),
+		MaxAge:   int(time.Until(expiresAt).Seconds()),
+	})
+}
+
+func clearViewerGrantCookie(w http.ResponseWriter, r *http.Request) {
+	if w == nil {
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     viewerGrantCookieName,
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
@@ -4810,6 +4956,180 @@ func validateViewerAccessGrant(grant viewerAccessGrantSnapshot, now time.Time) (
 		}, true
 	}
 	return viewerAccessGrantValidation{}, false
+}
+
+func (a *App) viewerGrantSessionValid(ctx context.Context, grant viewerAccessGrantSnapshot) (viewerAccessGrantValidation, bool, error) {
+	switch grant.SubjectType {
+	case "patient":
+		if grant.PatientSessionID == "" {
+			return viewerAccessGrantValidation{
+				HTTPStatus: http.StatusForbidden,
+				Message:    "viewer access grant invalid",
+				Reason:     "missing_patient_session",
+			}, true, nil
+		}
+		var expiresAt time.Time
+		var status string
+		err := a.db.QueryRowContext(ctx, `
+			SELECT expires_at, status
+			FROM patient_sessions
+			WHERE id = $1::uuid
+		`, grant.PatientSessionID).Scan(&expiresAt, &status)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return viewerAccessGrantValidation{
+					HTTPStatus: http.StatusForbidden,
+					Message:    "patient session expired",
+					Reason:     "patient_session_missing",
+				}, true, nil
+			}
+			return viewerAccessGrantValidation{}, false, err
+		}
+		if status != "active" || time.Now().UTC().After(expiresAt) {
+			return viewerAccessGrantValidation{
+				HTTPStatus: http.StatusForbidden,
+				Message:    "patient session expired",
+				Reason:     "patient_session_expired",
+			}, true, nil
+		}
+	case "physician":
+		if grant.PhysicianSessionID == "" {
+			return viewerAccessGrantValidation{
+				HTTPStatus: http.StatusForbidden,
+				Message:    "viewer access grant invalid",
+				Reason:     "missing_physician_session",
+			}, true, nil
+		}
+		var expiresAt time.Time
+		var status string
+		err := a.db.QueryRowContext(ctx, `
+			SELECT expires_at, status
+			FROM physician_sessions
+			WHERE id = $1::uuid
+		`, grant.PhysicianSessionID).Scan(&expiresAt, &status)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return viewerAccessGrantValidation{
+					HTTPStatus: http.StatusForbidden,
+					Message:    "physician session expired",
+					Reason:     "physician_session_missing",
+				}, true, nil
+			}
+			return viewerAccessGrantValidation{}, false, err
+		}
+		if status != "active" || time.Now().UTC().After(expiresAt) {
+			return viewerAccessGrantValidation{
+				HTTPStatus: http.StatusForbidden,
+				Message:    "physician session expired",
+				Reason:     "physician_session_expired",
+			}, true, nil
+		}
+	default:
+		return viewerAccessGrantValidation{
+			HTTPStatus: http.StatusForbidden,
+			Message:    "unsupported viewer grant subject",
+			Reason:     "unsupported_subject",
+		}, true, nil
+	}
+
+	return viewerAccessGrantValidation{}, false, nil
+}
+
+func validateOrthancViewerGrant(grant viewerAccessGrantSnapshot, now time.Time) (viewerAccessGrantValidation, bool) {
+	if grant.RevokedAt.Valid {
+		return viewerAccessGrantValidation{
+			HTTPStatus: http.StatusForbidden,
+			Message:    "viewer access grant revoked",
+			Reason:     "revoked",
+		}, true
+	}
+	if now.After(grant.ExpiresAt) {
+		return viewerAccessGrantValidation{
+			HTTPStatus: http.StatusForbidden,
+			Message:    "viewer access grant expired",
+			Reason:     "expired",
+		}, true
+	}
+	if grant.Status != "active" && grant.Status != "consumed" {
+		return viewerAccessGrantValidation{
+			HTTPStatus: http.StatusForbidden,
+			Message:    "viewer access grant inactive",
+			Reason:     "inactive",
+		}, true
+	}
+	if grant.Status == "consumed" && grant.ConsumedUses <= 0 {
+		return viewerAccessGrantValidation{
+			HTTPStatus: http.StatusForbidden,
+			Message:    "viewer access grant inactive",
+			Reason:     "invalid_consumed_state",
+		}, true
+	}
+	return viewerAccessGrantValidation{}, false
+}
+
+func orthancSystemURIAllowed(uri string) bool {
+	uri = strings.TrimSpace(uri)
+	if uri == "" {
+		return true
+	}
+	return strings.HasPrefix(uri, "/stone-webviewer/")
+}
+
+func (a *App) validateOrthancToken(ctx context.Context, payload orthancTokenValidationRequest) (orthancTokenValidationResponse, string, error) {
+	method := strings.ToLower(strings.TrimSpace(payload.Method))
+	if method != "" && method != "get" && method != "head" {
+		return orthancTokenValidationResponse{Granted: false, Validity: 1}, "unsupported_method", nil
+	}
+
+	tokens := viewerGrantTokensFromCookieHeader(payload.TokenValue)
+	if len(tokens) == 0 {
+		return orthancTokenValidationResponse{Granted: false, Validity: 1}, "missing_viewer_grant_cookie", nil
+	}
+
+	level := strings.ToLower(strings.TrimSpace(payload.Level))
+	dicomUID := strings.TrimSpace(payload.DICOMUID)
+	uri := strings.TrimSpace(payload.URI)
+
+	for _, rawToken := range tokens {
+		grant, err := a.viewerAccessGrantByToken(ctx, rawToken)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			return orthancTokenValidationResponse{}, "", err
+		}
+
+		if validation, denied := validateOrthancViewerGrant(grant, time.Now().UTC()); denied {
+			_ = validation
+			continue
+		}
+		if validation, denied, err := a.viewerGrantSessionValid(ctx, grant); err != nil {
+			return orthancTokenValidationResponse{}, "", err
+		} else if denied {
+			_ = validation
+			continue
+		}
+
+		switch level {
+		case "", "system":
+			if orthancSystemURIAllowed(uri) {
+				return orthancTokenValidationResponse{Granted: true, Validity: 1}, "granted_system", nil
+			}
+		case "study":
+			if dicomUID != "" && subtle.ConstantTimeCompare([]byte(dicomUID), []byte(grant.StudyInstanceUID)) == 1 {
+				return orthancTokenValidationResponse{Granted: true, Validity: 1}, "granted_study", nil
+			}
+		}
+	}
+
+	switch level {
+	case "", "system":
+		return orthancTokenValidationResponse{Granted: false, Validity: 1}, "system_uri_not_allowed", nil
+	case "study":
+		return orthancTokenValidationResponse{Granted: false, Validity: 1}, "study_not_granted", nil
+	default:
+		return orthancTokenValidationResponse{Granted: false, Validity: 1}, "unsupported_level", nil
+	}
 }
 
 func (a *App) ensurePatientRecordWithIdentity(ctx context.Context, documentNumber string) (PatientSummary, PatientIdentity, error) {
