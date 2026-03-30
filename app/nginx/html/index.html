@@ -3444,13 +3444,13 @@
           try {
             const payload = await createPatientStudyShare(studyInstanceUID, viewerKind);
             const shareURL = payload.share_url || "";
-            const shareText = "Le comparto un estudio médico.";
+            const shareText = "Te comparto un estudio por imagenes del sistema publico de salud de Neuquen.";
             let shared = false;
 
             if (navigator.share) {
               try {
                 await navigator.share({
-                  title: "Estudio médico compartido",
+                  title: "Estudio por imagenes compartido",
                   text: shareText,
                   url: shareURL
                 });
