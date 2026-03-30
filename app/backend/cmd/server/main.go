@@ -2954,9 +2954,9 @@ func (a *App) handlePatientStudyShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shareMessage := fmt.Sprintf("Te comparto un enlace para ver un estudio por imagenes realizado en el sistema publico de salud de Neuquen. Esta disponible hasta el %s.", expiresAt.In(time.UTC).Format("2006-01-02 15:04 UTC"))
+	shareMessage := fmt.Sprintf("Te comparto un enlace para ver un estudio por imágenes realizado en el sistema público de salud de Neuquén. Está disponible hasta el %s.", expiresAt.In(time.UTC).Format("2006-01-02 15:04 UTC"))
 	whatsAppURL := "https://wa.me/?text=" + url.QueryEscape(shareMessage+" "+shareURL)
-	mailSubject := "Estudio por imagenes compartido | Salud Publica Neuquen"
+	mailSubject := "Estudio por imágenes compartido | Salud Pública Neuquén"
 	mailBody := shareMessage + "\n\n" + shareURL
 	mailToURL := "mailto:?subject=" + url.QueryEscape(mailSubject) + "&body=" + url.QueryEscape(mailBody)
 
