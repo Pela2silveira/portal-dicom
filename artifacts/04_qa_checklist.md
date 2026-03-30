@@ -81,6 +81,7 @@
 
 ## Operability
 - [Ready] **One-command startup**: `docker compose up` brings up `nginx`, `backend`, `postgres`, `orthanc`, `ohif`.
+- [Ready] **Compose restart policy**: the main services use `restart: unless-stopped` so Docker can bring the stack back after a VM reboot without a manual `docker compose up`.
 - [Ready] **DB migrations at startup**: schema bootstraps automatically; config loader upserts nodes + HIS config.
 - [Ready] **Health endpoint**: `/api/health` reports `db_ok` and `orthanc_ok`.
 - [Ready] **Container liveness**: Docker Compose checks `/api/livez` so backend can stay `healthy` while `/api/health` is degraded and Nginx serves maintenance.
