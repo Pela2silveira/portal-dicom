@@ -19,11 +19,16 @@
     "Root": "/dicom-web/"
   },
   "Authorization": {
+    "WebServiceTokenCreationBaseUrl": "http://backend:8081/api/orthanc-auth/tokens/",
+    "WebServiceTokenDecoderUrl": "http://backend:8081/api/orthanc-auth/tokens/decode",
     "WebServiceTokenValidationUrl": "http://backend:8081/api/orthanc-auth/tokens/validate",
     "WebServiceUserProfileUrl": "http://backend:8081/api/orthanc-auth/user/get-profile",
     "TokenHttpHeaders": [
       "cookie",
       "x-orthanc-internal-token"
+    ],
+    "TokenGetArguments": [
+      "token"
     ],
     "CheckedLevel": "studies",
     "Permissions": [

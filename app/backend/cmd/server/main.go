@@ -1063,6 +1063,26 @@ type PatientRetrieveResponse struct {
 	OHIFViewerURL    string `json:"ohif_viewer_url,omitempty"`
 }
 
+type PatientStudyShareRequest struct {
+	ViewerKind       string `json:"viewer,omitempty"`
+	Channel          string `json:"channel,omitempty"`
+	ExpiresInHours   int    `json:"expires_in_hours,omitempty"`
+	MaxUses          int    `json:"max_uses,omitempty"`
+	RecipientLabel   string `json:"recipient_label,omitempty"`
+	RecipientContact string `json:"recipient_contact,omitempty"`
+}
+
+type PatientStudyShareResponse struct {
+	Status           string `json:"status"`
+	StudyInstanceUID string `json:"study_instance_uid"`
+	ViewerKind       string `json:"viewer_kind"`
+	ShareURL         string `json:"share_url"`
+	WhatsAppURL      string `json:"whatsapp_url,omitempty"`
+	MailToURL        string `json:"mailto_url,omitempty"`
+	ExpiresAt        string `json:"expires_at"`
+	MaxUses          int    `json:"max_uses"`
+}
+
 type PatientSendCodeRequest struct {
 	DocumentNumber string `json:"document_number"`
 }
@@ -1170,6 +1190,21 @@ type viewerAccessGrantSnapshot struct {
 	RevokedAt           sql.NullTime
 }
 
+type studyShareLinkSnapshot struct {
+	ShareID          string
+	PatientID        string
+	StudyInstanceUID string
+	ViewerKind       string
+	Channel          string
+	Status           string
+	MaxUses          int
+	ConsumedUses     int
+	ExpiresAt        time.Time
+	RevokedAt        sql.NullTime
+	RecipientLabel   string
+	RecipientContact string
+}
+
 type viewerAccessGrantValidation struct {
 	HTTPStatus int
 	Message    string
@@ -1203,6 +1238,38 @@ type orthancUserProfileResponse struct {
 	AuthorizedLabels []string `json:"authorized-labels,omitempty"`
 	Permissions      []string `json:"permissions"`
 	Validity         int      `json:"validity"`
+}
+
+type orthancTokenResourceRequest struct {
+	DICOMUID  string `json:"dicom-uid"`
+	OrthancID string `json:"orthanc-id"`
+	Level     string `json:"level"`
+	URL       string `json:"url"`
+}
+
+type orthancTokenCreationRequest struct {
+	ID               string                       `json:"id"`
+	Type             string                       `json:"type"`
+	Resources        []orthancTokenResourceRequest `json:"resources"`
+	ExpirationDate   string                       `json:"expiration-date"`
+	ValidityDuration int                          `json:"validity-duration"`
+}
+
+type orthancTokenCreationResponse struct {
+	Request orthancTokenCreationRequest `json:"request"`
+	Token   string                      `json:"token"`
+	URL     string                      `json:"url,omitempty"`
+}
+
+type orthancTokenDecodeRequest struct {
+	TokenKey   string `json:"token-key"`
+	TokenValue string `json:"token-value"`
+}
+
+type orthancTokenDecodeResponse struct {
+	TokenType   string `json:"token-type,omitempty"`
+	RedirectURL string `json:"redirect-url,omitempty"`
+	ErrorCode   string `json:"error-code,omitempty"`
 }
 
 type PhysicianSummary struct {
@@ -1637,7 +1704,7 @@ func main() {
 	mux.HandleFunc("/api/patient/logout", app.withBrowserOriginCheck(app.handlePatientLogout))
 	mux.HandleFunc("/api/patient/search", app.withBrowserOriginCheck(app.handlePatientSearch))
 	mux.HandleFunc("/api/patient/studies", app.handlePatientStudies)
-	mux.HandleFunc("/api/patient/studies/", app.handlePatientStudyAccess)
+	mux.HandleFunc("/api/patient/studies/", app.withBrowserOriginCheck(app.handlePatientStudyRoute))
 	mux.HandleFunc("/api/patient/download", app.handlePatientDownload)
 	mux.HandleFunc("/api/patient/retrieve", app.withBrowserOriginCheck(app.handlePatientRetrieve))
 	mux.HandleFunc("/api/physician/login", app.withBrowserOriginCheck(app.handlePhysicianLogin))
@@ -1647,8 +1714,11 @@ func main() {
 	mux.HandleFunc("/api/physician/studies/", app.handlePhysicianStudyAccess)
 	mux.HandleFunc("/api/physician/download", app.handlePhysicianDownload)
 	mux.HandleFunc("/api/physician/retrieve", app.withBrowserOriginCheck(app.handlePhysicianRetrieve))
+	mux.HandleFunc("/api/orthanc-auth/tokens/", app.handleOrthancTokenCreate)
+	mux.HandleFunc("/api/orthanc-auth/tokens/decode", app.handleOrthancTokenDecode)
 	mux.HandleFunc("/api/orthanc-auth/tokens/validate", app.handleOrthancTokenValidation)
 	mux.HandleFunc("/api/orthanc-auth/user/get-profile", app.handleOrthancUserProfile)
+	mux.HandleFunc("/share", app.handleShareLanding)
 	mux.HandleFunc("/viewer-access/", app.handleViewerAccess)
 
 	if closer, ok := app.identitySource.(patientIdentitySourceCloser); ok {
@@ -2343,6 +2413,151 @@ func (a *App) handleOrthancUserProfile(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (a *App) handleOrthancTokenCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	tokenType := normalizeStudyShareTokenType(strings.TrimPrefix(strings.TrimSpace(r.URL.Path), "/api/orthanc-auth/tokens/"))
+	if tokenType == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	var payload orthancTokenCreationRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+
+	var (
+		patientID string
+		maxExpiry time.Time
+	)
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	if strings.TrimSpace(a.cfg.OrthancInternalToken) != "" &&
+		subtle.ConstantTimeCompare([]byte(strings.TrimSpace(r.Header.Get(orthancInternalTokenHeader))), []byte(a.cfg.OrthancInternalToken)) == 1 {
+		patientID = ""
+		maxExpiry = time.Now().UTC().Add(7 * 24 * time.Hour)
+	} else if session, patient, err := a.requirePatientSessionSummary(ctx, r); err == nil {
+		patientID = patient.ID
+		maxExpiry = session.ExpiresAt
+	} else {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	if len(payload.Resources) != 1 {
+		http.Error(w, "exactly one resource is required", http.StatusBadRequest)
+		return
+	}
+	resource := payload.Resources[0]
+	if strings.ToLower(strings.TrimSpace(resource.Level)) != "study" {
+		http.Error(w, "only study resources are supported", http.StatusBadRequest)
+		return
+	}
+	studyUID := strings.TrimSpace(resource.DICOMUID)
+	if studyUID == "" {
+		http.Error(w, "missing study uid", http.StatusBadRequest)
+		return
+	}
+
+	if patientID != "" {
+		authorized, err := a.patientStudyAvailableLocal(ctx, patientID, studyUID)
+		if err != nil {
+			http.Error(w, "failed to validate patient study access", http.StatusInternalServerError)
+			return
+		}
+		if !authorized {
+			http.Error(w, "study not available for share", http.StatusNotFound)
+			return
+		}
+	}
+
+	reqBody := PatientStudyShareRequest{
+		ViewerKind:     viewerKindForStudyShareTokenType(tokenType),
+		ExpiresInHours: payload.ValidityDuration / 3600,
+		MaxUses:        10,
+	}
+	if strings.TrimSpace(payload.ExpirationDate) != "" {
+		if parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(payload.ExpirationDate)); err == nil {
+			reqBody.ExpiresInHours = int(time.Until(parsed).Hours())
+		}
+	}
+	shareURL, rawToken, expiresAt, _, err := a.createStudyShareLink(ctx, patientID, studyUID, reqBody.ViewerKind, "share", reqBody, r, maxExpiry)
+	if err != nil {
+		http.Error(w, "failed to create resource token", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, orthancTokenCreationResponse{
+		Request: orthancTokenCreationRequest{
+			ID:               payload.ID,
+			Type:             tokenType,
+			Resources:        payload.Resources,
+			ExpirationDate:   expiresAt.UTC().Format(time.RFC3339),
+			ValidityDuration: int(time.Until(expiresAt).Seconds()),
+		},
+		Token: rawToken,
+		URL:   shareURL,
+	})
+}
+
+func (a *App) decodeStudyShareToken(ctx context.Context, rawToken string) (studyShareLinkSnapshot, orthancTokenDecodeResponse, error) {
+	link, err := a.studyShareLinkByToken(ctx, rawToken)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return studyShareLinkSnapshot{}, orthancTokenDecodeResponse{ErrorCode: "unknown"}, nil
+		}
+		return studyShareLinkSnapshot{}, orthancTokenDecodeResponse{}, err
+	}
+	if validation, denied := validateStudyShareLink(link, time.Now().UTC()); denied {
+		errorCode := "invalid"
+		if validation.Reason == "expired" {
+			errorCode = "expired"
+		}
+		return link, orthancTokenDecodeResponse{
+			TokenType: studyShareTokenTypeForViewer(link.ViewerKind),
+			ErrorCode: errorCode,
+		}, nil
+	}
+	tokenType := studyShareTokenTypeForViewer(link.ViewerKind)
+	return link, orthancTokenDecodeResponse{
+		TokenType:   tokenType,
+		RedirectURL: requestAbsoluteURL(nil, studyShareTokenRedirectURL(rawToken, link)),
+	}, nil
+}
+
+func (a *App) handleOrthancTokenDecode(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var payload orthancTokenDecodeRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+
+	rawToken := strings.TrimSpace(payload.TokenValue)
+	if rawToken == "" {
+		writeJSON(w, http.StatusOK, orthancTokenDecodeResponse{ErrorCode: "invalid"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	_, response, err := a.decodeStudyShareToken(ctx, rawToken)
+	if err != nil {
+		http.Error(w, "failed to decode token", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
 func (a *App) handlePatientSearch(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
@@ -2562,6 +2777,25 @@ func studyUIDFromAccessPath(path, prefix string) string {
 	return strings.Trim(strings.TrimSpace(value), "/")
 }
 
+func studyUIDFromActionPath(path, prefix, suffix string) string {
+	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
+		return ""
+	}
+	value := strings.TrimSuffix(strings.TrimPrefix(path, prefix), suffix)
+	return strings.Trim(strings.TrimSpace(value), "/")
+}
+
+func (a *App) handlePatientStudyRoute(w http.ResponseWriter, r *http.Request) {
+	switch {
+	case strings.HasSuffix(r.URL.Path, "/access"):
+		a.handlePatientStudyAccess(w, r)
+	case strings.HasSuffix(r.URL.Path, "/share"):
+		a.handlePatientStudyShare(w, r)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
 func (a *App) handlePatientStudyAccess(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -2616,6 +2850,364 @@ func (a *App) handlePatientStudyAccess(w http.ResponseWriter, r *http.Request) {
 		ViewerKind:       viewerKind,
 		ExpiresAt:        expiresAt.UTC().Format(time.RFC3339),
 	})
+}
+
+func normalizeStudyShareChannel(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "share":
+		return "share"
+	case "whatsapp":
+		return "whatsapp"
+	case "email":
+		return "email"
+	case "copy":
+		return "copy"
+	default:
+		return ""
+	}
+}
+
+func normalizeStudyShareTokenType(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "stone-share":
+		return "stone-share"
+	case "ohif-share":
+		return "ohif-share"
+	default:
+		return ""
+	}
+}
+
+func studyShareTokenTypeForViewer(viewerKind string) string {
+	if normalizeViewerKind(viewerKind) == "ohif" {
+		return "ohif-share"
+	}
+	return "stone-share"
+}
+
+func viewerKindForStudyShareTokenType(tokenType string) string {
+	if normalizeStudyShareTokenType(tokenType) == "ohif-share" {
+		return "ohif"
+	}
+	return "stone"
+}
+
+func (a *App) handlePatientStudyShare(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	studyUID := studyUIDFromActionPath(r.URL.Path, "/api/patient/studies/", "/share")
+	if studyUID == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	var reqBody PatientStudyShareRequest
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil && !errors.Is(err, io.EOF) {
+		http.Error(w, "invalid json body", http.StatusBadRequest)
+		return
+	}
+
+	viewerKind := normalizeViewerKind(reqBody.ViewerKind)
+	if viewerKind == "" {
+		viewerKind = "stone"
+	}
+	channel := normalizeStudyShareChannel(reqBody.Channel)
+	if channel == "" {
+		http.Error(w, "invalid share channel", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	session, patient, err := a.requirePatientSessionSummary(ctx, r)
+	if err != nil {
+		http.Error(w, "invalid session", http.StatusUnauthorized)
+		return
+	}
+
+	authorized, err := a.patientStudyAvailableLocal(ctx, patient.ID, studyUID)
+	if err != nil {
+		http.Error(w, "failed to validate patient study access", http.StatusInternalServerError)
+		return
+	}
+	if !authorized {
+		http.Error(w, "study not available for patient share", http.StatusNotFound)
+		return
+	}
+
+	shareURL, rawToken, expiresAt, maxUses, err := a.createStudyShareLink(
+		ctx,
+		patient.ID,
+		studyUID,
+		viewerKind,
+		channel,
+		reqBody,
+		r,
+		session.ExpiresAt,
+	)
+	if err != nil {
+		http.Error(w, "failed to create share link", http.StatusInternalServerError)
+		return
+	}
+
+	shareMessage := fmt.Sprintf("Le comparto un enlace para visualizar un estudio médico. Vence el %s.", expiresAt.In(time.UTC).Format("2006-01-02 15:04 UTC"))
+	whatsAppURL := "https://wa.me/?text=" + url.QueryEscape(shareMessage+" "+shareURL)
+	mailSubject := "Estudio médico compartido"
+	mailBody := shareMessage + "\n\n" + shareURL
+	mailToURL := "mailto:?subject=" + url.QueryEscape(mailSubject) + "&body=" + url.QueryEscape(mailBody)
+
+	a.log("info", "patient_study_share_created", map[string]any{
+		"patient_id":         patient.ID,
+		"study_instance_uid": studyUID,
+		"viewer_kind":        viewerKind,
+		"channel":            channel,
+		"expires_at":         expiresAt.UTC().Format(time.RFC3339),
+		"max_uses":           maxUses,
+		"client_ip":          clientIPForRateLimit(r),
+	})
+
+	_ = rawToken
+	writeJSON(w, http.StatusOK, PatientStudyShareResponse{
+		Status:           "ok",
+		StudyInstanceUID: studyUID,
+		ViewerKind:       viewerKind,
+		ShareURL:         shareURL,
+		WhatsAppURL:      whatsAppURL,
+		MailToURL:        mailToURL,
+		ExpiresAt:        expiresAt.UTC().Format(time.RFC3339),
+		MaxUses:          maxUses,
+	})
+}
+
+func (a *App) createStudyShareLink(ctx context.Context, patientID, studyUID, viewerKind, channel string, reqBody PatientStudyShareRequest, r *http.Request, maxExpiresAt time.Time) (string, string, time.Time, int, error) {
+	rawToken, err := randomToken(32)
+	if err != nil {
+		return "", "", time.Time{}, 0, err
+	}
+
+	duration := defaultStudyShareLinkDuration()
+	if reqBody.ExpiresInHours > 0 {
+		duration = time.Duration(reqBody.ExpiresInHours) * time.Hour
+	}
+	if duration > 7*24*time.Hour {
+		duration = 7 * 24 * time.Hour
+	}
+	if duration < time.Hour {
+		duration = time.Hour
+	}
+	expiresAt := time.Now().UTC().Add(duration)
+	if !maxExpiresAt.IsZero() && maxExpiresAt.Before(expiresAt) {
+		expiresAt = maxExpiresAt
+	}
+	if time.Now().UTC().After(expiresAt) {
+		return "", "", time.Time{}, 0, errors.New("share link already expired")
+	}
+
+	maxUses := reqBody.MaxUses
+	if maxUses <= 0 {
+		maxUses = 10
+	}
+	if maxUses > 50 {
+		maxUses = 50
+	}
+
+	_, err = a.db.ExecContext(ctx, `
+		INSERT INTO study_share_links (
+			token_hash, patient_id, study_instance_uid, viewer_kind, channel,
+			status, max_uses, consumed_uses, expires_at, recipient_label, recipient_contact
+		) VALUES (
+			$1, CASE WHEN $2 = '' THEN NULL ELSE $2::uuid END, $3, $4, $5,
+			'active', $6, 0, $7, NULLIF($8, ''), NULLIF($9, '')
+		)
+	`, tokenHash(rawToken), patientID, studyUID, viewerKind, channel, maxUses, expiresAt, strings.TrimSpace(reqBody.RecipientLabel), strings.TrimSpace(reqBody.RecipientContact))
+	if err != nil {
+		return "", "", time.Time{}, 0, err
+	}
+
+	shareURL := requestAbsoluteURL(r, "/share?t="+url.QueryEscape(rawToken))
+	return shareURL, rawToken, expiresAt, maxUses, nil
+}
+
+func (a *App) studyShareLinkByToken(ctx context.Context, rawToken string) (studyShareLinkSnapshot, error) {
+	var snapshot studyShareLinkSnapshot
+	err := a.db.QueryRowContext(ctx, `
+		SELECT id::text,
+		       patient_id::text,
+		       study_instance_uid,
+		       viewer_kind,
+		       COALESCE(channel, ''),
+		       status,
+		       max_uses,
+		       consumed_uses,
+		       expires_at,
+		       revoked_at,
+		       COALESCE(recipient_label, ''),
+		       COALESCE(recipient_contact, '')
+		FROM study_share_links
+		WHERE token_hash = $1
+		ORDER BY created_at DESC, id DESC
+		LIMIT 1
+	`, tokenHash(rawToken)).Scan(
+		&snapshot.ShareID,
+		&snapshot.PatientID,
+		&snapshot.StudyInstanceUID,
+		&snapshot.ViewerKind,
+		&snapshot.Channel,
+		&snapshot.Status,
+		&snapshot.MaxUses,
+		&snapshot.ConsumedUses,
+		&snapshot.ExpiresAt,
+		&snapshot.RevokedAt,
+		&snapshot.RecipientLabel,
+		&snapshot.RecipientContact,
+	)
+	return snapshot, err
+}
+
+func consumeAllowedSharedLink(link studyShareLinkSnapshot) bool {
+	return (link.Status == "active" || link.Status == "consumed") && link.ConsumedUses > 0 && link.ConsumedUses <= link.MaxUses
+}
+
+func validateStudyShareLink(link studyShareLinkSnapshot, now time.Time) (viewerAccessGrantValidation, bool) {
+	if link.RevokedAt.Valid {
+		return viewerAccessGrantValidation{
+			HTTPStatus: http.StatusForbidden,
+			Message:    "share link revoked",
+			Reason:     "revoked",
+		}, true
+	}
+	if now.After(link.ExpiresAt) {
+		return viewerAccessGrantValidation{
+			HTTPStatus: http.StatusForbidden,
+			Message:    "share link expired",
+			Reason:     "expired",
+		}, true
+	}
+	if link.ConsumedUses >= link.MaxUses {
+		return viewerAccessGrantValidation{
+			HTTPStatus: http.StatusForbidden,
+			Message:    "share link already consumed",
+			Reason:     "already_consumed",
+		}, true
+	}
+	if link.Status != "active" {
+		return viewerAccessGrantValidation{
+			HTTPStatus: http.StatusForbidden,
+			Message:    "share link inactive",
+			Reason:     "inactive",
+		}, true
+	}
+	return viewerAccessGrantValidation{}, false
+}
+
+func validateStudyShareLinkForOrthancUse(link studyShareLinkSnapshot, now time.Time) (viewerAccessGrantValidation, bool) {
+	if link.RevokedAt.Valid {
+		return viewerAccessGrantValidation{
+			HTTPStatus: http.StatusForbidden,
+			Message:    "share link revoked",
+			Reason:     "revoked",
+		}, true
+	}
+	if now.After(link.ExpiresAt) {
+		return viewerAccessGrantValidation{
+			HTTPStatus: http.StatusForbidden,
+			Message:    "share link expired",
+			Reason:     "expired",
+		}, true
+	}
+	if link.ConsumedUses >= link.MaxUses && !consumeAllowedSharedLink(link) {
+		return viewerAccessGrantValidation{
+			HTTPStatus: http.StatusForbidden,
+			Message:    "share link already consumed",
+			Reason:     "already_consumed",
+		}, true
+	}
+	if link.Status != "active" && !consumeAllowedSharedLink(link) {
+		return viewerAccessGrantValidation{
+			HTTPStatus: http.StatusForbidden,
+			Message:    "share link inactive",
+			Reason:     "inactive",
+		}, true
+	}
+	return viewerAccessGrantValidation{}, false
+}
+
+func (a *App) consumeStudyShareLink(ctx context.Context, link studyShareLinkSnapshot) error {
+	status := "active"
+	if link.ConsumedUses+1 >= link.MaxUses {
+		status = "consumed"
+	}
+	_, err := a.db.ExecContext(ctx, `
+		UPDATE study_share_links
+		SET consumed_uses = consumed_uses + 1,
+		    first_opened_at = COALESCE(first_opened_at, now()),
+		    last_opened_at = now(),
+		    status = $2
+		WHERE id = $1::uuid
+	`, link.ShareID, status)
+	return err
+}
+
+func studyShareTokenRedirectURL(rawToken string, link studyShareLinkSnapshot) string {
+	viewerURL := buildStoneViewerURL(link.StudyInstanceUID)
+	if normalizeViewerKind(link.ViewerKind) == "ohif" {
+		viewerURL = buildOHIFViewerURL(link.StudyInstanceUID)
+	}
+	separator := "?"
+	if strings.Contains(viewerURL, "?") {
+		separator = "&"
+	}
+	return viewerURL + separator + shareTokenKeyName + "=" + url.QueryEscape(strings.TrimSpace(rawToken))
+}
+
+func (a *App) handleShareLanding(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	rawToken := strings.TrimSpace(r.URL.Query().Get("t"))
+	if rawToken == "" {
+		http.Error(w, "missing share token", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	link, err := a.studyShareLinkByToken(ctx, rawToken)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, "<!doctype html><html><body><h1>Enlace inválido</h1><p>El enlace compartido no existe o ya no está disponible.</p></body></html>")
+			return
+		}
+		http.Error(w, "failed to load share link", http.StatusInternalServerError)
+		return
+	}
+	if validation, denied := validateStudyShareLink(link, time.Now().UTC()); denied {
+		statusCode := validation.HTTPStatus
+		if statusCode == 0 {
+			statusCode = http.StatusForbidden
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(statusCode)
+		_, _ = io.WriteString(w, "<!doctype html><html><body><h1>Enlace no disponible</h1><p>"+validation.Message+"</p></body></html>")
+		return
+	}
+
+	if err := a.consumeStudyShareLink(ctx, link); err != nil {
+		http.Error(w, "failed to consume share link", http.StatusInternalServerError)
+		return
+	}
+
+	setShareLinkCookie(w, r, append(shareLinkTokensFromRequest(r), rawToken), link.ExpiresAt)
+	http.Redirect(w, r, studyShareTokenRedirectURL(rawToken, link), http.StatusFound)
 }
 
 func (a *App) handlePhysicianStudyAccess(w http.ResponseWriter, r *http.Request) {
@@ -4248,7 +4840,10 @@ const (
 	patientSessionCookieName   = "portal_patient_session"
 	physicianSessionCookieName = "portal_physician_session"
 	viewerGrantCookieName      = "portal_viewer_grants"
+	shareLinkCookieName        = "portal_share_links"
 	viewerGrantCookieSeparator = "."
+	shareLinkCookieSeparator   = "."
+	shareTokenKeyName          = "token"
 )
 
 func sessionCookieToken(r *http.Request, cookieName string) string {
@@ -4291,6 +4886,14 @@ func requestBaseOrigin(r *http.Request) string {
 		return ""
 	}
 	return scheme + "://" + host
+}
+
+func requestAbsoluteURL(r *http.Request, path string) string {
+	baseOrigin := requestBaseOrigin(r)
+	if baseOrigin == "" {
+		return path
+	}
+	return strings.TrimRight(baseOrigin, "/") + path
 }
 
 func sameOriginRequest(r *http.Request) bool {
@@ -4434,6 +5037,31 @@ func viewerGrantTokensFromCookieHeader(rawCookieHeader string) []string {
 	return nil
 }
 
+func shareLinkTokensFromRequest(r *http.Request) []string {
+	if r == nil {
+		return nil
+	}
+	cookie, err := r.Cookie(shareLinkCookieName)
+	if err != nil {
+		return nil
+	}
+	return viewerGrantTokensFromCookieValue(strings.ReplaceAll(cookie.Value, shareLinkCookieSeparator, viewerGrantCookieSeparator))
+}
+
+func shareLinkTokensFromCookieHeader(rawCookieHeader string) []string {
+	rawCookieHeader = strings.TrimSpace(rawCookieHeader)
+	if rawCookieHeader == "" {
+		return nil
+	}
+	req := &http.Request{Header: http.Header{"Cookie": []string{rawCookieHeader}}}
+	for _, cookie := range req.Cookies() {
+		if cookie != nil && cookie.Name == shareLinkCookieName {
+			return viewerGrantTokensFromCookieValue(strings.ReplaceAll(cookie.Value, shareLinkCookieSeparator, viewerGrantCookieSeparator))
+		}
+	}
+	return nil
+}
+
 func setViewerGrantCookie(w http.ResponseWriter, r *http.Request, tokens []string, expiresAt time.Time) {
 	if w == nil {
 		return
@@ -4455,12 +5083,49 @@ func setViewerGrantCookie(w http.ResponseWriter, r *http.Request, tokens []strin
 	})
 }
 
+func setShareLinkCookie(w http.ResponseWriter, r *http.Request, tokens []string, expiresAt time.Time) {
+	if w == nil {
+		return
+	}
+	tokens = uniqueTrimmedStrings(tokens)
+	if len(tokens) == 0 {
+		clearShareLinkCookie(w, r)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     shareLinkCookieName,
+		Value:    strings.Join(tokens, shareLinkCookieSeparator),
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   requestIsSecure(r),
+		Expires:  expiresAt.UTC(),
+		MaxAge:   int(time.Until(expiresAt).Seconds()),
+	})
+}
+
 func clearViewerGrantCookie(w http.ResponseWriter, r *http.Request) {
 	if w == nil {
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     viewerGrantCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   requestIsSecure(r),
+		Expires:  time.Unix(0, 0).UTC(),
+		MaxAge:   -1,
+	})
+}
+
+func clearShareLinkCookie(w http.ResponseWriter, r *http.Request) {
+	if w == nil {
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     shareLinkCookieName,
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
@@ -4496,6 +5161,10 @@ func (a *App) portalSessionDuration() time.Duration {
 
 func viewerAccessGrantDuration() time.Duration {
 	return 5 * time.Minute
+}
+
+func defaultStudyShareLinkDuration() time.Duration {
+	return 72 * time.Hour
 }
 
 func normalizeViewerKind(value string) string {
@@ -5276,6 +5945,37 @@ func (a *App) applyOrthancInternalRequestAuth(req *http.Request) {
 	}
 }
 
+func validateStudyShareLinkForOrthanc(link studyShareLinkSnapshot, payload orthancTokenValidationRequest) (orthancTokenValidationResponse, string) {
+	method := strings.ToLower(strings.TrimSpace(payload.Method))
+	level := strings.ToLower(strings.TrimSpace(payload.Level))
+	dicomUID := strings.TrimSpace(payload.DICOMUID)
+	uri := strings.TrimSpace(payload.URI)
+
+	if method != "" && method != "get" && method != "head" && method != "post" {
+		return orthancTokenValidationResponse{Granted: false, Validity: 1}, "unsupported_method"
+	}
+
+	switch level {
+	case "", "system":
+		if orthancSystemURIAllowed(uri) {
+			return orthancTokenValidationResponse{Granted: true, Validity: 60}, "granted_system_share"
+		}
+	case "study":
+		if dicomUID != "" && subtle.ConstantTimeCompare([]byte(dicomUID), []byte(link.StudyInstanceUID)) == 1 {
+			return orthancTokenValidationResponse{Granted: true, Validity: 60}, "granted_study_share"
+		}
+	}
+
+	switch level {
+	case "", "system":
+		return orthancTokenValidationResponse{Granted: false, Validity: 1}, "system_uri_not_allowed"
+	case "study":
+		return orthancTokenValidationResponse{Granted: false, Validity: 1}, "study_not_granted"
+	default:
+		return orthancTokenValidationResponse{Granted: false, Validity: 1}, "unsupported_level"
+	}
+}
+
 func (a *App) validateOrthancToken(ctx context.Context, payload orthancTokenValidationRequest) (orthancTokenValidationResponse, string, error) {
 	if strings.EqualFold(strings.TrimSpace(payload.TokenKey), orthancInternalTokenHeader) {
 		if a.cfg.OrthancInternalToken == "" {
@@ -5287,7 +5987,42 @@ func (a *App) validateOrthancToken(ctx context.Context, payload orthancTokenVali
 		return orthancTokenValidationResponse{Granted: false, Validity: 1}, "invalid_internal_token", nil
 	}
 
+	if strings.EqualFold(strings.TrimSpace(payload.TokenKey), shareTokenKeyName) {
+		link, err := a.studyShareLinkByToken(ctx, payload.TokenValue)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return orthancTokenValidationResponse{Granted: false, Validity: 1}, "unknown_share_token", nil
+			}
+			return orthancTokenValidationResponse{}, "", err
+		}
+		if validation, denied := validateStudyShareLinkForOrthancUse(link, time.Now().UTC()); denied {
+			return orthancTokenValidationResponse{Granted: false, Validity: 1}, validation.Reason, nil
+		}
+		response, reason := validateStudyShareLinkForOrthanc(link, payload)
+		return response, reason, nil
+	}
+
 	method := strings.ToLower(strings.TrimSpace(payload.Method))
+
+	shareTokens := shareLinkTokensFromCookieHeader(payload.TokenValue)
+	for _, rawToken := range shareTokens {
+		link, err := a.studyShareLinkByToken(ctx, rawToken)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			return orthancTokenValidationResponse{}, "", err
+		}
+		if validation, denied := validateStudyShareLinkForOrthancUse(link, time.Now().UTC()); denied {
+			_ = validation
+			continue
+		}
+		response, reason := validateStudyShareLinkForOrthanc(link, payload)
+		if response.Granted {
+			return response, reason, nil
+		}
+	}
+
 	if method != "" && method != "get" && method != "head" {
 		return orthancTokenValidationResponse{Granted: false, Validity: 1}, "unsupported_method", nil
 	}

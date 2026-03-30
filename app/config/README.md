@@ -170,6 +170,7 @@ Public exposure note:
 - The full `/api/config` endpoint is operational/internal and stays blocked by public Nginx.
 - The landing UI reads only a minimal public runtime payload from `/api/runtime-config`, currently limited to safe `portal` fields such as `session_timeout_minutes` and `show_demo_ribbon`, plus the effective patient `auth_mode` needed to adapt the code-entry input.
 - Orthanc viewer/image authorization is separate from backend internal orchestration: browser/viewer traffic remains bound to short-lived viewer grant cookies, while backend requests to Orthanc use env `ORTHANC_INTERNAL_TOKEN` through header `X-Orthanc-Internal-Token`.
+- The same authorization plugin can also protect patient share links for single studies: the portal may mint short-lived resource tokens, expose `/share?t=...`, and rely on Orthanc resource-token validation for downstream Stone/OHIF/DICOMweb access.
 - The Orthanc authorization plugin must also expose `WebServiceUserProfileUrl` because admin/internal routes such as `/modalities/*`, `/jobs/*`, and `/studies/{id}/archive` are authorized through plugin permissions rather than only through study resource-token parsing.
 - Viewer grant cookies are additionally mapped to one narrow permission for internal `POST /tools/find`, which the plugin uses during viewer/DICOMweb access resolution.
 

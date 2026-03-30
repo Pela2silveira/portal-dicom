@@ -2490,6 +2490,9 @@
               const downloadAction = study.download_url
                 ? '<a class="action action-primary" href="' + escapeHTML(study.download_url) + '" rel="noopener noreferrer">Descargar DICOM</a>'
                 : "";
+              const shareAction = study.viewer_url
+                ? '<button class="action action-primary" type="button" data-patient-share="' + escapeHTML(study.study_instance_uid) + '" data-viewer-kind="stone">Compartir</button>'
+                : "";
 
               const statusChips =
                 '<div class="chip-row status-chips">' +
@@ -2522,7 +2525,7 @@
                     modalities +
                     '<div class="chip">' + escapeHTML(study.study_instance_uid) + '</div>' +
                   '</div>' +
-                  '<div class="inline-actions">' + action + ohifAction + downloadAction + '</div>' +
+                  '<div class="inline-actions">' + action + ohifAction + downloadAction + shareAction + '</div>' +
                 '</article>'
               );
             })
@@ -3019,6 +3022,28 @@
         return response.json();
       }
 
+      async function createPatientStudyShare(studyInstanceUID, viewerKind = "stone") {
+        const response = await fetch("/api/patient/studies/" + encodeURIComponent(studyInstanceUID) + "/share", {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            viewer: viewerKind,
+            channel: "share"
+          })
+        });
+
+        if (!response.ok) {
+          const error = new Error("patient share request failed");
+          error.payload = await response.json().catch(() => ({}));
+          throw error;
+        }
+
+        return response.json();
+      }
+
       async function sendPatientMailCode(documentNumber) {
         const response = await fetch("/api/patient/send-code", {
           method: "POST",
@@ -3401,6 +3426,61 @@
             alert("No se pudo abrir el visor para el estudio seleccionado.");
           } finally {
             viewerButton.disabled = false;
+          }
+          return;
+        }
+
+        const shareButton = event.target.closest("[data-patient-share]");
+        if (shareButton) {
+          const studyInstanceUID = shareButton.getAttribute("data-patient-share");
+          const viewerKind = shareButton.getAttribute("data-viewer-kind") || "stone";
+          if (!studyInstanceUID) {
+            return;
+          }
+
+          shareButton.disabled = true;
+          const originalLabel = shareButton.textContent;
+          shareButton.textContent = "Preparando...";
+          try {
+            const payload = await createPatientStudyShare(studyInstanceUID, viewerKind);
+            const shareURL = payload.share_url || "";
+            const shareText = "Le comparto un estudio médico.";
+            let shared = false;
+
+            if (navigator.share) {
+              try {
+                await navigator.share({
+                  title: "Estudio médico compartido",
+                  text: shareText,
+                  url: shareURL
+                });
+                shared = true;
+              } catch (_error) {
+                shared = false;
+              }
+            }
+
+            if (!shared && payload.whatsapp_url) {
+              const popup = window.open(payload.whatsapp_url, "_blank", "noopener");
+              if (popup) {
+                shared = true;
+              }
+            }
+
+            if (!shared && shareURL && navigator.clipboard?.writeText) {
+              await navigator.clipboard.writeText(shareURL);
+              alert("Enlace copiado al portapapeles.\n\nVence: " + (payload.expires_at || "-"));
+              shared = true;
+            }
+
+            if (!shared && shareURL) {
+              alert("Comparta este enlace:\n\n" + shareURL);
+            }
+          } catch (error) {
+            alert(error?.payload?.message || "No se pudo crear el enlace para compartir este estudio.");
+          } finally {
+            shareButton.disabled = false;
+            shareButton.textContent = originalLabel;
           }
           return;
         }
