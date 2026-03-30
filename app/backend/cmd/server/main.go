@@ -2923,7 +2923,7 @@ func (a *App) handlePatientStudyShare(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
-	session, patient, err := a.requirePatientSessionSummary(ctx, r)
+	_, patient, err := a.requirePatientSessionSummary(ctx, r)
 	if err != nil {
 		http.Error(w, "invalid session", http.StatusUnauthorized)
 		return
@@ -2947,7 +2947,7 @@ func (a *App) handlePatientStudyShare(w http.ResponseWriter, r *http.Request) {
 		channel,
 		reqBody,
 		r,
-		session.ExpiresAt,
+		time.Time{},
 	)
 	if err != nil {
 		http.Error(w, "failed to create share link", http.StatusInternalServerError)
