@@ -641,6 +641,7 @@ Problema: Orthanc puede recibir instancias progresivamente.
 - La autorización Orthanc distingue dos planos: tráfico browser/viewer con viewer grant efímero en cookie y validación por resource-token, y tráfico interno backend→Orthanc con `X-Orthanc-Internal-Token`.
 - Según la documentación del plugin de autorización, varias rutas REST admin/internas de Orthanc no deben depender del parser de resource-tokens; el backend interno debe quedar autorizado por la ruta `user/get-profile` más `Permissions` explícitas para `/modalities/*`, `/jobs/*` y `/studies/{id}/archive`.
 - El flujo viewer requiere una excepción acotada: los viewer grants válidos pueden mapearse a un perfil mínimo con permiso exclusivo sobre `POST /tools/find`, porque el plugin usa esa ruta internamente durante QIDO/Stone/OHIF aun cuando el acceso externo sea un `GET` sobre recursos del estudio.
+- La detección backend de estudios ya presentes en Orthanc debe resolverse con `POST /tools/find` y no con QIDO interno sobre `/dicom-web/studies`, porque bajo el plugin de autorización esas consultas internas pueden devolver `403 Unknown resource` aun cuando el estudio exista y el viewer funcione.
 
 ### Retención
 - Existe mecanismo automático (cron backend o equivalente) que elimina estudios expirados (>7 días) y actualiza `cached_studies`.

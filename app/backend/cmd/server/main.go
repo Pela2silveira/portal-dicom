@@ -6508,54 +6508,27 @@ func (a *App) isStudyAvailableLocal(ctx context.Context, studyUID string) (bool,
 }
 
 func (a *App) findOrthancStudy(ctx context.Context, studyUID string) (bool, string, error) {
-	endpoint := strings.TrimRight(a.cfg.OrthancURL, "/") + "/dicom-web/studies?StudyInstanceUID=" + url.QueryEscape(studyUID) + "&limit=1"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return false, "", fmt.Errorf("build orthanc qido request: %w", err)
-	}
-	req.Header.Set("Accept", "application/dicom+json, application/json")
-	a.applyOrthancInternalRequestAuth(req)
-
-	res, err := a.httpClient.Do(req)
-	if err != nil {
-		return false, "", fmt.Errorf("execute orthanc qido request: %w", err)
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode < 200 || res.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
-		return false, "", fmt.Errorf("orthanc qido bad status %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	var payload []qidoResponseItem
-	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
-		return false, "", fmt.Errorf("decode orthanc qido response: %w", err)
-	}
-
-	if len(payload) == 0 {
-		return false, "", nil
-	}
-
 	lookupReq, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(a.cfg.OrthancURL, "/")+"/tools/find", strings.NewReader(`{"Level":"Study","Query":{"StudyInstanceUID":"`+studyUID+`"}}`))
 	if err != nil {
-		return true, "", nil
+		return false, "", fmt.Errorf("build orthanc study lookup request: %w", err)
 	}
 	lookupReq.Header.Set("Content-Type", "application/json")
 	a.applyOrthancInternalRequestAuth(lookupReq)
 	lookupRes, err := a.httpClient.Do(lookupReq)
 	if err != nil {
-		return true, "", nil
+		return false, "", fmt.Errorf("execute orthanc study lookup request: %w", err)
 	}
 	defer lookupRes.Body.Close()
 	if lookupRes.StatusCode < 200 || lookupRes.StatusCode >= 300 {
-		return true, "", nil
+		body, _ := io.ReadAll(io.LimitReader(lookupRes.Body, 2048))
+		return false, "", fmt.Errorf("orthanc study lookup bad status %d: %s", lookupRes.StatusCode, strings.TrimSpace(string(body)))
 	}
 	var ids []string
 	if err := json.NewDecoder(lookupRes.Body).Decode(&ids); err != nil {
-		return true, "", nil
+		return false, "", fmt.Errorf("decode orthanc study lookup response: %w", err)
 	}
 	if len(ids) == 0 {
-		return true, "", nil
+		return false, "", nil
 	}
 
 	return true, ids[0], nil
