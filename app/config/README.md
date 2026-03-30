@@ -136,10 +136,15 @@ Current patient access behavior flags.
 Fields:
 
 - `auth_mode`: patient auth mode. Accepted values:
-  - `mail`: normal flow, requires an active patient email and keeps the mail-code UX
+  - `mail`: final production flow, requires an active patient email and preserves the `Documento + código por mail` UX; current code already prevalidates contact and creates a real backend session, but the final mail delivery / one-time-code verification is still pending
   - `fake_auth`: demo flow, validates patient existence but skips real mail-code delivery
-  - `master_key`: validates patient existence and uses one shared configured key for patient access
+  - `master_key`: transitional operational bypass, validates patient existence and uses one shared configured key for patient access while the real `mail` delivery/verification integration is incomplete
 - `master_key`: required when `auth_mode` is `master_key`
+
+Operational note:
+
+- `mail` is the intended steady-state patient authentication mode for production.
+- `master_key` is not the target product design; keep it only as a temporary fallback for controlled environments.
 
 Backward compatibility:
 

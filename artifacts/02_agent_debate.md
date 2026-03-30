@@ -3,7 +3,10 @@
 ## Product Review
 
 ### What’s good
-- **MVP scope is tightly controlled**: clear exclusions (no auth, no sessions/JWT) reduces complexity and accelerates delivery.
+- **The current auth boundary is materially stronger than the original MVP**:
+  - backend sessions already exist for patient and physician flows;
+  - viewer access already uses short-lived grants;
+  - Orthanc authorization now participates in the viewer/image path.
 - **The public landing page is already useful** even without real auth: it gives the project a credible entry point and makes the portal feel like a product instead of just an integration stack.
 - **Brand alignment with ANDES** is a good product decision for user familiarity in Neuquén.
 - **Mobile responsiveness is the right requirement early** because both patient and physician entry flows are likely to be opened from phones.
@@ -17,6 +20,9 @@
   - `GET /api/physician/results`
   - `POST /api/patient/retrieve`
   - `POST /api/physician/retrieve`
+- **The non-viewer API boundary is now aligned with the session model**:
+  - patient and physician protected routes no longer trust caller-supplied `document_number` / `username`,
+  - which removes the main bypass around the viewer authorization work.
 
 ### Risks / ambiguities
 - **There are now two UI surfaces with different purposes**:
@@ -27,6 +33,10 @@
   - if OHIF keeps a native study list enabled, patients could conceptually “see everything” in the local cache;
   - hiding the list in OHIF is useful for UX, but not enough as a product-level access design.
 - **The public landing shows future auth concepts** (`código por mail`, `LDAP provincial`, `MFA`) that are intentionally not implemented in the MVP. This must be stated clearly in specs and acceptance criteria to avoid stakeholder confusion.
+- **Patient auth is still transitional in one key dimension**:
+  - `mail` is the intended final production mode,
+  - but real mail delivery and one-time-code verification are still pending,
+  - so `master_key` remains a temporary operational bypass that must stay clearly labeled as such.
 - **Search semantics across nodes are not normalized**:
   - Differences in remote QIDO behavior (fuzzy name matching, date handling, character sets) can yield inconsistent results.
   - Legacy C-FIND query capabilities may not match QIDO filters (e.g., modality/date ranges).
@@ -40,13 +50,13 @@
   Eso sirve para MVP, pero no representa aún la experiencia final esperada por un médico.
 
 ### Concrete decisions the human should make next
-1. **Portal surface split**: confirm whether the landing page and the operator search UI are the same surface or two separate routes/views.
-2. **Patient viewer model**: confirm that patients use a portal-owned filtered study list and never the native OHIF study list.
-3. **Physician workflow model**: confirm that physicians use a portal-owned asynchronous search panel, not the native OHIF study list.
-4. **Minimum physician panel fields**: define the exact remote PACS metadata shown in results (node, availability, retrieve state, local cache presence, last sync/latency if needed).
-5. **Minimum search filters to support in MVP** across QIDO and C-FIND (dates, modalities, patient_id, patient_name) and what to do when a node can’t support a filter.
-6. **Patient identifier strategy**: confirm whether the MVP can safely assume `PatientID == DNI` in the current environment, or whether the contract must become configurable now (`PatientID`, issuer-aware lookup, or HIS/MPI first).
-7. **MVP labeling in public UI**: decide whether the landing should explicitly say “Demo / acceso en implementación” to avoid confusion around non-functional auth forms.
+1. **Mail auth completion plan**: define provider, OTP TTL, resend limits, retry policy, and lockout semantics so `patient.auth_mode = "mail"` can replace the temporary `master_key` path operationally.
+2. **Portal surface split**: confirm whether the landing page and the operator search UI are the same surface or two separate routes/views.
+3. **Patient viewer model**: confirm that patients use a portal-owned filtered study list and never the native OHIF study list.
+4. **Physician workflow model**: confirm that physicians use a portal-owned asynchronous search panel, not the native OHIF study list.
+5. **Minimum physician panel fields**: define the exact remote PACS metadata shown in results (node, availability, retrieve state, local cache presence, last sync/latency if needed).
+6. **Minimum search filters to support in MVP** across QIDO and C-FIND (dates, modalities, patient_id, patient_name) and what to do when a node can’t support a filter.
+7. **Patient identifier strategy**: confirm whether the MVP can safely assume `PatientID == DNI` in the current environment, or whether the contract must become configurable now (`PatientID`, issuer-aware lookup, or HIS/MPI first).
 
 ---
 
@@ -70,12 +80,16 @@
   - disabling OHIF study list is not a substitute for controlling which studies are exposed by the portal/backend;
   - patient lists must be portal-authored and authorization-aware.
 - **Viewer protection still needs a real future boundary**:
-  - backend/proxy enforcement must validate active session + allowed `StudyInstanceUID`;
-  - this should not be left implicit in viewer configuration.
+  - the core viewer boundary now exists,
+  - but browser-origin controls and non-viewer API protections must continue evolving together with the same session-based model.
 - **Orthanc DICOM port exposure (4242)**: opening it to broader networks can allow unauthorized C-STORE into cache unless constrained (AE whitelist, firewall rules, TLS, or at least network segmentation).
 - **Token handling**:
   - Where and how tokens are cached, TTL handling, refresh on 401, and avoiding logging tokens are not explicit.
 - **Audit content**: logging patient identifiers (patient_id, name, DNI) is sensitive; MVP says “technical audit,” but it will likely capture PHI unless explicitly minimized/redacted.
+- **MVP sin auth pero con endpoints operativos reales**:
+- **State-changing browser routes need CSRF posture to stay explicit**:
+  - current implementation now enforces a basic same-origin `Origin`/`Referer` check on unsafe browser methods,
+  - but a future token-based CSRF design may still be desirable if the app expands beyond the current deployment assumptions.
 - **MVP sin auth pero con endpoints operativos reales**:
   - `/api/patient/studies`
   - `/api/patient/retrieve`

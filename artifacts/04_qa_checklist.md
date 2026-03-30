@@ -5,7 +5,7 @@
 - [Ready] **Orthanc admin REST not exposed**: Nginx denies non‑DICOMweb Orthanc routes (explicit 403/404).
 - [Ready] **DICOMweb-only viewer data path**: OHIF configured to consume only `/dicom-web/` (Orthanc local) and never remote PACS.
 - [Ready] **Secrets not committed**: config uses `*_secret_ref` / env/file refs; runtime `config.json` is local-only and ignored.
-- [Ready] **No auth in MVP**: no sessions/JWT/email-code validation implemented; UI flows are visual only.
+- [Ready] **Server-side portal sessions**: patient and professional login create backend sessions with expiry and explicit logout invalidation.
 - [Missing] **Hardening for non-localhost environments**: minimal protections when deployed beyond localhost (TLS termination, IP allowlist, shared operator key, etc.).
 - [Missing] **Token handling hardening**: Keycloak token cache/refresh policy (TTL, refresh-on-401) + explicit guarantee tokens/secrets never appear in logs.
 - [Missing] **PHI minimization policy enforcement**: explicit list of fields allowed in `integration_audit`, `search_*` tables, and logs (and automated checks).
@@ -13,11 +13,12 @@
 
 ## Functional
 - [Ready] **Landing + portal surfaces**: patient/professional mock flows route to portal-owned pages first; responsive requirement captured.
-- [Ready] **Patient list contract**: `GET /api/patient/studies?document=<dni>` returns `200` with `studies: []` if none; “Actualizar lista” semantics defined.
+- [Ready] **Patient list contract**: `GET /api/patient/studies` is resolved from the active patient session, returns `200` with `studies: []` if none, and does not trust caller-supplied document identifiers for authorization.
 - [Ready] **Patient async search worker**: remote patient search runs through `search_requests`/`search_node_runs`, started by `POST /api/patient/search`, polled through `GET /api/patient/search?request_id=...`, with visible `queued/running` state in the patient results surface.
 - [Ready] **Patient in-flight search reuse**: if the patient UI repeats the same `document + filters` while a search is already `queued` or `running`, the browser reuses the active `request_id` instead of emitting another redundant `POST /api/patient/search`.
 - [Ready] **Stale patient search reconciliation**: patient searches left in `queued` or `running` after backend restart are reconciled to `failed`, so the portal does not restore a phantom in-progress state from persisted rows.
 - [Ready] **Manual retrieve contract**: `POST /api/patient/retrieve`, `POST /api/physician/retrieve`, job persistence and state transitions exist (queued→running→done/failed).
+- [Ready] **Protected non-viewer routes bound to session**: patient studies/search/retrieve/download and physician results/retrieve/download authorize from the active backend session instead of trusting request `document_number` / `username`.
 - [Ready] **Transactional local availability**: a patient study changes to `available_local` only when Orthanc confirms local presence, and that promotion is committed together with the successful retrieve completion and local cache update.
 - [Ready] **Viewer handoff**: portal opens `GET /ohif/viewer?StudyInstanceUIDs=<uid>` in a new tab; Visualizar enabled only when local cache is ready.
 - [Ready] **OHIF root containment**: `GET /ohif/` redirects to landing and patient/professional flows enter OHIF only through study-specific viewer URLs.
@@ -90,9 +91,9 @@
 - [Ready] **Remote tail helpers**: `Makefile.deploy.local` exposes `remote-tail-deploy` for the latest deploy log and `remote-logs` for live `docker compose logs -f`, optionally scoped with `SERVICE=<name>`.
 - [Ready] **Remote deploy with volume reset**: `Makefile.deploy.local remote-up` accepts `WIPE_VOLUMES=1` to run `docker compose down -v` before rebuilding, and the same remote deploy log captures both the volume wipe and the subsequent startup.
 - [Missing] **Retention automation**: backend cron for Orthanc purge (7 days) + DB cleanup (30 days) not implemented (Milestone 7 pending).
-- [Open] **Real backend portal sessions**: current timeout control lives in the main UI shell; server-side session persistence, expiry validation, and logout invalidation remain pending.
-- [Open] **Viewer/image authorization enforcement**: Stone, OHIF, DICOMweb, and related image routes still need backend/proxy enforcement by active session and allowed `StudyInstanceUID`.
-- [Open] **Viewer access grant handoff**: the first server-side security iteration should replace direct viewer URLs with short-lived study-scoped grants consumed at portal handoff time, before introducing Orthanc-side per-request authorization.
+- [Ready] **Real backend portal sessions**: server-side session persistence, expiry validation, and logout invalidation are active for patient and professional flows.
+- [Ready] **Viewer/image authorization enforcement**: Stone and DICOMweb access are enforced through backend-issued viewer grants plus Orthanc authorization plugin validation by active session and allowed `StudyInstanceUID`.
+- [Ready] **Viewer access grant handoff**: viewer entry uses short-lived study-scoped grants consumed at portal handoff time before the final viewer redirect.
 - [Open] **OHIF integration/lazy-loading strategy**: first confirm whether the current viewer path is only the standard `dicom-web` integration against Orthanc local or whether any Orthanc-specific plugin participates; only then evaluate whether a lazier metadata/loading strategy is relevant.
 - [Missing] **SSE proxy correctness**: Nginx config must explicitly disable buffering for SSE routes and set correct headers/timeouts (otherwise intermittent UI failures).
 - [Missing] **Operational limits**: explicit concurrency limits and per-job deadlines for retrieve (`max_concurrent_retrieves_global`, per-node limits, retryability states).

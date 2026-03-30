@@ -5,7 +5,7 @@
 ## 0) Estado, decisiones confirmadas y supuestos
 
 ### Decisiones confirmadas (Human Decisions Log)
-- El MVP se entrega **antes** de cualquier feature de autenticación (médicos/pacientes/código por mail/sesiones/JWT/share links: **fuera**).
+- El repositorio ya no está en el estado inicial “sin auth”: hoy existen sesiones backend reales para paciente y profesional, grants efímeros de viewer y autorización Orthanc para Stone/DICOMweb; sigue pendiente la verificación final del código por mail para paciente.
 - Primer entregable: **stack completo en Docker Compose**.
 - Servicios mínimos: `orthanc` (caché), `backend` (Go), `postgres`, `nginx`, `ohif`.
 - **Orthanc local obligatorio** como caché y **destino de retrieve** (Move SCP).
@@ -24,10 +24,14 @@
 - El paso `Enviar código` debe consultar backend antes del envío real del mail para distinguir tres resultados: `ready_to_send`, `missing_active_email` y `patient_not_found`.
 - Cuando `ready_to_send` y exista email registrado, el mensaje visible debe incluir el correo ofuscado, preservando sólo los primeros 3 caracteres antes de `@`.
 - El modo de auth paciente debe poder alternarse por config (`patient.auth_mode`) para conmutar entre validación real por correo (`mail`), demo (`fake_auth`) y acceso por llave maestra (`master_key`) sin cambiar endpoints ni UI principal.
+- `patient.auth_mode = "mail"` es el método final esperado de producción para pacientes.
+- `patient.auth_mode = "master_key"` es un bypass operativo transitorio mientras no esté lista la entrega/validación real del código por mail.
 - Si `patient.auth_mode` no está presente en `config.json`, el backend puede seguir resolviendo compatibilidad hacia atrás desde `patient.fake_auth`; con `true`, el modo efectivo es `fake_auth`.
 - El modo de auth profesional debe poder alternarse por config (`professional.fake_auth`) para desacoplar la validación transitoria actual del objetivo futuro `LDAP provincial + MFA`.
 - Si `professional.fake_auth` no está presente en `config.json`, el backend debe asumir `true` para preservar compatibilidad con el MVP actual.
 - La sesión del portal debe expirar tanto para paciente como para profesional según `portal.session_timeout_minutes`; el frontend no debe hardcodear ese valor fuera de un fallback por defecto.
+- Los endpoints protegidos de paciente y profesional deben autorizar por sesión backend activa y no por `document_number` / `username` provistos por el cliente.
+- Las rutas browser-backed con cookies y método inseguro (`POST`/`PUT`/`PATCH`/`DELETE`) deben exigir same-origin básico mediante `Origin` o `Referer` antes de ejecutar la acción.
 - La UI pública debe obtener ese valor desde un endpoint mínimo de runtime (`/api/runtime-config`) y no desde `/api/config`.
 - La misma carga mínima de runtime puede exponer flags visuales no sensibles del portal, por ejemplo `portal.show_demo_ribbon`, para mantener consistencia entre landing y workspaces.
 - El retrieve debe poder exponer un progreso liviano orientado a UX, combinando fase (`preparing/retrieving/verifying`) y porcentaje aproximado del job de Orthanc cuando esté disponible, sin emitir eventos de alta frecuencia al navegador.

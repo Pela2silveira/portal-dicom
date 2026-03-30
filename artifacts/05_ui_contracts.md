@@ -44,6 +44,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - Keyboard flow on the public landing must start on the active role selector. Natural `Tab` navigation should move between `Paciente` and `Profesional`, and clicking or pressing `Enter` on the selected role must jump to that role's user-identification input.
 - Once the patient input flow starts, `Tab` from `Documento` moves to `Enviar código`, successful `Enviar código` moves focus to `Código por mail`, and `Tab`/`Enter` from `Código por mail` moves focus to `Continuar`.
 - The patient `Continuar` step must still validate against backend before opening the workspace; in `master_key` mode the entered code is checked against the configured shared key, but the visible UI remains unchanged.
+- `patient.auth_mode = "mail"` is the final production path; `master_key` is only a temporary operational fallback while real mail delivery and one-time-code verification are still incomplete.
 - Returning to the public landing, whether by explicit `Salir` or by a session/workspace reset, must clear both patient and professional login forms instead of preserving previous credentials or codes in the browser-rendered inputs.
 - If the portal UI is already open and system health falls to `unavailable`, or the health SSE fails and `/api/health` confirms `503`, the app must return to the public landing through an in-place UI reset instead of forcing a full browser reload.
 - Patient and professional portal sessions must expire after the configured `portal.session_timeout_minutes`; when that happens, the UI returns to the landing and clears the stored workspace state.
@@ -54,6 +55,7 @@ Allow a patient to see only their authorized studies and open one selected study
   - `patient_not_found`: show that the patient has no records
 - Current implementation already opens the portal-owned patient surface.
 - Browser refresh inside the patient workspace should restore the patient surface and its active filters from session state instead of sending the user back to the public landing.
+- Once the workspace is open, patient and physician protected API calls must authorize from the active backend session; any request identifiers kept in browser state are UX/state-restoration helpers only and must not be trusted as the authorization source.
 - The visible language of the entry flow should read as product, not as internal demo text.
 - The institutional strapline in the public header should read `Ministerio de Salud - Provincia del Neuquén`.
 - The public landing should keep the access form as the visual center and leave only brief orientation copy around it.

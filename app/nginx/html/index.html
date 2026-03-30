@@ -2765,7 +2765,7 @@
         const previousScrollX = window.scrollX;
         const previousScrollY = window.scrollY;
 
-        const params = new URLSearchParams({ document: documentNumber });
+        const params = new URLSearchParams();
         if (patientDateFilter.from) params.set("date_from", patientDateFilter.from);
         if (patientDateFilter.to) {
           params.set("date_to", patientDateFilter.to);
@@ -2943,7 +2943,7 @@
         const previousScrollX = window.scrollX;
         const previousScrollY = window.scrollY;
 
-        const params = new URLSearchParams({ username });
+        const params = new URLSearchParams();
         if (physicianSearchPatientID.value.trim()) params.set("patient_id", physicianSearchPatientID.value.trim());
         if (physicianSearchPatient.value.trim()) params.set("patient_name", physicianSearchPatient.value.trim());
         if (physicianDateFilter.from) params.set("date_from", physicianDateFilter.from);
@@ -2996,7 +2996,6 @@
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            document_number: activePatientDocument,
             study_instance_uid: studyInstanceUID
           })
         });
@@ -3102,7 +3101,6 @@
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            username: activePhysicianUsername,
             study_instance_uid: studyInstanceUID
           })
         });

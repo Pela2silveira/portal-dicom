@@ -1149,10 +1149,10 @@ type patientSessionSnapshot struct {
 }
 
 type physicianSessionSnapshot struct {
-	SessionID string
+	SessionID   string
 	PhysicianID string
-	ExpiresAt time.Time
-	Status    string
+	ExpiresAt   time.Time
+	Status      string
 }
 
 type viewerAccessGrantSnapshot struct {
@@ -1616,21 +1616,21 @@ func main() {
 	mux.HandleFunc("/api/system/events", app.handleSystemEvents)
 	mux.HandleFunc("/api/config", app.handleConfig(appliedMigrations))
 	mux.HandleFunc("/api/runtime-config", app.handleRuntimeConfig)
-	mux.HandleFunc("/api/patient/send-code", app.handlePatientSendCode)
-	mux.HandleFunc("/api/patient/login", app.handlePatientLogin)
-	mux.HandleFunc("/api/patient/logout", app.handlePatientLogout)
-	mux.HandleFunc("/api/patient/search", app.handlePatientSearch)
+	mux.HandleFunc("/api/patient/send-code", app.withBrowserOriginCheck(app.handlePatientSendCode))
+	mux.HandleFunc("/api/patient/login", app.withBrowserOriginCheck(app.handlePatientLogin))
+	mux.HandleFunc("/api/patient/logout", app.withBrowserOriginCheck(app.handlePatientLogout))
+	mux.HandleFunc("/api/patient/search", app.withBrowserOriginCheck(app.handlePatientSearch))
 	mux.HandleFunc("/api/patient/studies", app.handlePatientStudies)
 	mux.HandleFunc("/api/patient/studies/", app.handlePatientStudyAccess)
 	mux.HandleFunc("/api/patient/download", app.handlePatientDownload)
-	mux.HandleFunc("/api/patient/retrieve", app.handlePatientRetrieve)
-	mux.HandleFunc("/api/physician/login", app.handlePhysicianLogin)
-	mux.HandleFunc("/api/physician/logout", app.handlePhysicianLogout)
+	mux.HandleFunc("/api/patient/retrieve", app.withBrowserOriginCheck(app.handlePatientRetrieve))
+	mux.HandleFunc("/api/physician/login", app.withBrowserOriginCheck(app.handlePhysicianLogin))
+	mux.HandleFunc("/api/physician/logout", app.withBrowserOriginCheck(app.handlePhysicianLogout))
 	mux.HandleFunc("/api/retrieve/jobs/", app.handleRetrieveJobEvents)
 	mux.HandleFunc("/api/physician/results", app.handlePhysicianResults)
 	mux.HandleFunc("/api/physician/studies/", app.handlePhysicianStudyAccess)
 	mux.HandleFunc("/api/physician/download", app.handlePhysicianDownload)
-	mux.HandleFunc("/api/physician/retrieve", app.handlePhysicianRetrieve)
+	mux.HandleFunc("/api/physician/retrieve", app.withBrowserOriginCheck(app.handlePhysicianRetrieve))
 	mux.HandleFunc("/api/orthanc-auth/tokens/validate", app.handleOrthancTokenValidation)
 	mux.HandleFunc("/viewer-access/", app.handleViewerAccess)
 
@@ -2297,20 +2297,19 @@ func (a *App) handlePatientSearchStart(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
 
-	patient, err := a.ensurePatientRecord(ctx, reqBody.DocumentNumber)
+	_, patient, err := a.requirePatientSessionSummary(ctx, r)
 	if err != nil {
-		a.log("error", "patient_search_prepare_failed", map[string]any{
-			"document_number": reqBody.DocumentNumber,
-			"error":           err.Error(),
-		})
-		http.Error(w, "failed to prepare patient search", http.StatusInternalServerError)
+		http.Error(w, "invalid session", http.StatusUnauthorized)
 		return
 	}
-
-	state, err := a.ensurePatientSearchRequest(ctx, patient, reqBody.DocumentNumber, filters)
+	if reqBody.DocumentNumber != "" && subtle.ConstantTimeCompare([]byte(reqBody.DocumentNumber), []byte(patient.DocumentNumber)) != 1 {
+		http.Error(w, "patient session does not match requested document", http.StatusForbidden)
+		return
+	}
+	state, err := a.ensurePatientSearchRequest(ctx, patient, patient.DocumentNumber, filters)
 	if err != nil {
 		a.log("error", "patient_search_enqueue_failed", map[string]any{
-			"document_number": reqBody.DocumentNumber,
+			"document_number": patient.DocumentNumber,
 			"patient_id":      patient.ID,
 			"error":           err.Error(),
 		})
@@ -2331,7 +2330,13 @@ func (a *App) handlePatientSearchStatus(w http.ResponseWriter, r *http.Request) 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
-	state, err := a.getPatientSearchStateByRequestID(ctx, requestID)
+	session, _, err := a.requirePatientSessionSummary(ctx, r)
+	if err != nil {
+		http.Error(w, "invalid session", http.StatusUnauthorized)
+		return
+	}
+
+	state, err := a.getPatientSearchStateByRequestID(ctx, session.PatientID, requestID)
 	if err != nil {
 		a.log("error", "patient_search_status_failed", map[string]any{
 			"request_id": requestID,
@@ -2355,14 +2360,6 @@ func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
 	}
 
 	documentNumber := strings.TrimSpace(r.URL.Query().Get("document"))
-	if documentNumber == "" {
-		http.Error(w, "missing required query param: document", http.StatusBadRequest)
-		return
-	}
-	if err := validateDocumentNumber(documentNumber); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
 
 	filters := PatientStudiesFilter{
 		DateFrom: strings.TrimSpace(r.URL.Query().Get("date_from")),
@@ -2373,20 +2370,26 @@ func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
 
-	patient, err := a.ensurePatientRecord(ctx, documentNumber)
+	_, patient, err := a.requirePatientSessionSummary(ctx, r)
 	if err != nil {
-		a.log("error", "patient_seed_failed", map[string]any{
-			"document_number": documentNumber,
-			"error":           err.Error(),
-		})
-		http.Error(w, "failed to prepare patient studies", http.StatusInternalServerError)
+		http.Error(w, "invalid session", http.StatusUnauthorized)
 		return
+	}
+	if documentNumber != "" {
+		if err := validateDocumentNumber(documentNumber); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if subtle.ConstantTimeCompare([]byte(documentNumber), []byte(patient.DocumentNumber)) != 1 {
+			http.Error(w, "patient session does not match requested document", http.StatusForbidden)
+			return
+		}
 	}
 
 	syncState, err := a.getPatientSearchState(ctx, patient.ID, filters)
 	if err != nil {
 		a.log("error", "patient_search_state_failed", map[string]any{
-			"document_number": documentNumber,
+			"document_number": patient.DocumentNumber,
 			"patient_id":      patient.ID,
 			"error":           err.Error(),
 		})
@@ -2394,10 +2397,10 @@ func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	studies, err := a.listPatientStudies(ctx, patient.ID, documentNumber, filters)
+	studies, err := a.listPatientStudies(ctx, patient.ID, patient.DocumentNumber, filters)
 	if err != nil {
 		a.log("error", "patient_studies_query_failed", map[string]any{
-			"document_number": documentNumber,
+			"document_number": patient.DocumentNumber,
 			"patient_id":      patient.ID,
 			"error":           err.Error(),
 		})
@@ -2406,7 +2409,7 @@ func (a *App) handlePatientStudies(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := PatientStudiesResponse{
-		DocumentNumber: documentNumber,
+		DocumentNumber: patient.DocumentNumber,
 		Patient:        patient,
 		Filters:        filters,
 		Sync:           syncState,
@@ -2425,24 +2428,29 @@ func (a *App) handlePatientDownload(w http.ResponseWriter, r *http.Request) {
 
 	documentNumber := strings.TrimSpace(r.URL.Query().Get("document"))
 	studyInstanceUID := strings.TrimSpace(r.URL.Query().Get("study_instance_uid"))
-	if documentNumber == "" || studyInstanceUID == "" {
+	if studyInstanceUID == "" {
 		http.Error(w, "missing required query params", http.StatusBadRequest)
-		return
-	}
-	if err := validateDocumentNumber(documentNumber); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
-	patient, err := a.ensurePatientRecord(ctx, documentNumber)
+	_, patient, err := a.requirePatientSessionSummary(ctx, r)
 	if err != nil {
-		http.Error(w, "failed to authorize patient download", http.StatusInternalServerError)
+		http.Error(w, "invalid session", http.StatusUnauthorized)
 		return
 	}
-
+	if documentNumber != "" {
+		if err := validateDocumentNumber(documentNumber); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if subtle.ConstantTimeCompare([]byte(documentNumber), []byte(patient.DocumentNumber)) != 1 {
+			http.Error(w, "patient session does not match requested document", http.StatusForbidden)
+			return
+		}
+	}
 	authorized, err := a.patientStudyAvailableLocal(ctx, patient.ID, studyInstanceUID)
 	if err != nil {
 		http.Error(w, "failed to validate patient study", http.StatusInternalServerError)
@@ -2833,14 +2841,15 @@ func (a *App) getPatientSearchState(ctx context.Context, patientID string, filte
 	return state, nil
 }
 
-func (a *App) getPatientSearchStateByRequestID(ctx context.Context, requestID string) (PatientSyncStatus, error) {
+func (a *App) getPatientSearchStateByRequestID(ctx context.Context, patientID, requestID string) (PatientSyncStatus, error) {
 	var state PatientSyncStatus
 	err := a.db.QueryRowContext(ctx, `
 		SELECT id::text, status
 		FROM search_requests
 		WHERE id = $1::uuid
 		  AND actor_type = 'patient'
-	`, requestID).Scan(&state.RequestID, &state.Status)
+		  AND patient_id = $2::uuid
+	`, requestID, patientID).Scan(&state.RequestID, &state.Status)
 	if err != nil {
 		return PatientSyncStatus{}, err
 	}
@@ -2942,26 +2951,28 @@ func (a *App) handlePatientRetrieve(w http.ResponseWriter, r *http.Request) {
 
 	reqBody.DocumentNumber = strings.TrimSpace(reqBody.DocumentNumber)
 	reqBody.StudyInstanceUID = strings.TrimSpace(reqBody.StudyInstanceUID)
-	if reqBody.DocumentNumber == "" || reqBody.StudyInstanceUID == "" {
-		http.Error(w, "document_number and study_instance_uid are required", http.StatusBadRequest)
-		return
-	}
-	if err := validateDocumentNumber(reqBody.DocumentNumber); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if reqBody.StudyInstanceUID == "" {
+		http.Error(w, "study_instance_uid is required", http.StatusBadRequest)
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
-	patient, err := a.ensurePatientRecord(ctx, reqBody.DocumentNumber)
+	_, patient, err := a.requirePatientSessionSummary(ctx, r)
 	if err != nil {
-		a.log("error", "patient_retrieve_prepare_failed", map[string]any{
-			"document_number": reqBody.DocumentNumber,
-			"error":           err.Error(),
-		})
-		http.Error(w, "failed to prepare patient retrieve", http.StatusInternalServerError)
+		http.Error(w, "invalid session", http.StatusUnauthorized)
 		return
+	}
+	if reqBody.DocumentNumber != "" {
+		if err := validateDocumentNumber(reqBody.DocumentNumber); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if subtle.ConstantTimeCompare([]byte(reqBody.DocumentNumber), []byte(patient.DocumentNumber)) != 1 {
+			http.Error(w, "patient session does not match requested document", http.StatusForbidden)
+			return
+		}
 	}
 
 	resp, err := a.queuePatientRetrieve(ctx, patient, reqBody.StudyInstanceUID)
@@ -2971,7 +2982,7 @@ func (a *App) handlePatientRetrieve(w http.ResponseWriter, r *http.Request) {
 			statusCode = http.StatusServiceUnavailable
 		}
 		a.log("error", "patient_retrieve_failed", map[string]any{
-			"document_number":   reqBody.DocumentNumber,
+			"document_number":   patient.DocumentNumber,
 			"patient_id":        patient.ID,
 			"study_instance_uid": reqBody.StudyInstanceUID,
 			"error":             err.Error(),
@@ -2991,10 +3002,6 @@ func (a *App) handlePhysicianResults(w http.ResponseWriter, r *http.Request) {
 	}
 
 	username := normalizeProfessionalDocumentInput(r.URL.Query().Get("username"))
-	if username == "" {
-		writeJSON(w, http.StatusBadRequest, PhysicianResultsErrorResponse{Message: "Falta el parámetro requerido username."})
-		return
-	}
 
 	filters := PhysicianSearchFilters{
 		PatientID:   strings.TrimSpace(r.URL.Query().Get("patient_id")),
@@ -3012,28 +3019,19 @@ func (a *App) handlePhysicianResults(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	physician, err := a.ensurePhysicianRecord(ctx, username)
+	_, physician, err := a.requirePhysicianSessionSummary(ctx, r)
 	if err != nil {
-		if errors.Is(err, ErrProfessionalIdentityNotFound) {
-			writeJSON(w, http.StatusNotFound, PhysicianResultsErrorResponse{Message: "Profesional no encontrado."})
-			return
-		}
-		if errors.Is(err, ErrProfessionalNotLicensed) {
-			writeJSON(w, http.StatusForbidden, PhysicianResultsErrorResponse{Message: "Profesional no matriculado."})
-			return
-		}
-		a.log("error", "physician_seed_failed", map[string]any{
-			"username": username,
-			"error":    err.Error(),
-		})
-		writeJSON(w, http.StatusInternalServerError, PhysicianResultsErrorResponse{Message: "No se pudo preparar la consulta del profesional."})
+		writeJSON(w, http.StatusUnauthorized, PhysicianResultsErrorResponse{Message: "Sesión profesional inválida."})
 		return
 	}
-
+	if username != "" && subtle.ConstantTimeCompare([]byte(username), []byte(physician.Username)) != 1 {
+		writeJSON(w, http.StatusForbidden, PhysicianResultsErrorResponse{Message: "La sesión profesional no coincide con el usuario solicitado."})
+		return
+	}
 	results, err := a.listPhysicianResults(ctx, physician.ID, filters)
 	if err != nil {
 		a.log("error", "physician_results_query_failed", map[string]any{
-			"username":     username,
+			"username":     physician.Username,
 			"physician_id": physician.ID,
 			"error":        err.Error(),
 		})
@@ -3059,7 +3057,7 @@ func (a *App) handlePhysicianDownload(w http.ResponseWriter, r *http.Request) {
 
 	username := normalizeProfessionalDocumentInput(r.URL.Query().Get("username"))
 	studyInstanceUID := strings.TrimSpace(r.URL.Query().Get("study_instance_uid"))
-	if username == "" || studyInstanceUID == "" {
+	if studyInstanceUID == "" {
 		http.Error(w, "missing required query params", http.StatusBadRequest)
 		return
 	}
@@ -3067,12 +3065,15 @@ func (a *App) handlePhysicianDownload(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
-	physician, err := a.ensurePhysicianRecord(ctx, username)
+	_, physician, err := a.requirePhysicianSessionSummary(ctx, r)
 	if err != nil {
-		http.Error(w, "failed to authorize physician download", http.StatusInternalServerError)
+		http.Error(w, "invalid session", http.StatusUnauthorized)
 		return
 	}
-
+	if username != "" && subtle.ConstantTimeCompare([]byte(username), []byte(physician.Username)) != 1 {
+		http.Error(w, "physician session does not match requested user", http.StatusForbidden)
+		return
+	}
 	isLocal, _, err := a.findOrthancStudy(ctx, studyInstanceUID)
 	if err != nil {
 		http.Error(w, "failed to validate physician study", http.StatusInternalServerError)
@@ -3257,29 +3258,21 @@ func (a *App) handlePhysicianRetrieve(w http.ResponseWriter, r *http.Request) {
 
 	reqBody.Username = normalizeProfessionalDocumentInput(reqBody.Username)
 	reqBody.StudyInstanceUID = strings.TrimSpace(reqBody.StudyInstanceUID)
-	if reqBody.Username == "" || reqBody.StudyInstanceUID == "" {
-		http.Error(w, "username and study_instance_uid are required", http.StatusBadRequest)
+	if reqBody.StudyInstanceUID == "" {
+		http.Error(w, "study_instance_uid is required", http.StatusBadRequest)
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
-	physician, err := a.ensurePhysicianRecord(ctx, reqBody.Username)
+	_, physician, err := a.requirePhysicianSessionSummary(ctx, r)
 	if err != nil {
-		if errors.Is(err, ErrProfessionalIdentityNotFound) {
-			http.Error(w, "professional not found", http.StatusNotFound)
-			return
-		}
-		if errors.Is(err, ErrProfessionalNotLicensed) {
-			http.Error(w, "professional not licensed", http.StatusForbidden)
-			return
-		}
-		a.log("error", "physician_retrieve_prepare_failed", map[string]any{
-			"username": reqBody.Username,
-			"error":    err.Error(),
-		})
-		http.Error(w, "failed to prepare physician retrieve", http.StatusInternalServerError)
+		http.Error(w, "invalid session", http.StatusUnauthorized)
+		return
+	}
+	if reqBody.Username != "" && subtle.ConstantTimeCompare([]byte(reqBody.Username), []byte(physician.Username)) != 1 {
+		http.Error(w, "physician session does not match requested user", http.StatusForbidden)
 		return
 	}
 
@@ -3290,7 +3283,7 @@ func (a *App) handlePhysicianRetrieve(w http.ResponseWriter, r *http.Request) {
 			statusCode = http.StatusServiceUnavailable
 		}
 		a.log("error", "physician_retrieve_failed", map[string]any{
-			"username":          reqBody.Username,
+			"username":          physician.Username,
 			"physician_id":      physician.ID,
 			"study_instance_uid": reqBody.StudyInstanceUID,
 			"error":             err.Error(),
@@ -4199,6 +4192,81 @@ func requestIsSecure(r *http.Request) bool {
 	return strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")
 }
 
+func requestBaseOrigin(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	scheme := "http"
+	if requestIsSecure(r) {
+		scheme = "https"
+	}
+	host := strings.TrimSpace(r.Host)
+	if host == "" {
+		host = strings.TrimSpace(r.Header.Get("Host"))
+	}
+	if host == "" {
+		return ""
+	}
+	return scheme + "://" + host
+}
+
+func sameOriginRequest(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	baseOrigin := requestBaseOrigin(r)
+	if baseOrigin == "" {
+		return false
+	}
+	baseURL, err := url.Parse(baseOrigin)
+	if err != nil {
+		return false
+	}
+
+	candidates := []string{
+		strings.TrimSpace(r.Header.Get("Origin")),
+		strings.TrimSpace(r.Referer()),
+	}
+	for _, rawValue := range candidates {
+		if rawValue == "" {
+			continue
+		}
+		parsed, err := url.Parse(rawValue)
+		if err != nil {
+			continue
+		}
+		if parsed.Scheme == "" || parsed.Host == "" {
+			continue
+		}
+		if strings.EqualFold(parsed.Scheme, baseURL.Scheme) && strings.EqualFold(parsed.Host, baseURL.Host) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (a *App) withBrowserOriginCheck(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r != nil {
+			switch r.Method {
+			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+				if !sameOriginRequest(r) {
+					a.log("warn", "browser_origin_rejected", map[string]any{
+						"method":  r.Method,
+						"path":    r.URL.Path,
+						"origin":  strings.TrimSpace(r.Header.Get("Origin")),
+						"referer": strings.TrimSpace(r.Referer()),
+					})
+					http.Error(w, "cross-site request rejected", http.StatusForbidden)
+					return
+				}
+			}
+		}
+		next(w, r)
+	}
+}
+
 func setPortalSessionCookie(w http.ResponseWriter, r *http.Request, cookieName, token string, expiresAt time.Time) {
 	if w == nil || strings.TrimSpace(cookieName) == "" || strings.TrimSpace(token) == "" {
 		return
@@ -4843,6 +4911,44 @@ func (a *App) invalidatePhysicianSessionByToken(ctx context.Context, rawToken st
 	return nil
 }
 
+func (a *App) requirePatientSessionSummary(ctx context.Context, r *http.Request) (patientSessionSnapshot, PatientSummary, error) {
+	rawSessionToken := sessionCookieToken(r, patientSessionCookieName)
+	if rawSessionToken == "" {
+		return patientSessionSnapshot{}, PatientSummary{}, sql.ErrNoRows
+	}
+
+	session, err := a.patientSessionByToken(ctx, rawSessionToken)
+	if err != nil {
+		return patientSessionSnapshot{}, PatientSummary{}, err
+	}
+
+	patient, err := a.getPatientSummaryByID(ctx, session.PatientID)
+	if err != nil {
+		return patientSessionSnapshot{}, PatientSummary{}, err
+	}
+
+	return session, patient, nil
+}
+
+func (a *App) requirePhysicianSessionSummary(ctx context.Context, r *http.Request) (physicianSessionSnapshot, PhysicianSummary, error) {
+	rawSessionToken := sessionCookieToken(r, physicianSessionCookieName)
+	if rawSessionToken == "" {
+		return physicianSessionSnapshot{}, PhysicianSummary{}, sql.ErrNoRows
+	}
+
+	session, err := a.physicianSessionByToken(ctx, rawSessionToken)
+	if err != nil {
+		return physicianSessionSnapshot{}, PhysicianSummary{}, err
+	}
+
+	physician, err := a.getPhysicianSummaryByID(ctx, session.PhysicianID)
+	if err != nil {
+		return physicianSessionSnapshot{}, PhysicianSummary{}, err
+	}
+
+	return session, physician, nil
+}
+
 func (a *App) createViewerAccessGrant(ctx context.Context, subjectType, patientSessionID, physicianSessionID, studyUID, viewerKind string, r *http.Request, maxExpiresAt time.Time) (string, time.Time, error) {
 	rawToken, err := randomToken(32)
 	if err != nil {
@@ -5277,6 +5383,35 @@ func (a *App) ensurePatientRecord(ctx context.Context, documentNumber string) (P
 	patient, _, err := a.ensurePatientRecordWithIdentity(ctx, documentNumber)
 	if err != nil {
 		return PatientSummary{}, fmt.Errorf("resolve patient identity via %s: %w", a.identitySource.ProviderName(), err)
+	}
+	return patient, nil
+}
+
+func (a *App) getPatientSummaryByID(ctx context.Context, patientID string) (PatientSummary, error) {
+	var patient PatientSummary
+	var birthDate sql.NullTime
+	var genderIdentity sql.NullString
+	err := a.db.QueryRowContext(ctx, `
+		SELECT id::text, document_type, document_number, COALESCE(full_name, ''), birth_date, COALESCE(sex, ''), gender_identity
+		FROM patients
+		WHERE id = $1::uuid
+	`, patientID).Scan(
+		&patient.ID,
+		&patient.DocumentType,
+		&patient.DocumentNumber,
+		&patient.FullName,
+		&birthDate,
+		&patient.Sex,
+		&genderIdentity,
+	)
+	if err != nil {
+		return PatientSummary{}, err
+	}
+	if birthDate.Valid {
+		patient.BirthDate = birthDate.Time.UTC().Format("2006-01-02")
+	}
+	if genderIdentity.Valid {
+		patient.GenderIdentity = strings.TrimSpace(genderIdentity.String)
 	}
 	return patient, nil
 }
@@ -6183,7 +6318,7 @@ func (a *App) fetchPatientStudiesFromQIDOIdentifier(ctx context.Context, node PA
 			study.AvailabilityStatus = "available_local"
 			study.ViewerURL = buildStoneViewerURL(studyUID)
 			study.OHIFViewerURL = buildOHIFViewerURL(studyUID)
-			study.DownloadURL = buildPatientDownloadURL(documentNumber, studyUID)
+			study.DownloadURL = buildPatientDownloadURL(studyUID)
 		}
 
 		if patientName == "" {
@@ -7292,6 +7427,25 @@ func (a *App) ensurePhysicianRecord(ctx context.Context, username string) (Physi
 	return physician, nil
 }
 
+func (a *App) getPhysicianSummaryByID(ctx context.Context, physicianID string) (PhysicianSummary, error) {
+	var physician PhysicianSummary
+	err := a.db.QueryRowContext(ctx, `
+		SELECT id::text, username, COALESCE(dni, ''), COALESCE(full_name, ''), COALESCE(license_number, '')
+		FROM physicians
+		WHERE id = $1::uuid
+	`, physicianID).Scan(
+		&physician.ID,
+		&physician.Username,
+		&physician.DNI,
+		&physician.FullName,
+		&physician.LicenseNumber,
+	)
+	if err != nil {
+		return PhysicianSummary{}, err
+	}
+	return physician, nil
+}
+
 func (a *App) configuredPACSNodeByID(nodeID string) (PACSNodeConfig, bool) {
 	for _, node := range a.externalConfig.PACSNodes {
 		if strings.EqualFold(strings.TrimSpace(node.ID), strings.TrimSpace(nodeID)) {
@@ -7421,7 +7575,7 @@ func (a *App) searchPhysicianResultsFromNode(ctx context.Context, physician Phys
 		result.ViewerURL = viewerURL
 		result.OHIFViewerURL = ohifViewerURL
 		if viewerURL != "" {
-			result.DownloadURL = buildPhysicianDownloadURL(physician.Username, studyUID)
+			result.DownloadURL = buildPhysicianDownloadURL(studyUID)
 		}
 		results = append(results, result)
 	}
@@ -7647,7 +7801,7 @@ func (a *App) searchPhysicianResultsFromLocalCache(ctx context.Context, username
 				if viewerURL == "" {
 					return ""
 				}
-				return buildPhysicianDownloadURL(username, studyUID)
+				return buildPhysicianDownloadURL(studyUID)
 			}(),
 		})
 	}
@@ -8254,7 +8408,7 @@ func (a *App) listPatientStudies(ctx context.Context, patientID, documentNumber 
 		study.ViewerURL = viewerURL
 		study.OHIFViewerURL = ohifViewerURL
 		if viewerURL != "" {
-			study.DownloadURL = buildPatientDownloadURL(documentNumber, studyUID)
+			study.DownloadURL = buildPatientDownloadURL(studyUID)
 		}
 
 		studies = append(studies, study)
@@ -8316,12 +8470,12 @@ func buildOHIFViewerURL(studyInstanceUID string) string {
 	return "/ohif/viewer?StudyInstanceUIDs=" + url.QueryEscape(strings.TrimSpace(studyInstanceUID))
 }
 
-func buildPatientDownloadURL(documentNumber, studyInstanceUID string) string {
-	return "/api/patient/download?document=" + url.QueryEscape(strings.TrimSpace(documentNumber)) + "&study_instance_uid=" + url.QueryEscape(strings.TrimSpace(studyInstanceUID))
+func buildPatientDownloadURL(studyInstanceUID string) string {
+	return "/api/patient/download?study_instance_uid=" + url.QueryEscape(strings.TrimSpace(studyInstanceUID))
 }
 
-func buildPhysicianDownloadURL(username, studyInstanceUID string) string {
-	return "/api/physician/download?username=" + url.QueryEscape(strings.TrimSpace(username)) + "&study_instance_uid=" + url.QueryEscape(strings.TrimSpace(studyInstanceUID))
+func buildPhysicianDownloadURL(studyInstanceUID string) string {
+	return "/api/physician/download?study_instance_uid=" + url.QueryEscape(strings.TrimSpace(studyInstanceUID))
 }
 
 func validateExternalConfig(cfg ExternalConfig) error {

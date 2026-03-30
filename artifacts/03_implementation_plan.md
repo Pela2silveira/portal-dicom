@@ -85,6 +85,8 @@
   - botón `Retrieve` por estudio pending
   - botón `Visualizar` cuando el estudio esté local
   - flag `patient.auth_mode` para alternar rápido entre `mail`, `fake_auth` y `master_key`
+  - `mail` documentado como modo final de producción
+  - `master_key` documentado como bypass operativo transitorio
 - Superficie profesional:
   - grilla de resultados
   - acciones Retrieve / Visualizar
@@ -94,6 +96,24 @@
 - Navegación: `/` → superficie paciente/profesional sin pasar por OHIF.
 - Responsive básico (viewport mobile) sin overflow crítico.
 - Acciones de visualización abren OHIF en nueva pestaña.
+
+## Milestone 3.5 — Backend sessions + session-bound authorization
+**Goal**: Consolidar la frontera de autorización del portal antes de completar el OTP por mail, para que paciente/profesional y viewers usen la misma sesión backend como fuente de verdad.
+
+**Status**: **Done (baseline establecida)**
+
+**Deliverables**
+- Sesiones backend reales para paciente y profesional con expiración y logout explícito.
+- Grants efímeros por estudio/visor para handoff a viewer.
+- Integración con plugin de autorización Orthanc para Stone / DICOMweb.
+- Endpoints protegidos de paciente y profesional resueltos desde la sesión activa en vez de `document_number` / `username` provistos por el cliente.
+- Chequeo básico same-origin (`Origin` / `Referer`) para rutas browser-backed con métodos inseguros.
+
+**Exit criteria (testable)**
+- Sin cookie de sesión, los endpoints protegidos responden `401`.
+- Con sesión válida, `GET /api/patient/studies`, `POST /api/patient/search`, `POST /api/patient/retrieve`, `GET /api/patient/download`, `GET /api/physician/results`, `POST /api/physician/retrieve` y `GET /api/physician/download` funcionan sin depender de `document_number` / `username` para autorizar.
+- Si una UI vieja envía `document` o `username` que no coinciden con la sesión activa, el backend responde `403`.
+- `POST` browser-backed cross-site sin `Origin` / `Referer` same-origin es rechazado con `403`.
 
 ---
 

@@ -46,6 +46,9 @@ Eso reduce dependencia directa del visor con la latencia o disponibilidad del or
   - `mail`
   - `fake_auth`
   - `master_key`
+- `mail` es el método objetivo final de producción para paciente
+- `master_key` queda como bypass transitorio y operativo mientras no esté integrado el envío/validación real del código por mail
+- sesiones reales de backend para paciente
 - lista propia de estudios autorizados del paciente
 - búsqueda remota asíncrona con workers y estado persistido
 - reutilización de búsquedas en curso para evitar duplicados
@@ -57,6 +60,7 @@ Eso reduce dependencia directa del visor con la latencia o disponibilidad del or
 
 - login transitorio con validación actual configurable
 - opción futura preparada para LDAP por config
+- sesiones reales de backend para profesional
 - carga inicial desde caché local para una ventana relativa configurable
 - búsqueda remota por PACS origen seleccionado
 - panel propio de resultados, sin depender de la study list nativa del visor
@@ -122,6 +126,10 @@ Todavía hay piezas transitorias o de demo, sobre todo en autenticación final y
 - caché compartida de resultados QIDO
 - enrichments ANDES iniciales bajo feature flag
 - retrieve manual con estado persistido
+- sesiones server-side y logout/invalidation
+- endpoints paciente/profesional protegidos por sesión backend
+- grants efímeros de acceso a viewer
+- plugin de autorización Orthanc integrado para Stone / DICOMweb
 - visualización local en Stone y OHIF
 - descarga DICOM local
 - health agregado + SSE + maintenance mode
@@ -130,10 +138,9 @@ Todavía hay piezas transitorias o de demo, sobre todo en autenticación final y
 
 ### Próximo
 
-- autenticación paciente real por mail end-to-end
+- autenticación paciente real por mail end-to-end sobre el modo final `patient.auth_mode = "mail"`
 - autenticación profesional institucional real
-- sesiones reales de backend y expiración server-side
-- control efectivo de acceso a Stone / OHIF / DICOMweb por sesión y `StudyInstanceUID`
+- endurecimiento adicional de sesiones y CSRF para despliegues no locales
 - invalidación de caché QIDO y refresco de enriquecimiento ANDES
 - evolución de búsqueda profesional a multiorigen real
 - mayor observabilidad y troubleshooting operativo

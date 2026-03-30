@@ -36,11 +36,13 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - A future professional multiselect search should keep the physical cache keyed by `study_instance_uid + source_node_id`, but the logical API contract should aggregate by `StudyInstanceUID` and expose `source_node_ids[]` (plus `locations[]`) instead of relying on a single origin.
 - The patient `Enviar código` step is a backend prevalidation step: patient must exist and have an active email before the future mail delivery integration is attempted.
 - Patient auth mode must be switchable at runtime through `patient.auth_mode` in `config.json`, supporting at least `mail`, `fake_auth`, and `master_key`.
+- `patient.auth_mode = "mail"` is the target final production method for patient access.
 - With `patient.auth_mode = "fake_auth"`, the backend still requires the patient to exist but skips real email validation/sending so demos can proceed without the mail dependency.
-- With `patient.auth_mode = "master_key"`, the backend still requires the patient to exist and relies on one configured shared key in `patient.master_key`.
+- With `patient.auth_mode = "master_key"`, the backend still requires the patient to exist and relies on one configured shared key in `patient.master_key`; this mode is transitional and not the intended steady-state production design.
 - The patient `Continuar` action must call backend validation; in `master_key` mode, the entered code is compared against `patient.master_key` while preserving the same visible login flow used in demos.
 - The public runtime payload may expose the effective patient auth mode so the landing can mask the patient code field when `master_key` is active, without exposing the full config payload.
 - Portal session lifetime is shared by patient and professional surfaces and is configured through `portal.session_timeout_minutes` rather than hardcoded in the frontend.
+- Patient and professional protected backend routes must authorize from the active server-side session, not from request-supplied `document_number` / `username` parameters.
 - Public UI runtime config must be exposed through a minimal endpoint (`/api/runtime-config`) instead of publishing `/api/config`; only non-sensitive values needed by the landing/workspace shell belong there.
 - The diagonal `Demo` ribbon is controlled by `portal.show_demo_ribbon` and, when enabled, must appear consistently on the landing auth card and on both patient/professional workspaces.
 - Retrieve progress for patient and professional should stay lightweight: the portal keeps its own `retrieve_job` as the UI reference, but may mirror Orthanc job `Progress` every configurable few seconds to expose phase/percentage without high-frequency event spam.
@@ -70,7 +72,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The public landing page should visually center the access form and keep surrounding explanatory content brief and secondary.
 - The landing page and portal-owned UI surfaces must be responsive for mobile devices.
 - Physician authentication is still out of MVP implementation scope, but the target future integration is `LDAP provincial + MFA`.
-- Patient email-code validation is still out of MVP implementation scope, but the target future integration remains `DNI + código por mail`.
+- Patient email-code delivery and one-time-code verification are still pending, but the target production integration remains `DNI + código por mail`.
 - Portal-specific static assets such as logo and favicon must be served independently from OHIF assets.
 - Stone and OHIF are viewer surfaces, not the primary search or access surfaces.
 - Patient access must use a portal-owned study list filtered to authorized patient studies.
@@ -111,8 +113,8 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Physician credentials must not be stored in clear text; only session state, auth events, and encrypted provider-issued auth material are allowed.
 - Observability metrics should not be persisted in PostgreSQL for now; use structured logs and optional in-memory stats instead.
 - The native OHIF study list is a UX choice only and must not be treated as an access-control mechanism.
-- Future real access control must be enforced by backend/proxy using active portal session and allowed `StudyInstanceUID`, not by viewer visibility rules alone.
-- The current session timeout in the main UI is only a portal-shell control; real expiration of patient/professional access and viewer/image access remains a future backend/proxy responsibility.
+- Access control must be enforced by backend/proxy using active portal session and allowed `StudyInstanceUID`, not by viewer visibility rules alone.
+- Current implementation already persists backend sessions and uses them for patient/professional protected routes plus viewer grant handoff; remaining hardening is incremental, not foundational.
 - The explicit patient and physician UI contracts live in `artifacts/05_ui_contracts.md`.
 - The explicit relational model lives in `artifacts/06_data_model.md` and the initial SQL baseline in `app/backend/migrations/001_initial_schema.sql`.
 - The initial remote dcm4chee node uses `AE Title = PACSHPN`.

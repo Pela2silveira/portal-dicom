@@ -81,8 +81,8 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 
 ### 3.2 Flujo público visible en MVP: Ingreso de Pacientes
 * **UI visible en MVP:** formulario visual con `Documento`, acción `Enviar código` e ingreso de `Código por mail`.
-* **Estado actual:** sólo maqueta funcional de interfaz; no hay código por mail real ni sesión.
-* **Objetivo de integración posterior:** validación de `DNI + código por mail`.
+* **Estado actual:** existe sesión backend real y validación de acceso transitoria; aún no hay envío real ni verificación one-time-code por mail.
+* **Objetivo de integración posterior:** completar la validación final de `DNI + código por mail`.
 * **Identidad (HIS Integration):** en fase posterior, el sistema consultará un servicio REST del HIS para obtener los identificadores asociados al DNI del paciente.
 * **Transición táctica previa:** hasta contar con esa API REST, se admite un adaptador backend-only hacia MongoDB para lectura directa de identidad, siempre encapsulado detrás de una abstracción reemplazable.
 * **Restricción obligatoria del adaptador Mongo:** debe ser estrictamente `read-only`; no puede escribir, mutar ni administrar estructuras en MongoDB.
@@ -90,11 +90,13 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 * **Búsqueda Implícita futura:** al validar correctamente el ingreso de paciente, el portal armará una lista propia de estudios autorizados para ese paciente.
 * **Validación actual al enviar código:** el portal llama al backend para verificar que el paciente exista y que tenga un mail activo antes del envío real del correo.
 * **Modo de auth paciente por config:** el backend debe permitir alternar el acceso paciente mediante `patient.auth_mode` en `config.json`, con valores al menos `mail`, `fake_auth` y `master_key`.
+* **Método final esperado para paciente:** `patient.auth_mode = "mail"` es el camino final de producción.
 * **Semántica del modo `fake_auth`:** con `patient.auth_mode = "fake_auth"`, el backend mantiene la validación de existencia del paciente pero omite la validación real del mail y el envío efectivo del código.
-* **Semántica del modo `master_key`:** con `patient.auth_mode = "master_key"`, el backend valida la existencia del paciente y habilita un acceso común basado en una llave maestra configurada en `patient.master_key`.
+* **Semántica del modo `master_key`:** con `patient.auth_mode = "master_key"`, el backend valida la existencia del paciente y habilita un acceso común basado en una llave maestra configurada en `patient.master_key`; este modo es transitorio y no reemplaza el diseño final por mail.
 * **Validación efectiva en `Continuar`:** el flujo paciente debe validar el ingreso al confirmar `Continuar`; en modo `master_key` el código ingresado debe compararse contra `patient.master_key`, mientras que la visual del login permanece estable para demos.
 * **Entrada oculta para `master_key`:** cuando `patient.auth_mode = "master_key"`, el campo `Código por mail` debe comportarse como ingreso oculto con asteriscos en la UI, sin cambiar el resto de la visual del flujo.
 * **Expiración de sesión configurable:** la sesión del portal debe expirar para paciente y profesional según `portal.session_timeout_minutes` en `config.json`; el valor por defecto actual es 10 minutos.
+* **Autorización backend obligatoria por sesión:** endpoints protegidos de paciente y profesional deben resolver identidad/autorización desde la sesión server-side activa, no desde parámetros `document` o `username` enviados por el cliente.
 * **Config pública mínima:** la landing pública no debe leer `config.json` completo ni depender de `/api/config`; solo puede consumir un endpoint mínimo de runtime (`/api/runtime-config`) con los valores estrictamente necesarios para la UI principal, comenzando por `portal.session_timeout_minutes`.
 * **Cinta demo configurable:** la marca diagonal `Demo` debe habilitarse mediante `portal.show_demo_ribbon` y, cuando esté activa, debe aparecer de forma consistente en la landing pública, el workspace de paciente y el workspace de profesional.
 * **Progreso visible de retrieve:** la UI de paciente y profesional debe mostrar un progreso liviano del retrieve basado en estado/fase del job y porcentaje aproximado cuando Orthanc lo informe, sin convertir la grilla en un polling agresivo.
