@@ -92,6 +92,7 @@
 - [Ready] **System health SSE**: portal and maintenance page react to `GET /api/system/events` so they switch automatically when the backend becomes unavailable or recovers.
 - [Ready] **Logs accessible via compose**: `docker compose logs` is the primary inspection path; backend logs are JSON.
 - [Ready] **Remote deploy compose log**: `Makefile.deploy.local` persists the output of remote `docker compose up -d --build` to a timestamped log file and prints the path at the end of the deploy.
+- [Ready] **Remote deploy config verification**: `Makefile.deploy.local remote-sync-config` verifies that the remote `app/config/config.json` matches the selected local file after upload and aborts on checksum mismatch.
 - [Ready] **Remote tail helpers**: `Makefile.deploy.local` exposes `remote-tail-deploy` for the latest deploy log and `remote-logs` for live `docker compose logs -f`, optionally scoped with `SERVICE=<name>`.
 - [Ready] **Remote deploy with volume reset**: `Makefile.deploy.local remote-up` accepts `WIPE_VOLUMES=1` to run `docker compose down -v` before rebuilding, and the same remote deploy log captures both the volume wipe and the subsequent startup.
 - [Missing] **Retention automation**: backend cron for Orthanc purge (7 days) + DB cleanup (30 days) not implemented (Milestone 7 pending).
