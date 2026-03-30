@@ -4200,7 +4200,10 @@ func requestBaseOrigin(r *http.Request) string {
 	if requestIsSecure(r) {
 		scheme = "https"
 	}
-	host := strings.TrimSpace(r.Host)
+	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+	if host == "" {
+		host = strings.TrimSpace(r.Host)
+	}
 	if host == "" {
 		host = strings.TrimSpace(r.Header.Get("Host"))
 	}
