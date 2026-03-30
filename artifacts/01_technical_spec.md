@@ -638,7 +638,8 @@ Problema: Orthanc puede recibir instancias progresivamente.
 - No existe configuración en OHIF que apunte directamente a PACS remotos.
 - El handoff del portal a OHIF usa un `StudyInstanceUID` explícito, no la study list general.
 - La apertura del visor desde el portal ocurre en una pestaña nueva.
-- La autorización Orthanc distingue dos planos: tráfico browser/viewer con viewer grant efímero en cookie, y tráfico interno backend→Orthanc con `X-Orthanc-Internal-Token` para QIDO local, `/tools/find`, `/modalities/*`, `/jobs/*` y ZIPs internos.
+- La autorización Orthanc distingue dos planos: tráfico browser/viewer con viewer grant efímero en cookie y validación por resource-token, y tráfico interno backend→Orthanc con `X-Orthanc-Internal-Token`.
+- Según la documentación del plugin de autorización, varias rutas REST admin/internas de Orthanc no deben depender del parser de resource-tokens; el backend interno debe quedar autorizado por la ruta `user/get-profile` más `Permissions` explícitas para `/tools/find`, `/modalities/*`, `/jobs/*` y `/studies/{id}/archive`.
 
 ### Retención
 - Existe mecanismo automático (cron backend o equivalente) que elimina estudios expirados (>7 días) y actualiza `cached_studies`.

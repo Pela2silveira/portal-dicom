@@ -1192,6 +1192,19 @@ type orthancTokenValidationResponse struct {
 	Validity int  `json:"validity"`
 }
 
+type orthancUserProfileRequest struct {
+	TokenKey   string `json:"token-key"`
+	TokenValue string `json:"token-value"`
+	ServerID   string `json:"server-id"`
+}
+
+type orthancUserProfileResponse struct {
+	Name             string   `json:"name"`
+	AuthorizedLabels []string `json:"authorized-labels,omitempty"`
+	Permissions      []string `json:"permissions"`
+	Validity         int      `json:"validity"`
+}
+
 type PhysicianSummary struct {
 	ID            string `json:"id"`
 	Username      string `json:"username"`
@@ -1635,6 +1648,7 @@ func main() {
 	mux.HandleFunc("/api/physician/download", app.handlePhysicianDownload)
 	mux.HandleFunc("/api/physician/retrieve", app.withBrowserOriginCheck(app.handlePhysicianRetrieve))
 	mux.HandleFunc("/api/orthanc-auth/tokens/validate", app.handleOrthancTokenValidation)
+	mux.HandleFunc("/api/orthanc-auth/user/get-profile", app.handleOrthancUserProfile)
 	mux.HandleFunc("/viewer-access/", app.handleViewerAccess)
 
 	if closer, ok := app.identitySource.(patientIdentitySourceCloser); ok {
@@ -2261,6 +2275,39 @@ func (a *App) handleOrthancTokenValidation(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (a *App) handleOrthancUserProfile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var payload orthancUserProfileRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+
+	if !strings.EqualFold(strings.TrimSpace(payload.TokenKey), orthancInternalTokenHeader) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if a.cfg.OrthancInternalToken == "" {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(payload.TokenValue)), []byte(a.cfg.OrthancInternalToken)) != 1 {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, orthancUserProfileResponse{
+		Name:             "portal-backend-internal",
+		AuthorizedLabels: []string{"*"},
+		Permissions:      []string{"all"},
+		Validity:         60,
+	})
 }
 
 func (a *App) handlePatientSearch(w http.ResponseWriter, r *http.Request) {

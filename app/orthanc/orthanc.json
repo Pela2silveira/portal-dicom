@@ -20,11 +20,19 @@
   },
   "Authorization": {
     "WebServiceTokenValidationUrl": "http://backend:8081/api/orthanc-auth/tokens/validate",
+    "WebServiceUserProfileUrl": "http://backend:8081/api/orthanc-auth/user/get-profile",
     "TokenHttpHeaders": [
       "cookie",
       "x-orthanc-internal-token"
     ],
     "CheckedLevel": "studies",
+    "Permissions": [
+      ["post", "^/tools/find$", "all"],
+      ["get", "^/studies/([A-Za-z0-9-]+)/archive$", "all"],
+      ["get", "^/jobs/([A-Za-z0-9-]+)$", "all"],
+      ["put", "^/modalities/([^/]+)$", "all"],
+      ["post", "^/modalities/([^/]+)/(echo|get)$", "all"]
+    ],
     "StandardConfigurations": [
       "stone-webviewer"
     ]
