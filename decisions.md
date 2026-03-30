@@ -174,5 +174,11 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Andes HIS base URL in the target environment.
 - Confirmation of the exact auth flow for Andes in the target environment.
 
+## Open Technical Issues
+- Physician remote search still has an open bug around the UI action informally called `buscar todos`: some wide remote-search flows trigger Orthanc-side `403` noise and/or inconsistent retrieve availability even though local-cache search, viewer access, and download are already working. Current evidence points to a separate functional bug in the broad remote search path, not to the viewer/download authorization fixes completed on 2026-03-30. Acceptance criteria when revisiting:
+  - remote broad search must not emit unexpected Orthanc authorization `403` in normal operation,
+  - result rows must keep `study_instance_uid`/origin integrity,
+  - local availability, viewer, retrieve, and download actions must stay consistent for the same row.
+
 ## Notes For Agents
 - Prefer pragmatic, secure defaults.

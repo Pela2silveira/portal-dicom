@@ -94,6 +94,7 @@
 - [Missing] **Retention automation**: backend cron for Orthanc purge (7 days) + DB cleanup (30 days) not implemented (Milestone 7 pending).
 - [Ready] **Real backend portal sessions**: server-side session persistence, expiry validation, and logout invalidation are active for patient and professional flows.
 - [Ready] **Viewer/image authorization enforcement**: Stone and DICOMweb access are enforced through backend-issued viewer grants plus Orthanc authorization plugin validation by active session and allowed `StudyInstanceUID`.
+- [Open] **Broad remote physician search (`buscar todos`)**: wide remote search flows still need a focused regression pass. Known target behavior when resumed: no unexpected Orthanc `403`, no row/UID drift, and no mismatch between local availability, retrieve, viewer, and download actions for the same study row.
 - [Ready] **Viewer access grant handoff**: viewer entry uses short-lived study-scoped grants consumed at portal handoff time before the final viewer redirect.
 - [Open] **OHIF integration/lazy-loading strategy**: first confirm whether the current viewer path is only the standard `dicom-web` integration against Orthanc local or whether any Orthanc-specific plugin participates; only then evaluate whether a lazier metadata/loading strategy is relevant.
 - [Missing] **SSE proxy correctness**: Nginx config must explicitly disable buffering for SSE routes and set correct headers/timeouts (otherwise intermittent UI failures).
