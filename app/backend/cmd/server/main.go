@@ -1598,6 +1598,7 @@ func main() {
 	mux.HandleFunc("/api/livez", app.handleLivez)
 	mux.HandleFunc("/api/health", app.handleHealth)
 	mux.HandleFunc("/api/system/events", app.handleSystemEvents)
+	mux.HandleFunc("/api/viewer-auth", app.handleViewerAuth)
 	mux.HandleFunc("/api/config", app.handleConfig(appliedMigrations))
 	mux.HandleFunc("/api/runtime-config", app.handleRuntimeConfig)
 	mux.HandleFunc("/api/patient/send-code", app.handlePatientSendCode)
@@ -2206,6 +2207,34 @@ func (a *App) handlePatientLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status": "logged_out",
 	})
+}
+
+func (a *App) handleViewerAuth(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	originalURI := strings.TrimSpace(r.Header.Get("X-Original-URI"))
+	access, err := a.viewerRequestAccess(ctx, r, originalURI)
+	if err != nil {
+		http.Error(w, "viewer auth failed", http.StatusInternalServerError)
+		return
+	}
+	if !access.Allowed {
+		a.log("warn", "viewer_request_denied", map[string]any{
+			"reason":      access.Reason,
+			"original_uri": originalURI,
+			"client_ip":   clientIPForRateLimit(r),
+		})
+		http.Error(w, access.Message, access.HTTPStatus)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *App) handlePatientSearch(w http.ResponseWriter, r *http.Request) {
@@ -3168,6 +3197,13 @@ func (a *App) handlePhysicianLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status": "logged_out",
 	})
+}
+
+type viewerRequestAccessDecision struct {
+	Allowed    bool
+	HTTPStatus int
+	Message    string
+	Reason     string
 }
 
 const physicianSearchSourceLocalCache = "local_cache"
@@ -4656,6 +4692,24 @@ func (a *App) invalidatePatientSessionByToken(ctx context.Context, rawToken stri
 	return nil
 }
 
+func (a *App) patientSessionByTokenNoTouch(ctx context.Context, rawToken string) (patientSessionSnapshot, error) {
+	var session patientSessionSnapshot
+	err := a.db.QueryRowContext(ctx, `
+		SELECT id::text, patient_id::text, expires_at, status
+		FROM patient_sessions
+		WHERE token_hash = $1
+		ORDER BY created_at DESC, id DESC
+		LIMIT 1
+	`, tokenHash(rawToken)).Scan(&session.SessionID, &session.PatientID, &session.ExpiresAt, &session.Status)
+	if err != nil {
+		return patientSessionSnapshot{}, err
+	}
+	if session.Status != "active" || time.Now().UTC().After(session.ExpiresAt) {
+		return patientSessionSnapshot{}, sql.ErrNoRows
+	}
+	return session, nil
+}
+
 func (a *App) physicianSessionByToken(ctx context.Context, rawToken string) (physicianSessionSnapshot, error) {
 	var session physicianSessionSnapshot
 	err := a.db.QueryRowContext(ctx, `
@@ -4695,6 +4749,152 @@ func (a *App) invalidatePhysicianSessionByToken(ctx context.Context, rawToken st
 		return sql.ErrNoRows
 	}
 	return nil
+}
+
+func (a *App) physicianSessionByTokenNoTouch(ctx context.Context, rawToken string) (physicianSessionSnapshot, error) {
+	var session physicianSessionSnapshot
+	err := a.db.QueryRowContext(ctx, `
+		SELECT id::text, physician_id::text, expires_at, status
+		FROM physician_sessions
+		WHERE token_hash = $1
+		ORDER BY created_at DESC, id DESC
+		LIMIT 1
+	`, tokenHash(rawToken)).Scan(&session.SessionID, &session.PhysicianID, &session.ExpiresAt, &session.Status)
+	if err != nil {
+		return physicianSessionSnapshot{}, err
+	}
+	if session.Status != "active" || time.Now().UTC().After(session.ExpiresAt) {
+		return physicianSessionSnapshot{}, sql.ErrNoRows
+	}
+	return session, nil
+}
+
+func viewerRequestStudyUIDs(originalURI string) []string {
+	if strings.TrimSpace(originalURI) == "" {
+		return nil
+	}
+	parsed, err := url.ParseRequestURI(originalURI)
+	if err != nil {
+		return nil
+	}
+	query := parsed.Query()
+	var candidates []string
+
+	if study := strings.TrimSpace(query.Get("study")); study != "" {
+		candidates = append(candidates, study)
+	}
+	if studies := strings.TrimSpace(query.Get("StudyInstanceUIDs")); studies != "" {
+		for _, item := range strings.Split(studies, ",") {
+			item = strings.TrimSpace(item)
+			if item != "" {
+				candidates = append(candidates, item)
+			}
+		}
+	}
+	for _, key := range []string{"0020000D", "StudyInstanceUID"} {
+		if value := strings.TrimSpace(query.Get(key)); value != "" {
+			candidates = append(candidates, value)
+		}
+	}
+
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(parts) >= 3 && (parts[0] == "dicom-web" || parts[0] == "dicomweb") && parts[1] == "studies" {
+		if study := strings.TrimSpace(parts[2]); study != "" {
+			candidates = append(candidates, study)
+		}
+	}
+
+	return uniqueTrimmedStrings(candidates)
+}
+
+func uniqueTrimmedStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	var result []string
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func (a *App) hasViewerGrantForSession(ctx context.Context, subjectType, patientSessionID, physicianSessionID string, studyUIDs []string) (bool, error) {
+	baseQuery := `
+		SELECT EXISTS (
+			SELECT 1
+			FROM viewer_access_grants
+			WHERE subject_type = $1
+			  AND status IN ('active', 'consumed')
+			  AND consumed_uses > 0
+			  AND revoked_at IS NULL
+			  AND expires_at > now()
+			  AND (
+			        ($2 <> '' AND patient_session_id = $2::uuid)
+			     OR ($3 <> '' AND physician_session_id = $3::uuid)
+			  )
+	`
+	args := []any{subjectType, patientSessionID, physicianSessionID}
+	if len(studyUIDs) > 0 {
+		placeholders := make([]string, 0, len(studyUIDs))
+		for _, studyUID := range studyUIDs {
+			args = append(args, studyUID)
+			placeholders = append(placeholders, fmt.Sprintf("$%d", len(args)))
+		}
+		baseQuery += ` AND study_instance_uid IN (` + strings.Join(placeholders, ", ") + `) `
+	}
+	baseQuery += `)`
+
+	var exists bool
+	if err := a.db.QueryRowContext(ctx, baseQuery, args...).Scan(&exists); err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
+func (a *App) viewerRequestAccess(ctx context.Context, r *http.Request, originalURI string) (viewerRequestAccessDecision, error) {
+	studyUIDs := viewerRequestStudyUIDs(originalURI)
+
+	if rawToken := sessionCookieToken(r, patientSessionCookieName); rawToken != "" {
+		session, err := a.patientSessionByTokenNoTouch(ctx, rawToken)
+		if err == nil {
+			allowed, err := a.hasViewerGrantForSession(ctx, "patient", session.SessionID, "", studyUIDs)
+			if err != nil {
+				return viewerRequestAccessDecision{}, err
+			}
+			if allowed {
+				return viewerRequestAccessDecision{Allowed: true}, nil
+			}
+		}
+	}
+
+	if rawToken := sessionCookieToken(r, physicianSessionCookieName); rawToken != "" {
+		session, err := a.physicianSessionByTokenNoTouch(ctx, rawToken)
+		if err == nil {
+			allowed, err := a.hasViewerGrantForSession(ctx, "physician", "", session.SessionID, studyUIDs)
+			if err != nil {
+				return viewerRequestAccessDecision{}, err
+			}
+			if allowed {
+				return viewerRequestAccessDecision{Allowed: true}, nil
+			}
+		}
+	}
+
+	return viewerRequestAccessDecision{
+		Allowed:    false,
+		HTTPStatus: http.StatusUnauthorized,
+		Message:    "viewer session required",
+		Reason:     "missing_or_invalid_viewer_session",
+	}, nil
 }
 
 func (a *App) createViewerAccessGrant(ctx context.Context, subjectType, patientSessionID, physicianSessionID, studyUID, viewerKind string, r *http.Request, maxExpiresAt time.Time) (string, time.Time, error) {
