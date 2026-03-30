@@ -60,6 +60,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Nginx is the only public HTTP entrypoint.
 - If backend dependencies are unavailable, Nginx must serve a static maintenance page for the landing instead of exposing upstream failures.
 - Nginx must proxy the Orthanc DICOMweb paths needed by OHIF and the minimum Orthanc routes required by Stone Web Viewer; broader Orthanc admin navigation must remain blocked.
+- Orthanc authorization must distinguish viewer/browser traffic from backend internal traffic: viewer and DICOMweb reads stay governed by short-lived viewer grants, while backend-to-Orthanc orchestration calls are identified with a dedicated internal header token and must not depend on browser cookies.
 - The public landing page is part of the MVP and is served directly by Nginx.
 - The landing page brand is `Portal de Imágenes`.
 - The landing page should use visual identity inspired by the `andes/app` application.

@@ -21,7 +21,8 @@
   "Authorization": {
     "WebServiceTokenValidationUrl": "http://backend:8081/api/orthanc-auth/tokens/validate",
     "TokenHttpHeaders": [
-      "cookie"
+      "cookie",
+      "x-orthanc-internal-token"
     ],
     "CheckedLevel": "studies",
     "StandardConfigurations": [

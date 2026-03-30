@@ -23,6 +23,9 @@
 - **The non-viewer API boundary is now aligned with the session model**:
   - patient and physician protected routes no longer trust caller-supplied `document_number` / `username`,
   - which removes the main bypass around the viewer authorization work.
+- **Orthanc auth now has a cleaner split of responsibilities**:
+  - viewer/browser traffic stays on short-lived viewer grants,
+  - backend orchestration can use a distinct internal token instead of being mistaken for an unauthenticated browser call.
 
 ### Risks / ambiguities
 - **There are now two UI surfaces with different purposes**:

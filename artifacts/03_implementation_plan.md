@@ -106,6 +106,7 @@
 - Sesiones backend reales para paciente y profesional con expiración y logout explícito.
 - Grants efímeros por estudio/visor para handoff a viewer.
 - Integración con plugin de autorización Orthanc para Stone / DICOMweb.
+- Separación explícita entre tráfico viewer y tráfico backend→Orthanc usando `X-Orthanc-Internal-Token` para QIDO local, `/tools/find`, `/modalities/*`, `/jobs/*` y descargas internas.
 - Endpoints protegidos de paciente y profesional resueltos desde la sesión activa en vez de `document_number` / `username` provistos por el cliente.
 - Chequeo básico same-origin (`Origin` / `Referer`) para rutas browser-backed con métodos inseguros.
 

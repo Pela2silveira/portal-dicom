@@ -42,6 +42,7 @@ type Config struct {
 	OrthancURL    string
 	OrthancUser   string
 	OrthancPass   string
+	OrthancInternalToken string
 	ConfigPath    string
 	MigrationsDir string
 	LogLevel      string
@@ -1343,6 +1344,7 @@ const (
 	PatientAuthModeMail      = "mail"
 	PatientAuthModeFakeAuth  = "fake_auth"
 	PatientAuthModeMasterKey = "master_key"
+	orthancInternalTokenHeader = "X-Orthanc-Internal-Token"
 )
 
 func (c PatientConfig) ResolvedAuthMode() string {
@@ -1492,6 +1494,7 @@ func main() {
 		OrthancURL:    strings.TrimRight(strings.TrimSpace(os.Getenv("ORTHANC_URL")), "/"),
 		OrthancUser:   envOrDefault("ORTHANC_USERNAME", ""),
 		OrthancPass:   envOrDefault("ORTHANC_PASSWORD", ""),
+		OrthancInternalToken: strings.TrimSpace(os.Getenv("ORTHANC_INTERNAL_TOKEN")),
 		ConfigPath:    envOrDefault("CONFIG_PATH", "/app/config/config.json"),
 		MigrationsDir: envOrDefault("MIGRATIONS_DIR", "/app/migrations"),
 		LogLevel:      envOrDefault("LOG_LEVEL", "info"),
@@ -3318,9 +3321,7 @@ func (a *App) checkOrthanc(ctx context.Context) bool {
 		a.log("error", "orthanc_request_build_failed", map[string]any{"error": err.Error()})
 		return false
 	}
-	if a.cfg.OrthancUser != "" {
-		req.SetBasicAuth(a.cfg.OrthancUser, a.cfg.OrthancPass)
-	}
+	a.applyOrthancInternalRequestAuth(req)
 
 	res, err := a.httpClient.Do(req)
 	if err != nil {
@@ -3618,9 +3619,7 @@ func (a *App) checkRemotePACSViaOrthancEcho(parent context.Context, node PACSNod
 		return false
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if a.cfg.OrthancUser != "" {
-		req.SetBasicAuth(a.cfg.OrthancUser, a.cfg.OrthancPass)
-	}
+	a.applyOrthancInternalRequestAuth(req)
 
 	return a.executeOrthancEcho(ctx, node, resolved, req, true)
 }
@@ -5184,7 +5183,29 @@ func orthancSystemURIAllowed(uri string) bool {
 	return strings.HasPrefix(uri, "/stone-webviewer/")
 }
 
+func (a *App) applyOrthancInternalRequestAuth(req *http.Request) {
+	if req == nil {
+		return
+	}
+	if a.cfg.OrthancUser != "" {
+		req.SetBasicAuth(a.cfg.OrthancUser, a.cfg.OrthancPass)
+	}
+	if a.cfg.OrthancInternalToken != "" {
+		req.Header.Set(orthancInternalTokenHeader, a.cfg.OrthancInternalToken)
+	}
+}
+
 func (a *App) validateOrthancToken(ctx context.Context, payload orthancTokenValidationRequest) (orthancTokenValidationResponse, string, error) {
+	if strings.EqualFold(strings.TrimSpace(payload.TokenKey), orthancInternalTokenHeader) {
+		if a.cfg.OrthancInternalToken == "" {
+			return orthancTokenValidationResponse{Granted: false, Validity: 1}, "internal_token_not_configured", nil
+		}
+		if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(payload.TokenValue)), []byte(a.cfg.OrthancInternalToken)) == 1 {
+			return orthancTokenValidationResponse{Granted: true, Validity: 60}, "granted_internal_token", nil
+		}
+		return orthancTokenValidationResponse{Granted: false, Validity: 1}, "invalid_internal_token", nil
+	}
+
 	method := strings.ToLower(strings.TrimSpace(payload.Method))
 	if method != "" && method != "get" && method != "head" {
 		return orthancTokenValidationResponse{Granted: false, Validity: 1}, "unsupported_method", nil
@@ -6413,9 +6434,7 @@ func (a *App) findOrthancStudy(ctx context.Context, studyUID string) (bool, stri
 		return false, "", fmt.Errorf("build orthanc qido request: %w", err)
 	}
 	req.Header.Set("Accept", "application/dicom+json, application/json")
-	if a.cfg.OrthancUser != "" {
-		req.SetBasicAuth(a.cfg.OrthancUser, a.cfg.OrthancPass)
-	}
+	a.applyOrthancInternalRequestAuth(req)
 
 	res, err := a.httpClient.Do(req)
 	if err != nil {
@@ -6442,9 +6461,7 @@ func (a *App) findOrthancStudy(ctx context.Context, studyUID string) (bool, stri
 		return true, "", nil
 	}
 	lookupReq.Header.Set("Content-Type", "application/json")
-	if a.cfg.OrthancUser != "" {
-		lookupReq.SetBasicAuth(a.cfg.OrthancUser, a.cfg.OrthancPass)
-	}
+	a.applyOrthancInternalRequestAuth(lookupReq)
 	lookupRes, err := a.httpClient.Do(lookupReq)
 	if err != nil {
 		return true, "", nil
@@ -6491,9 +6508,7 @@ func (a *App) streamStudyArchiveByUID(ctx context.Context, w http.ResponseWriter
 	if err != nil {
 		return err
 	}
-	if a.cfg.OrthancUser != "" {
-		req.SetBasicAuth(a.cfg.OrthancUser, a.cfg.OrthancPass)
-	}
+	a.applyOrthancInternalRequestAuth(req)
 
 	res, err := a.httpClient.Do(req)
 	if err != nil {
@@ -6964,9 +6979,7 @@ func (a *App) fetchOrthancJobStatus(ctx context.Context, orthancJobID string) (o
 	if err != nil {
 		return orthancRetrieveStatus{}, err
 	}
-	if a.cfg.OrthancUser != "" {
-		req.SetBasicAuth(a.cfg.OrthancUser, a.cfg.OrthancPass)
-	}
+	a.applyOrthancInternalRequestAuth(req)
 
 	res, err := a.httpClient.Do(req)
 	if err != nil {
@@ -7076,9 +7089,7 @@ func (a *App) ensureOrthancModality(ctx context.Context, node PACSNodeConfig) er
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if a.cfg.OrthancUser != "" {
-		req.SetBasicAuth(a.cfg.OrthancUser, a.cfg.OrthancPass)
-	}
+	a.applyOrthancInternalRequestAuth(req)
 
 	res, err := a.httpClient.Do(req)
 	if err != nil {
@@ -7133,9 +7144,7 @@ func (a *App) executeOrthancEcho(ctx context.Context, node PACSNodeConfig, resol
 			return false
 		}
 		retryReq.Header.Set("Content-Type", "application/json")
-		if a.cfg.OrthancUser != "" {
-			retryReq.SetBasicAuth(a.cfg.OrthancUser, a.cfg.OrthancPass)
-		}
+		a.applyOrthancInternalRequestAuth(retryReq)
 		return a.executeOrthancEcho(ctx, node, resolved, retryReq, false)
 	}
 
@@ -7171,9 +7180,7 @@ func (a *App) startOrthancCGetWithRefresh(ctx context.Context, node PACSNodeConf
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if a.cfg.OrthancUser != "" {
-		req.SetBasicAuth(a.cfg.OrthancUser, a.cfg.OrthancPass)
-	}
+	a.applyOrthancInternalRequestAuth(req)
 
 	orthancRetrieveClient := &http.Client{}
 	res, err := orthancRetrieveClient.Do(req)
@@ -7741,9 +7748,7 @@ func (a *App) searchPhysicianResultsFromLocalCache(ctx context.Context, username
 		return nil, fmt.Errorf("build orthanc physician cache request: %w", err)
 	}
 	req.Header.Set("Accept", "application/dicom+json, application/json")
-	if a.cfg.OrthancUser != "" {
-		req.SetBasicAuth(a.cfg.OrthancUser, a.cfg.OrthancPass)
-	}
+	a.applyOrthancInternalRequestAuth(req)
 
 	res, err := a.httpClient.Do(req)
 	if err != nil {

@@ -130,6 +130,7 @@ Todavía hay piezas transitorias o de demo, sobre todo en autenticación final y
 - endpoints paciente/profesional protegidos por sesión backend
 - grants efímeros de acceso a viewer
 - plugin de autorización Orthanc integrado para Stone / DICOMweb
+- requests internas backend → Orthanc distinguidas con `X-Orthanc-Internal-Token`, para no mezclar checks/retrieve/QIDO interno con la autorización basada en viewer grants
 - visualización local en Stone y OHIF
 - descarga DICOM local
 - health agregado + SSE + maintenance mode
@@ -278,6 +279,7 @@ Puntos importantes:
 - no cachear `/api/`, `/ohif/`, `/stone-webviewer/`, `/dicom-web/`
 - mantener SSE sin buffering
 - preservar `Host`, `X-Forwarded-For`, `X-Forwarded-Proto`
+- definir `ORTHANC_INTERNAL_TOKEN` distinto del default de desarrollo en cualquier despliegue real
 - si hay Cloudflare, restaurar y forwardear IP real
 
 ## Origen del proyecto

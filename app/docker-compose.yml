@@ -27,6 +27,7 @@ services:
       LISTEN_ADDR: ${BACKEND_LISTEN_ADDR:-:8081}
       POSTGRES_DSN: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       ORTHANC_URL: ${ORTHANC_URL:-http://orthanc:8042}
+      ORTHANC_INTERNAL_TOKEN: ${ORTHANC_INTERNAL_TOKEN:-portal-dev-orthanc-internal}
       CONFIG_PATH: ${CONFIG_PATH:-/app/config/config.json}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:

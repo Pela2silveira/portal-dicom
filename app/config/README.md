@@ -169,6 +169,7 @@ Public exposure note:
 
 - The full `/api/config` endpoint is operational/internal and stays blocked by public Nginx.
 - The landing UI reads only a minimal public runtime payload from `/api/runtime-config`, currently limited to safe `portal` fields such as `session_timeout_minutes` and `show_demo_ribbon`, plus the effective patient `auth_mode` needed to adapt the code-entry input.
+- Orthanc viewer/image authorization is separate from backend internal orchestration: backend requests to Orthanc use env `ORTHANC_INTERNAL_TOKEN` through header `X-Orthanc-Internal-Token`, while browser/viewer traffic remains bound to short-lived viewer grant cookies.
 
 ## `professional`
 
