@@ -2016,7 +2016,15 @@
           physicianSearchSource.value = state.physician.source || physicianLocalCacheSourceValue;
           showWorkspace("physician");
           try {
-            await loadPhysicianResults(state.physician.username);
+            await loadPhysicianResults(state.physician.username, {
+              useInitialCachePeriod:
+                !state.physician.patient_id &&
+                !state.physician.patient_name &&
+                !state.physician.date_from &&
+                !state.physician.date_to &&
+                !state.physician.modality &&
+                (state.physician.source || physicianLocalCacheSourceValue) === physicianLocalCacheSourceValue
+            });
           } catch (_error) {
             physicianResultList.innerHTML =
               '<div class="empty-state">No se pudieron restaurar los resultados del profesional.</div>';
@@ -2940,6 +2948,7 @@
         activePhysicianUsername = username;
         const silentRefresh = Boolean(options.silentRefresh);
         const restoreStudyUID = options.restoreStudyUID || "";
+        const useInitialCachePeriod = Boolean(options.useInitialCachePeriod);
         const previousScrollX = window.scrollX;
         const previousScrollY = window.scrollY;
 
@@ -2954,6 +2963,9 @@
         }
         if (physicianSearchModality.value.trim()) params.set("modality", physicianSearchModality.value.trim());
         params.set("source", physicianSearchSource.value || physicianLocalCacheSourceValue);
+        if (useInitialCachePeriod) {
+          params.set("use_initial_cache_period", "true");
+        }
 
         if (!silentRefresh) {
           physicianResultList.innerHTML =
@@ -3611,7 +3623,7 @@
           physicianLicenseValue.textContent = payload.physician?.license_number || "-";
           physicianNote.textContent = payload.message || "Acceso validado.";
           try {
-            await loadPhysicianResults(dniValue);
+            await loadPhysicianResults(dniValue, { useInitialCachePeriod: true });
           } catch (error) {
             physicianResultList.innerHTML =
               '<div class="empty-state">No se pudieron cargar los resultados del profesional.</div>';

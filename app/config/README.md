@@ -180,7 +180,7 @@ Current professional access behavior flags.
 Fields:
 
 - `fake_auth`: when `true`, professional access uses the current transitional validation flow instead of real LDAP/MFA
-- `initial_cache_period`: controls the no-filter result window loaded after professional login from Orthanc local cache
+- `initial_cache_period`: controls the initial no-filter result window loaded after professional login from Orthanc local cache; an explicit manual `Buscar` on `local_cache` without filters is allowed to return the full local cache
 - `weekly_download_limit`: maximum number of full-study DICOM ZIP downloads a professional can trigger during a calendar week
 - `license_exceptions`: optional list of DNI/username entries that may access the portal bypassing both active matrícula and `habilitado == true`
 
