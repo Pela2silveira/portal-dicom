@@ -116,7 +116,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The native OHIF study list is a UX choice only and must not be treated as an access-control mechanism.
 - Access control must be enforced by backend/proxy using active portal session and allowed `StudyInstanceUID`, not by viewer visibility rules alone.
 - Current implementation already persists backend sessions and uses them for patient/professional protected routes plus viewer grant handoff; remaining hardening is incremental, not foundational.
-- The Orthanc authorization plugin must distinguish viewer resource-tokens from backend internal admin traffic: resource-token validation remains for Stone/OHIF/DICOMweb study access, while backend-only admin routes (`/tools/find`, `/modalities/*`, `/jobs/*`, `/studies/{id}/archive`) must be authorized through the plugin `user profile` + `Permissions` path using `X-Orthanc-Internal-Token`.
+- The Orthanc authorization plugin must distinguish viewer resource-tokens from backend internal admin traffic: resource-token validation remains for Stone/OHIF/DICOMweb study access, while backend-only admin routes (`/modalities/*`, `/jobs/*`, `/studies/{id}/archive`) are authorized through the plugin `user profile` + `Permissions` path using `X-Orthanc-Internal-Token`; viewer grant cookies may receive one narrowly scoped permission only to let the plugin execute internal `POST /tools/find` during viewer/DICOMweb flows.
 - The explicit patient and physician UI contracts live in `artifacts/05_ui_contracts.md`.
 - The explicit relational model lives in `artifacts/06_data_model.md` and the initial SQL baseline in `app/backend/migrations/001_initial_schema.sql`.
 - The initial remote dcm4chee node uses `AE Title = PACSHPN`.

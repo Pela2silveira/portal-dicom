@@ -27,7 +27,7 @@
     ],
     "CheckedLevel": "studies",
     "Permissions": [
-      ["post", "^/tools/find$", "all"],
+      ["post", "^/tools/find$", "all|viewer-tools-find"],
       ["get", "^/studies/([A-Za-z0-9-]+)/archive$", "all"],
       ["get", "^/jobs/([A-Za-z0-9-]+)$", "all"],
       ["put", "^/modalities/([^/]+)$", "all"],

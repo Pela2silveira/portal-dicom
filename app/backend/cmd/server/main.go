@@ -2290,6 +2290,39 @@ func (a *App) handleOrthancUserProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !strings.EqualFold(strings.TrimSpace(payload.TokenKey), orthancInternalTokenHeader) {
+		if strings.EqualFold(strings.TrimSpace(payload.TokenKey), "cookie") {
+			ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+			defer cancel()
+
+			for _, rawToken := range viewerGrantTokensFromCookieHeader(payload.TokenValue) {
+				grant, err := a.viewerAccessGrantByToken(ctx, rawToken)
+				if err != nil {
+					if errors.Is(err, sql.ErrNoRows) {
+						continue
+					}
+					http.Error(w, "orthanc user profile lookup failed", http.StatusInternalServerError)
+					return
+				}
+				if _, denied := validateOrthancViewerGrant(grant, time.Now().UTC()); denied {
+					continue
+				}
+				if _, denied, err := a.viewerGrantSessionValid(ctx, grant); err != nil {
+					http.Error(w, "orthanc user profile lookup failed", http.StatusInternalServerError)
+					return
+				} else if denied {
+					continue
+				}
+
+				writeJSON(w, http.StatusOK, orthancUserProfileResponse{
+					Name:             "portal-viewer-grant",
+					AuthorizedLabels: []string{"*"},
+					Permissions:      []string{"viewer-tools-find"},
+					Validity:         60,
+				})
+				return
+			}
+		}
+
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
