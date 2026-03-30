@@ -157,3 +157,8 @@ The first coding target should be only this:
 6. OHIF loading through Nginx against local Orthanc.
 
 Do not start with full search or C-GET before this is working.
+
+## Open UI follow-ups
+
+- Review the patient login screen on mobile: the access block still looks visually narrower than the professional login on some devices and needs a focused responsive pass.
+- Review and optimize the full professional search section for mobile, including filters, actions, and result readability.
