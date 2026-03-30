@@ -2498,8 +2498,11 @@
               const downloadAction = study.download_url
                 ? '<a class="action action-primary" href="' + escapeHTML(study.download_url) + '" rel="noopener noreferrer">Descargar DICOM</a>'
                 : "";
+              const shareWhatsAppAction = study.viewer_url
+                ? '<button class="action action-primary" type="button" data-patient-share-whatsapp="' + escapeHTML(study.study_instance_uid) + '" data-viewer-kind="stone">WhatsApp</button>'
+                : "";
               const shareAction = study.viewer_url
-                ? '<button class="action action-primary" type="button" data-patient-share="' + escapeHTML(study.study_instance_uid) + '" data-viewer-kind="stone">Compartir</button>'
+                ? '<button class="action ghost" type="button" data-patient-share="' + escapeHTML(study.study_instance_uid) + '" data-viewer-kind="stone">Compartir</button>'
                 : "";
 
               const statusChips =
@@ -2533,7 +2536,7 @@
                     modalities +
                     '<div class="chip">' + escapeHTML(study.study_instance_uid) + '</div>' +
                   '</div>' +
-                  '<div class="inline-actions">' + action + ohifAction + downloadAction + shareAction + '</div>' +
+                  '<div class="inline-actions">' + action + ohifAction + downloadAction + shareWhatsAppAction + shareAction + '</div>' +
                 '</article>'
               );
             })
@@ -3438,6 +3441,45 @@
           return;
         }
 
+        const shareWhatsAppButton = event.target.closest("[data-patient-share-whatsapp]");
+        if (shareWhatsAppButton) {
+          const studyInstanceUID = shareWhatsAppButton.getAttribute("data-patient-share-whatsapp");
+          const viewerKind = shareWhatsAppButton.getAttribute("data-viewer-kind") || "stone";
+          if (!studyInstanceUID) {
+            return;
+          }
+
+          shareWhatsAppButton.disabled = true;
+          const originalLabel = shareWhatsAppButton.textContent;
+          shareWhatsAppButton.textContent = "Preparando...";
+          try {
+            const payload = await createPatientStudyShare(studyInstanceUID, viewerKind);
+            if (payload.whatsapp_url) {
+              const popup = window.open(payload.whatsapp_url, "_blank", "noopener");
+              if (popup) {
+                return;
+              }
+            }
+
+            const shareURL = payload.share_url || "";
+            if (shareURL && navigator.clipboard?.writeText) {
+              await navigator.clipboard.writeText(shareURL);
+              alert("No se pudo abrir WhatsApp automáticamente. Enlace copiado al portapapeles.\n\nVence: " + (payload.expires_at || "-"));
+              return;
+            }
+
+            if (shareURL) {
+              alert("No se pudo abrir WhatsApp automáticamente. Comparta este enlace:\n\n" + shareURL);
+            }
+          } catch (error) {
+            alert(error?.payload?.message || "No se pudo crear el enlace para compartir este estudio.");
+          } finally {
+            shareWhatsAppButton.disabled = false;
+            shareWhatsAppButton.textContent = originalLabel;
+          }
+          return;
+        }
+
         const shareButton = event.target.closest("[data-patient-share]");
         if (shareButton) {
           const studyInstanceUID = shareButton.getAttribute("data-patient-share");
@@ -3465,13 +3507,6 @@
                 shared = true;
               } catch (_error) {
                 shared = false;
-              }
-            }
-
-            if (!shared && payload.whatsapp_url) {
-              const popup = window.open(payload.whatsapp_url, "_blank", "noopener");
-              if (popup) {
-                shared = true;
               }
             }
 
