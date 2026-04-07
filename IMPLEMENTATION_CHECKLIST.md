@@ -162,3 +162,4 @@ Do not start with full search or C-GET before this is working.
 
 - Review the patient login screen on mobile: the access block still looks visually narrower than the professional login on some devices and needs a focused responsive pass.
 - Review and optimize the full professional search section for mobile, including filters, actions, and result readability.
+- Review refresh behavior around retrieve flows, especially on mobile, to ensure the UI does not jump, lose context, or reflow awkwardly while retrieve status updates arrive.
