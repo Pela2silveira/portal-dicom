@@ -167,3 +167,9 @@ Do not start with full search or C-GET before this is working.
     - verify whether `watchPatientRetrieveJob()` / `watchPhysicianRetrieveJob()` receive the terminal `done` state
     - verify whether `loadPatientStudies(..., { silentRefresh: true })` and `loadPhysicianResults(..., { silentRefresh: true })` are triggered after retrieve completion
     - verify whether backend state is already `done` / `available_local` while the frontend remains stale until manual refresh
+- Review non-visual accessibility end-to-end so the app becomes usable for blind users:
+  - keyboard-only navigation and focus order across login, workspaces, filters, results, viewer access, and retrieve flows
+  - screen-reader semantics for custom controls, especially role selector, date pickers, tooltips, and dynamic result lists
+  - field-level error announcement and live-region messaging for login, retrieve progress, and session expiration
+  - avoid relying only on color for error/status communication
+  - run a dedicated pass with real assistive technology targets (VoiceOver / TalkBack / NVDA as applicable)
