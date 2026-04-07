@@ -362,6 +362,23 @@
         box-shadow: 0 0 0 4px rgba(0, 168, 224, 0.22);
       }
 
+      .field-group.has-error input,
+      .field-group.has-error select {
+        border-color: #fda29b;
+        box-shadow: 0 0 0 3px rgba(180, 35, 24, 0.18);
+      }
+
+      .field-error {
+        color: #ffd6d2;
+        font-size: 0.84rem;
+        line-height: 1.4;
+        min-height: 1.2em;
+      }
+
+      .field-error:empty {
+        display: none;
+      }
+
       .workspace-card .field-group label {
         color: var(--accent-dark);
       }
@@ -1337,6 +1354,7 @@
                 <div class="field-group">
                   <label for="patient-document">Documento</label>
                   <input id="patient-document" name="patient-document" type="text" inputmode="numeric" maxlength="11" autocomplete="off" spellcheck="false" placeholder="Ingrese su DNI sin puntos">
+                  <div class="field-error" id="patient-document-error" aria-live="polite"></div>
                 </div>
                 <button class="action action-secondary" id="send-mail-code" type="button">Enviar código</button>
               </div>
@@ -1344,6 +1362,7 @@
               <div class="field-group">
                   <label for="patient-mail-code">Código por mail</label>
                   <input id="patient-mail-code" name="patient-mail-code" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="Ingrese el código recibido por mail">
+                  <div class="field-error" id="patient-mail-code-error" aria-live="polite"></div>
               </div>
 
               <button class="action action-secondary" id="patient-continue" type="button" disabled>Continuar</button>
@@ -1355,11 +1374,13 @@
               <div class="field-group">
                 <label for="physician-dni">DNI</label>
                 <input id="physician-dni" name="physician-dni" type="text" inputmode="numeric" maxlength="11" autocomplete="off" spellcheck="false" placeholder="Ingrese su DNI">
+                <div class="field-error" id="physician-dni-error" aria-live="polite"></div>
               </div>
 
               <div class="field-group">
                 <label for="physician-password">Contraseña</label>
                 <input id="physician-password" name="physician-password" type="password" autocomplete="current-password" spellcheck="false" placeholder="Ingrese su contraseña">
+                <div class="field-error" id="physician-password-error" aria-live="polite"></div>
               </div>
 
               <button class="action action-secondary" id="physician-continue" type="button" disabled>Continuar</button>
@@ -1679,6 +1700,8 @@
       const mailCodeButton = document.getElementById("send-mail-code");
       const patientDocument = document.getElementById("patient-document");
       const patientMailCode = document.getElementById("patient-mail-code");
+      const patientDocumentError = document.getElementById("patient-document-error");
+      const patientMailCodeError = document.getElementById("patient-mail-code-error");
       const patientFilterPeriod = document.getElementById("patient-filter-period");
       const patientFilterModality = document.getElementById("patient-filter-modality");
       const patientDateDropdown = document.getElementById("patient-date-dropdown");
@@ -1699,6 +1722,8 @@
       const patientValidateButton = document.getElementById("patient-continue");
       const physicianDni = document.getElementById("physician-dni");
       const physicianPassword = document.getElementById("physician-password");
+      const physicianDniError = document.getElementById("physician-dni-error");
+      const physicianPasswordError = document.getElementById("physician-password-error");
       const physicianSearchPatientID = document.getElementById("physician-search-patient-id");
       const physicianSearchPatient = document.getElementById("physician-search-patient");
       const physicianFilterPeriod = document.getElementById("physician-filter-period");
@@ -1847,10 +1872,12 @@
         patientMailCode.value = "";
         patientMailCodeReady = false;
         clearMailCodeFeedback();
+        clearPatientLoginErrors();
         syncPatientContinueState();
 
         physicianDni.value = "";
         physicianPassword.value = "";
+        clearPhysicianLoginErrors();
         physicianNote.classList.remove("warning");
         physicianNote.textContent = "Ingrese su DNI y contraseña institucional para acceder.";
         syncPhysicianContinueState();
@@ -2134,6 +2161,42 @@
 
       function normalizePatientLookupIdentifierInput(value) {
         return String(value || "").replace(/\D+/g, "").slice(0, 11);
+      }
+
+      function clearFieldError(input, errorNode) {
+        const fieldGroup = input?.closest(".field-group");
+        if (fieldGroup) {
+          fieldGroup.classList.remove("has-error");
+        }
+        if (input) {
+          input.removeAttribute("aria-invalid");
+        }
+        if (errorNode) {
+          errorNode.textContent = "";
+        }
+      }
+
+      function setFieldError(input, errorNode, message) {
+        const fieldGroup = input?.closest(".field-group");
+        if (fieldGroup) {
+          fieldGroup.classList.add("has-error");
+        }
+        if (input) {
+          input.setAttribute("aria-invalid", "true");
+        }
+        if (errorNode) {
+          errorNode.textContent = message || "";
+        }
+      }
+
+      function clearPatientLoginErrors() {
+        clearFieldError(patientDocument, patientDocumentError);
+        clearFieldError(patientMailCode, patientMailCodeError);
+      }
+
+      function clearPhysicianLoginErrors() {
+        clearFieldError(physicianDni, physicianDniError);
+        clearFieldError(physicianPassword, physicianPasswordError);
       }
 
       function clearMailCodeFeedback() {
@@ -3706,13 +3769,14 @@
         const documentValue = normalizePatientDocumentInput(patientDocument.value);
         patientDocument.value = documentValue;
         clearMailCodeFeedback();
+        clearPatientLoginErrors();
 
         if (!documentValue) {
-          setMailCodeFeedback("Ingrese su documento antes de solicitar el código por mail.", true);
+          setFieldError(patientDocument, patientDocumentError, "Ingrese su documento antes de solicitar el código por mail.");
           return;
         }
         if (documentValue.length < 7) {
-          setMailCodeFeedback("Ingrese un documento válido para solicitar el código por mail.", true);
+          setFieldError(patientDocument, patientDocumentError, "Ingrese un documento válido para solicitar el código por mail.");
           return;
         }
 
@@ -3726,8 +3790,8 @@
         } catch (error) {
           patientMailCodeReady = false;
           const fallbackMessage =
-            "No se pudo validar el contacto del paciente.<br>Concurra a su <strong>Centro de Salud</strong> más cercano para actualizar sus datos de contacto.";
-          setMailCodeFeedback(error?.payload?.message || fallbackMessage, true);
+            "No se pudo validar el contacto del paciente. Concurra a su Centro de Salud más cercano para actualizar sus datos de contacto.";
+          setFieldError(patientDocument, patientDocumentError, error?.payload?.message || fallbackMessage);
         } finally {
           mailCodeButton.disabled = false;
           mailCodeButton.textContent = "Enviar código";
@@ -3743,18 +3807,19 @@
         patientDocument.value = documentValue;
         const mailCodeValue = patientMailCode.value.trim();
         clearMailCodeFeedback();
+        clearPatientLoginErrors();
 
         if (!documentValue) {
-          setMailCodeFeedback("Ingrese su documento antes de continuar.", true);
+          setFieldError(patientDocument, patientDocumentError, "Ingrese su documento antes de continuar.");
           return;
         }
         if (documentValue.length < 7) {
-          setMailCodeFeedback("Ingrese un documento válido para continuar.", true);
+          setFieldError(patientDocument, patientDocumentError, "Ingrese un documento válido para continuar.");
           return;
         }
 
         if (!mailCodeValue) {
-          setMailCodeFeedback("Ingrese el código para continuar.", true);
+          setFieldError(patientMailCode, patientMailCodeError, "Ingrese el código para continuar.");
           return;
         }
 
@@ -3766,7 +3831,7 @@
         } catch (error) {
           patientValidateButton.textContent = "Continuar";
           syncPatientContinueState();
-          setMailCodeFeedback(error?.payload?.message || "No se pudo validar el acceso del paciente.", true);
+          setFieldError(patientMailCode, patientMailCodeError, error?.payload?.message || "No se pudo validar el acceso del paciente.");
           return;
         }
 
@@ -3796,18 +3861,17 @@
         const dniValue = normalizePhysicianDocumentInput(physicianDni.value);
         physicianDni.value = dniValue;
         const passwordValue = physicianPassword.value.trim();
+        clearPhysicianLoginErrors();
 
         physicianNote.classList.remove("warning");
 
         if (!dniValue) {
-          physicianNote.textContent = "Ingrese su DNI antes de continuar.";
-          physicianNote.classList.add("warning");
+          setFieldError(physicianDni, physicianDniError, "Ingrese su DNI antes de continuar.");
           return;
         }
 
         if (!passwordValue) {
-          physicianNote.textContent = "Ingrese su contraseña para continuar.";
-          physicianNote.classList.add("warning");
+          setFieldError(physicianPassword, physicianPasswordError, "Ingrese su contraseña para continuar.");
           return;
         }
 
@@ -3830,9 +3894,17 @@
               '<div class="empty-state">No se pudieron cargar los resultados del profesional.</div>';
           }
         } catch (error) {
-          physicianNote.textContent =
-            error?.payload?.message || "No se pudo validar el acceso profesional.";
-          physicianNote.classList.add("warning");
+          const message = error?.payload?.message || "No se pudo validar el acceso profesional.";
+          if (/usuario|dni/i.test(message)) {
+            setFieldError(physicianDni, physicianDniError, message);
+          }
+          if (/contraseñ|password/i.test(message)) {
+            setFieldError(physicianPassword, physicianPasswordError, message);
+          }
+          if (!/usuario|dni|contraseñ|password/i.test(message)) {
+            setFieldError(physicianDni, physicianDniError, message);
+            setFieldError(physicianPassword, physicianPasswordError, message);
+          }
         } finally {
           physicianLoginButton.textContent = "Continuar";
           syncPhysicianContinueState();
@@ -3850,6 +3922,7 @@
       patientDocument.addEventListener("input", () => {
         patientDocument.value = normalizePatientDocumentInput(patientDocument.value);
         patientMailCodeReady = false;
+        clearFieldError(patientDocument, patientDocumentError);
         syncPatientContinueState();
       });
       patientDocument.addEventListener("keydown", event => {
@@ -3866,7 +3939,10 @@
           }
         }
       });
-      patientMailCode.addEventListener("input", syncPatientContinueState);
+      patientMailCode.addEventListener("input", () => {
+        clearFieldError(patientMailCode, patientMailCodeError);
+        syncPatientContinueState();
+      });
       patientMailCode.addEventListener("keydown", event => {
         if (event.key === "Tab" && !event.shiftKey) {
           event.preventDefault();
@@ -3885,6 +3961,7 @@
       });
       physicianDni.addEventListener("input", () => {
         physicianDni.value = normalizePhysicianDocumentInput(physicianDni.value);
+        clearFieldError(physicianDni, physicianDniError);
         syncPhysicianContinueState();
       });
       physicianDni.addEventListener("keydown", event => {
@@ -3893,7 +3970,10 @@
           focusPhysicianPasswordInput();
         }
       });
-      physicianPassword.addEventListener("input", syncPhysicianContinueState);
+      physicianPassword.addEventListener("input", () => {
+        clearFieldError(physicianPassword, physicianPasswordError);
+        syncPhysicianContinueState();
+      });
       physicianPassword.addEventListener("keydown", event => {
         if (event.key === "Tab" && !event.shiftKey) {
           event.preventDefault();
