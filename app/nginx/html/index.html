@@ -292,12 +292,8 @@
       }
 
       .flow {
-        display: none;
-        gap: 14px;
-      }
-
-      .flow.active {
         display: grid;
+        gap: 14px;
       }
 
       .field-group {
@@ -427,10 +423,6 @@
       .note-accent {
         background: rgba(255, 255, 255, 0.12);
         color: #ffffff;
-      }
-
-      .hidden {
-        display: none !important;
       }
 
       .warning {
@@ -1277,7 +1269,7 @@
 
       <main class="hero">
         <section class="panel panel-with-ribbon auth">
-          <div class="demo-ribbon hidden" data-demo-ribbon aria-hidden="true">Demo</div>
+          <div class="demo-ribbon" data-demo-ribbon aria-hidden="true">Demo</div>
           <div class="auth-top">
             <h3>Acceso al portal</h3>
             <p>Seleccione su perfil para continuar.</p>
@@ -1315,7 +1307,7 @@
 
               <button class="action action-secondary" id="patient-continue" type="button" disabled>Continuar</button>
 
-              <div class="note note-accent hidden" id="mail-code-feedback"></div>
+              <div class="note note-accent" id="mail-code-feedback"></div>
             </section>
 
             <section class="flow" data-flow="physician">
@@ -1339,9 +1331,9 @@
         </section>
       </main>
 
-      <main class="workspace hidden" id="patient-workspace">
+      <main class="workspace" id="patient-workspace">
         <section class="panel panel-with-ribbon">
-          <div class="demo-ribbon hidden" data-demo-ribbon aria-hidden="true">Demo</div>
+          <div class="demo-ribbon" data-demo-ribbon aria-hidden="true">Demo</div>
           <div class="workspace-header">
             <div>
               <p class="eyebrow">Paciente</p>
@@ -1457,9 +1449,9 @@
         </section>
       </main>
 
-      <main class="workspace hidden" id="physician-workspace">
+      <main class="workspace" id="physician-workspace">
         <section class="panel panel-with-ribbon">
-          <div class="demo-ribbon hidden" data-demo-ribbon aria-hidden="true">Demo</div>
+          <div class="demo-ribbon" data-demo-ribbon aria-hidden="true">Demo</div>
           <div class="workspace-header">
             <div>
               <p class="eyebrow">Profesional</p>
@@ -1621,11 +1613,27 @@
     </div>
 
     <script>
+      function detachNode(node) {
+        if (node && node.parentNode) {
+          node.parentNode.removeChild(node);
+        }
+      }
+
+      function mountNodeAfter(anchor, node) {
+        if (!anchor || !anchor.parentNode || !node) {
+          return;
+        }
+        anchor.parentNode.insertBefore(node, anchor.nextSibling);
+      }
+
       const hero = document.querySelector(".hero");
+      const shell = document.querySelector(".shell");
+      const authBody = document.querySelector(".auth-body");
       const patientWorkspace = document.getElementById("patient-workspace");
       const physicianWorkspace = document.getElementById("physician-workspace");
+      const patientFlow = document.querySelector('[data-flow="patient"]');
+      const physicianFlow = document.querySelector('[data-flow="physician"]');
       const roleButtons = document.querySelectorAll("[data-role]");
-      const flows = document.querySelectorAll("[data-flow]");
       const demoRibbons = document.querySelectorAll("[data-demo-ribbon]");
       const mailCodeButton = document.getElementById("send-mail-code");
       const patientDocument = document.getElementById("patient-document");
@@ -1673,7 +1681,21 @@
       const physicianLoginButton = document.getElementById("physician-continue");
       const physicianNote = document.querySelector('[data-flow="physician"] .note');
       const resetButtons = document.querySelectorAll("[data-reset]");
+      const screenAnchor = document.createComment("active-screen");
+      shell.insertBefore(screenAnchor, hero);
+      const flowAnchor = document.createComment("active-flow");
+      authBody.insertBefore(flowAnchor, patientFlow);
+      const mailCodeFeedbackAnchor = document.createComment("mail-code-feedback");
+      mailCodeFeedback.parentNode.insertBefore(mailCodeFeedbackAnchor, mailCodeFeedback);
+      const demoRibbonStates = Array.from(demoRibbons).map(ribbon => {
+        const placeholder = document.createComment("demo-ribbon");
+        ribbon.parentNode.insertBefore(placeholder, ribbon);
+        return { ribbon, placeholder };
+      });
       const physicianLocalCacheSourceValue = "local_cache";
+      let activeRole = "patient";
+      let activeScreen = "hero";
+      let activeWorkspaceKind = "";
       let activePatientDocument = "";
       let activePhysicianUsername = "";
       let activePatientSearchRequestID = "";
@@ -1710,20 +1732,27 @@
         };
       })();
 
+      function setActiveRoleFlow(role) {
+        activeRole = role === "physician" ? "physician" : "patient";
+        detachNode(patientFlow);
+        detachNode(physicianFlow);
+        mountNodeAfter(flowAnchor, activeRole === "physician" ? physicianFlow : patientFlow);
+      }
+
       function activateRole(role) {
         roleButtons.forEach(button => {
           button.classList.toggle("active", button.dataset.role === role);
         });
-
-        flows.forEach(flow => {
-          flow.classList.toggle("active", flow.dataset.flow === role);
-        });
+        setActiveRoleFlow(role);
       }
 
       function showWorkspace(kind) {
-        hero.classList.add("hidden");
-        patientWorkspace.classList.toggle("hidden", kind !== "patient");
-        physicianWorkspace.classList.toggle("hidden", kind !== "physician");
+        detachNode(hero);
+        detachNode(patientWorkspace);
+        detachNode(physicianWorkspace);
+        mountNodeAfter(screenAnchor, kind === "patient" ? patientWorkspace : physicianWorkspace);
+        activeScreen = "workspace";
+        activeWorkspaceKind = kind === "physician" ? "physician" : "patient";
         if (kind === "physician") {
           refreshPhysicianPACSHealth();
         }
@@ -1750,17 +1779,17 @@
       }
 
       async function resetLanding() {
-        const activeKind =
-          !patientWorkspace.classList.contains("hidden") ? "patient" :
-          (!physicianWorkspace.classList.contains("hidden") ? "physician" : "");
+        const activeKind = activeWorkspaceKind;
         await logoutPortalSession(activeKind);
         clearPatientSyncPoll();
         clearPatientRetrievePoll();
         clearPhysicianRetrievePoll();
         clearPortalSession();
-        hero.classList.remove("hidden");
-        patientWorkspace.classList.add("hidden");
-        physicianWorkspace.classList.add("hidden");
+        detachNode(patientWorkspace);
+        detachNode(physicianWorkspace);
+        mountNodeAfter(screenAnchor, hero);
+        activeScreen = "hero";
+        activeWorkspaceKind = "";
         patientSyncStatus.classList.remove("active", "error");
         patientSyncStatus.textContent = "";
         activePatientSearchRequestID = "";
@@ -1776,9 +1805,7 @@
         patientDocument.value = "";
         patientMailCode.value = "";
         patientMailCodeReady = false;
-        mailCodeFeedback.classList.add("hidden");
-        mailCodeFeedback.classList.remove("warning");
-        mailCodeFeedback.innerHTML = "";
+        clearMailCodeFeedback();
         syncPatientContinueState();
 
         physicianDni.value = "";
@@ -1845,8 +1872,12 @@
       }
 
       function applyDemoRibbonVisibility() {
-        demoRibbons.forEach(ribbon => {
-          ribbon.classList.toggle("hidden", !portalShowDemoRibbon);
+        demoRibbonStates.forEach(({ ribbon, placeholder }) => {
+          if (portalShowDemoRibbon) {
+            mountNodeAfter(placeholder, ribbon);
+          } else {
+            detachNode(ribbon);
+          }
         });
       }
 
@@ -1864,7 +1895,7 @@
 
       function focusActiveRoleButton() {
         window.requestAnimationFrame(() => {
-          if (!hero.classList.contains("hidden")) {
+          if (activeScreen === "hero") {
             const activeRoleButton = document.querySelector(".role-button.active");
             if (activeRoleButton instanceof HTMLElement) {
               activeRoleButton.focus({ preventScroll: true });
@@ -1875,7 +1906,7 @@
 
       function focusPatientDocumentInput() {
         window.requestAnimationFrame(() => {
-          if (!hero.classList.contains("hidden")) {
+          if (activeScreen === "hero" && activeRole === "patient") {
             patientDocument.focus({ preventScroll: true });
           }
         });
@@ -1883,7 +1914,7 @@
 
       function focusPatientMailCodeInput() {
         window.requestAnimationFrame(() => {
-          if (!hero.classList.contains("hidden")) {
+          if (activeScreen === "hero" && activeRole === "patient") {
             patientMailCode.focus({ preventScroll: true });
             patientMailCode.select();
           }
@@ -1892,7 +1923,7 @@
 
       function focusPatientContinueButton() {
         window.requestAnimationFrame(() => {
-          if (!hero.classList.contains("hidden")) {
+          if (activeScreen === "hero" && activeRole === "patient") {
             patientValidateButton.focus({ preventScroll: true });
           }
         });
@@ -1900,7 +1931,7 @@
 
       function focusPhysicianPasswordInput() {
         window.requestAnimationFrame(() => {
-          if (!hero.classList.contains("hidden")) {
+          if (activeScreen === "hero" && activeRole === "physician") {
             physicianPassword.focus({ preventScroll: true });
           }
         });
@@ -1908,14 +1939,14 @@
 
       function focusPhysicianContinueButton() {
         window.requestAnimationFrame(() => {
-          if (!hero.classList.contains("hidden")) {
+          if (activeScreen === "hero" && activeRole === "physician") {
             physicianLoginButton.focus({ preventScroll: true });
           }
         });
       }
 
       function savePortalWorkspaceState(kindOverride = "") {
-        const activeKind = kindOverride || (!patientWorkspace.classList.contains("hidden") ? "patient" : (!physicianWorkspace.classList.contains("hidden") ? "physician" : ""));
+        const activeKind = kindOverride || activeWorkspaceKind;
         if (!activeKind) {
           sessionStorage.removeItem(portalWorkspaceStorageKey);
           return;
@@ -2064,8 +2095,16 @@
         return String(value || "").replace(/\D+/g, "").slice(0, 11);
       }
 
+      function clearMailCodeFeedback() {
+        mailCodeFeedback.classList.remove("warning");
+        mailCodeFeedback.textContent = "";
+        mailCodeFeedback.innerHTML = "";
+        detachNode(mailCodeFeedback);
+      }
+
       function setMailCodeFeedback(message, isWarning = false) {
-        mailCodeFeedback.classList.remove("hidden", "warning");
+        mountNodeAfter(mailCodeFeedbackAnchor, mailCodeFeedback);
+        mailCodeFeedback.classList.remove("warning");
         mailCodeFeedback.textContent = "";
         mailCodeFeedback.innerHTML = message;
         if (isWarning) {
@@ -3250,7 +3289,7 @@
             returnToLandingSoft();
             return;
           }
-          if (!physicianWorkspace.classList.contains("hidden")) {
+          if (activeWorkspaceKind === "physician") {
             refreshPhysicianPACSHealth();
           }
         });
@@ -3625,8 +3664,7 @@
       mailCodeButton.addEventListener("click", async () => {
         const documentValue = normalizePatientDocumentInput(patientDocument.value);
         patientDocument.value = documentValue;
-
-        mailCodeFeedback.classList.remove("hidden", "warning");
+        clearMailCodeFeedback();
 
         if (!documentValue) {
           setMailCodeFeedback("Ingrese su documento antes de solicitar el código por mail.", true);
@@ -3663,8 +3701,7 @@
         const documentValue = normalizePatientDocumentInput(patientDocument.value);
         patientDocument.value = documentValue;
         const mailCodeValue = patientMailCode.value.trim();
-
-        mailCodeFeedback.classList.remove("hidden", "warning");
+        clearMailCodeFeedback();
 
         if (!documentValue) {
           setMailCodeFeedback("Ingrese su documento antes de continuar.", true);
@@ -3760,6 +3797,12 @@
           syncPhysicianContinueState();
         }
       });
+
+      detachNode(patientWorkspace);
+      detachNode(physicianWorkspace);
+      detachNode(physicianFlow);
+      detachNode(mailCodeFeedback);
+      demoRibbonStates.forEach(({ ribbon }) => detachNode(ribbon));
 
       activateRole("patient");
       applyPatientPreset("month");
