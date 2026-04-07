@@ -665,6 +665,7 @@
           "data"
           "date"
           "modality"
+          "source"
           "action";
         align-items: start;
       }
@@ -1239,6 +1240,22 @@
           padding-right: 20px;
         }
 
+        .workspace-stack {
+          min-width: 0;
+        }
+
+        .summary-grid,
+        .summary-grid-compact {
+          grid-template-columns: 1fr;
+        }
+
+        .summary-item,
+        .summary-item.summary-item-wide,
+        .field-group-grouped,
+        .professional-filter-layout > * {
+          min-width: 0;
+        }
+
         .item-head {
           flex-direction: column;
         }
@@ -1256,6 +1273,11 @@
 
         .row {
           grid-template-columns: 1fr;
+        }
+
+        .workspace-header {
+          flex-direction: column;
+          align-items: stretch;
         }
 
         .action,
