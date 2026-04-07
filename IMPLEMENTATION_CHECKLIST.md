@@ -163,3 +163,7 @@ Do not start with full search or C-GET before this is working.
 - Review the patient login screen on mobile: the access block still looks visually narrower than the professional login on some devices and needs a focused responsive pass.
 - Review and optimize the full professional search section for mobile, including filters, actions, and result readability.
 - Review refresh behavior around retrieve flows, especially on mobile, to ensure the UI does not jump, lose context, or reflow awkwardly while retrieve status updates arrive.
+  - Debug first:
+    - verify whether `watchPatientRetrieveJob()` / `watchPhysicianRetrieveJob()` receive the terminal `done` state
+    - verify whether `loadPatientStudies(..., { silentRefresh: true })` and `loadPhysicianResults(..., { silentRefresh: true })` are triggered after retrieve completion
+    - verify whether backend state is already `done` / `available_local` while the frontend remains stale until manual refresh
