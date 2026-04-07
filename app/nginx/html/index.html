@@ -261,6 +261,10 @@
         cursor: pointer;
         transition: background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
         min-width: 0;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        align-items: start;
+        gap: 12px;
       }
 
       .role-button:hover {
@@ -274,16 +278,47 @@
         transform: translateY(-1px);
       }
 
-      .role-button strong,
-      .role-button span {
+      .role-radio {
+        position: relative;
+        width: 18px;
+        height: 18px;
+        border: 2px solid currentColor;
+        border-radius: 999px;
+        opacity: 0.9;
+        margin-top: 2px;
+        flex-shrink: 0;
+      }
+
+      .role-radio::after {
+        content: "";
+        position: absolute;
+        inset: 3px;
+        border-radius: 999px;
+        background: currentColor;
+        opacity: 0;
+        transform: scale(0.6);
+        transition: opacity 160ms ease, transform 160ms ease;
+      }
+
+      .role-button.active .role-radio::after {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      .role-copy {
+        min-width: 0;
+      }
+
+      .role-copy strong,
+      .role-copy span {
         display: block;
       }
 
-      .role-button strong {
+      .role-copy strong {
         font-size: 1rem;
       }
 
-      .role-button span {
+      .role-copy span {
         color: inherit;
         opacity: 0.8;
         font-size: 0.8rem;
@@ -1282,12 +1317,18 @@
 
             <div class="role-switch" aria-label="Seleccion de perfil">
               <button class="role-button active" type="button" data-role="patient">
-                <strong>Paciente</strong>
-                <span>Consulte y recupere sus estudios.</span>
+                <span class="role-radio" aria-hidden="true"></span>
+                <span class="role-copy">
+                  <strong>Paciente</strong>
+                  <span>Consulte y recupere sus estudios.</span>
+                </span>
               </button>
               <button class="role-button" type="button" data-role="physician">
-                <strong>Profesional</strong>
-                <span>Busque, revise y recupere estudios.</span>
+                <span class="role-radio" aria-hidden="true"></span>
+                <span class="role-copy">
+                  <strong>Profesional</strong>
+                  <span>Busque, revise y recupere estudios.</span>
+                </span>
               </button>
             </div>
 
