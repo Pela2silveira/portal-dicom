@@ -181,3 +181,9 @@ Do not start with full search or C-GET before this is working.
     - not every study with 1-5 images is clinically simple or safe to summarize visually
     - some modalities/encodings may not render consistently through Orthanc core APIs without plugin support
     - multiframe / cine / secondary-capture edge cases complicate the notion of “download the study as JPG”
+- Add professional login hardening against repeated credential failures:
+  - define temporary user lockout behavior after consecutive failed password attempts
+  - decide storage, expiration window, reset policy after successful login, and audit logging without leaking sensitive details
+- Define and implement a weekly login limit policy where applicable:
+  - clarify whether the limit applies to patient logins, professional logins, or both
+  - define how the weekly window is measured, how the user is informed, and what operational exceptions or resets are needed
