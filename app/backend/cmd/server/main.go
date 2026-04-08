@@ -7655,7 +7655,6 @@ func (a *App) fetchPatientStudiesFromQIDOIdentifier(ctx context.Context, node PA
 }
 
 func (a *App) fetchPatientStudiesFromCFind(ctx context.Context, node PACSNodeConfig, patient PatientSummary, filters PatientStudiesFilter, identifiers []PatientAlternateIdentifier) ([]PatientStudy, error) {
-	startedAt := time.Now()
 	observedStudies := make(map[string]struct{})
 	studyByUID := make(map[string]PatientStudy)
 	identifierIndex := patientIdentifierSet(identifiers)
@@ -7749,26 +7748,11 @@ func (a *App) fetchPatientStudiesFromCFind(ctx context.Context, node PACSNodeCon
 		return nil
 	}
 
-	a.log("info", "patient_cfind_probe_started", map[string]any{
-		"document_number":  patient.DocumentNumber,
-		"patient_id":       patient.ID,
-		"node_id":          node.ID,
-		"identifier_count": len(identifiers),
-		"sync_filters":     filters,
-	})
-
 	for _, identifier := range identifiers {
 		identifierValue := strings.TrimSpace(identifier.Value)
 		if identifierValue == "" {
 			continue
 		}
-		a.log("info", "patient_cfind_request_started", map[string]any{
-			"document_number": documentNumberOrFallback(patient.DocumentNumber, identifierValue),
-			"node_id":         node.ID,
-			"patient_id_type": identifier.Type,
-			"patient_id_value": identifierValue,
-		})
-
 		payload, err := a.runOrthancStudyCFind(ctx, node, PhysicianSearchFilters{
 			PatientID: identifierValue,
 			DateFrom:  filters.DateFrom,
@@ -7789,35 +7773,14 @@ func (a *App) fetchPatientStudiesFromCFind(ctx context.Context, node PACSNodeCon
 	demographicBirthDate := formatDICOMDate(patient.BirthDate)
 	demographicSex := normalizeRemoteSex(patient.Sex)
 	demographicNameQuery := buildPatientSurnameCFindQuery(patient.FullName)
-	a.log("info", "patient_cfind_demographic_inputs", map[string]any{
-		"document_number":         patient.DocumentNumber,
-		"node_id":                 node.ID,
-		"full_name":               patient.FullName,
-		"name_query":              demographicNameQuery,
-		"birth_date":              patient.BirthDate,
-		"sex":                     patient.Sex,
-		"normalized_birth_date":   demographicBirthDate,
-		"normalized_sex":          demographicSex,
-		"has_demographic_name":    demographicNameQuery != "",
-		"has_demographic_birth":   demographicBirthDate != "",
-		"has_demographic_sex":     demographicSex != "",
-	})
 	if demographicNameQuery != "" && demographicBirthDate != "" && demographicSex != "" {
-		a.log("info", "patient_cfind_demographic_request_started", map[string]any{
-			"document_number": patient.DocumentNumber,
-			"node_id":         node.ID,
-			"patient_name":    patient.FullName,
-			"name_query":      demographicNameQuery,
-			"birth_date":      patient.BirthDate,
-			"sex":             patient.Sex,
-		})
 		payload, err := a.runOrthancStudyCFind(ctx, node, PhysicianSearchFilters{
 			PatientNameRaw: demographicNameQuery,
-			BirthDate:   demographicBirthDate,
-			Sex:         demographicSex,
-			DateFrom:    filters.DateFrom,
-			DateTo:      filters.DateTo,
-			Modality:    filters.Modality,
+			BirthDate:      demographicBirthDate,
+			Sex:            demographicSex,
+			DateFrom:       filters.DateFrom,
+			DateTo:         filters.DateTo,
+			Modality:       filters.Modality,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("run patient demographic c-find on %s: %w", node.ID, err)
@@ -7838,16 +7801,6 @@ func (a *App) fetchPatientStudiesFromCFind(ctx context.Context, node PACSNodeCon
 			return studies[i].StudyInstanceUID < studies[j].StudyInstanceUID
 		}
 		return studies[i].StudyDate > studies[j].StudyDate
-	})
-
-	a.log("info", "patient_cfind_probe_completed", map[string]any{
-		"document_number":  patient.DocumentNumber,
-		"patient_id":       patient.ID,
-		"node_id":          node.ID,
-		"identifier_count": len(identifiers),
-		"candidate_count":  len(observedStudies),
-		"study_count":      len(studies),
-		"duration_ms":      time.Since(startedAt).Milliseconds(),
 	})
 
 	return studies, nil
