@@ -4273,16 +4273,26 @@ func (a *App) remotePACSComponents(ctx context.Context) []ComponentHealth {
 	components := make([]ComponentHealth, 0, len(a.externalConfig.PACSNodes))
 	for _, node := range a.externalConfig.PACSNodes {
 		resolved := node.Resolved()
-		status := ComponentStatusUnknown
-		message := "health check skipped"
-
-		baseURL := strings.TrimSpace(resolved.DICOMwebBaseURL)
-		if baseURL != "" {
-			status = boolToComponentStatus(a.checkRemotePACS(ctx, node))
+		status := boolToComponentStatus(a.checkRemotePACS(ctx, node))
+		message := "remote pacs reachable"
+		switch resolved.HealthMode {
+		case "dimse_c_echo":
+			message = "dimse echo reachable"
+			if status != ComponentStatusHealthy {
+				message = "dimse echo unreachable"
+			}
+		case "auth_qido":
 			message = "dicomweb reachable"
 			if status != ComponentStatusHealthy {
 				message = "dicomweb unreachable"
 			}
+		case "http", "mixed", "":
+			message = "dicomweb reachable"
+			if status != ComponentStatusHealthy {
+				message = "dicomweb unreachable"
+			}
+		default:
+			message = "health check result"
 		}
 
 		components = append(components, ComponentHealth{
