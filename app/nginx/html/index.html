@@ -1810,6 +1810,7 @@
             </div>
           </div>
           <div class="share-qr-footer">
+            <button class="action ghost" id="patient-share-qr-share" type="button">Compartir</button>
             <button class="action ghost" id="patient-share-qr-copy" type="button">Copiar enlace</button>
             <button class="action action-primary" id="patient-share-qr-whatsapp" type="button">Abrir WhatsApp</button>
           </div>
@@ -1885,6 +1886,7 @@
       const patientShareQRExpiresAt = document.getElementById("patient-share-qr-expires-at");
       const patientShareQRMaxUses = document.getElementById("patient-share-qr-max-uses");
       const patientShareQRLink = document.getElementById("patient-share-qr-link");
+      const patientShareQRShare = document.getElementById("patient-share-qr-share");
       const patientShareQRCopy = document.getElementById("patient-share-qr-copy");
       const patientShareQRWhatsApp = document.getElementById("patient-share-qr-whatsapp");
       const patientShareQRClose = document.getElementById("patient-share-qr-close");
@@ -2862,14 +2864,8 @@
               const downloadAction = study.download_url
                 ? '<a class="action action-primary" href="' + escapeHTML(study.download_url) + '" rel="noopener noreferrer">Descargar DICOM</a>'
                 : "";
-              const shareWhatsAppAction = study.viewer_url
-                ? '<button class="action action-primary" type="button" data-patient-share-whatsapp="' + escapeHTML(study.study_instance_uid) + '" data-viewer-kind="stone">WhatsApp</button>'
-                : "";
               const shareAction = study.viewer_url
-                ? '<button class="action ghost" type="button" data-patient-share="' + escapeHTML(study.study_instance_uid) + '" data-viewer-kind="stone">Compartir</button>'
-                : "";
-              const shareQRAction = study.viewer_url
-                ? '<button class="action ghost" type="button" data-patient-share-qr="' + escapeHTML(study.study_instance_uid) + '" data-viewer-kind="stone">QR</button>'
+                ? '<button class="action action-primary" type="button" data-patient-share="' + escapeHTML(study.study_instance_uid) + '" data-viewer-kind="stone">Compartir</button>'
                 : "";
 
               const statusChips =
@@ -2903,7 +2899,7 @@
                     modalities +
                     '<div class="chip">' + escapeHTML(study.study_instance_uid) + '</div>' +
                   '</div>' +
-                  '<div class="inline-actions">' + action + shareWhatsAppAction + shareAction + shareQRAction + ohifAction + downloadAction + '</div>' +
+                  '<div class="inline-actions">' + action + shareAction + ohifAction + downloadAction + '</div>' +
                 '</article>'
               );
             })
@@ -3808,44 +3804,6 @@
           return;
         }
 
-        const shareWhatsAppButton = event.target.closest("[data-patient-share-whatsapp]");
-        if (shareWhatsAppButton) {
-          const studyInstanceUID = shareWhatsAppButton.getAttribute("data-patient-share-whatsapp");
-          const viewerKind = shareWhatsAppButton.getAttribute("data-viewer-kind") || "stone";
-          if (!studyInstanceUID) {
-            return;
-          }
-
-          shareWhatsAppButton.disabled = true;
-          const originalLabel = shareWhatsAppButton.textContent;
-          shareWhatsAppButton.textContent = "Preparando...";
-          try {
-            const payload = await createPatientStudyShare(studyInstanceUID, viewerKind, "whatsapp");
-            if (payload.whatsapp_url) {
-              const popup = window.open(payload.whatsapp_url, "_blank", "noopener");
-              if (popup) {
-                return;
-              }
-            }
-
-            const shareURL = payload.share_url || "";
-            if (shareURL && await copyTextToClipboard(shareURL)) {
-              alert("No se pudo abrir WhatsApp automáticamente. Enlace copiado al portapapeles.\n\nVence: " + (payload.expires_at || "-"));
-              return;
-            }
-
-            if (shareURL) {
-              alert("No se pudo abrir WhatsApp automáticamente. Comparta este enlace:\n\n" + shareURL);
-            }
-          } catch (error) {
-            alert(error?.payload?.message || "No se pudo crear el enlace para compartir este estudio.");
-          } finally {
-            shareWhatsAppButton.disabled = false;
-            shareWhatsAppButton.textContent = originalLabel;
-          }
-          return;
-        }
-
         const shareButton = event.target.closest("[data-patient-share]");
         if (shareButton) {
           const studyInstanceUID = shareButton.getAttribute("data-patient-share");
@@ -3859,62 +3817,15 @@
           shareButton.textContent = "Preparando...";
           try {
             const payload = await createPatientStudyShare(studyInstanceUID, viewerKind, "share");
-            const shareURL = payload.share_url || "";
-            const shareText = "Te comparto mi estudio de diagnóstico por imágenes.";
-            let shared = false;
-
-            if (navigator.share) {
-              try {
-                await navigator.share({
-                  title: "Te comparto mi estudio de diagnóstico por imágenes",
-                  text: shareText,
-                  url: shareURL
-                });
-                shared = true;
-              } catch (_error) {
-                shared = false;
-              }
+            if (!payload.qr_code_data_url || !payload.share_url) {
+              throw new Error("patient share payload incomplete");
             }
-
-            if (!shared && shareURL && await copyTextToClipboard(shareURL)) {
-              alert("Enlace copiado al portapapeles.\n\nVence: " + (payload.expires_at || "-"));
-              shared = true;
-            }
-
-            if (!shared && shareURL) {
-              alert("Comparta este enlace:\n\n" + shareURL);
-            }
+            openPatientShareQR(payload);
           } catch (error) {
             alert(error?.payload?.message || "No se pudo crear el enlace para compartir este estudio.");
           } finally {
             shareButton.disabled = false;
             shareButton.textContent = originalLabel;
-          }
-          return;
-        }
-
-        const shareQRButton = event.target.closest("[data-patient-share-qr]");
-        if (shareQRButton) {
-          const studyInstanceUID = shareQRButton.getAttribute("data-patient-share-qr");
-          const viewerKind = shareQRButton.getAttribute("data-viewer-kind") || "stone";
-          if (!studyInstanceUID) {
-            return;
-          }
-
-          shareQRButton.disabled = true;
-          const originalLabel = shareQRButton.textContent;
-          shareQRButton.textContent = "Preparando...";
-          try {
-            const payload = await createPatientStudyShare(studyInstanceUID, viewerKind, "qr");
-            if (!payload.qr_code_data_url || !payload.share_url) {
-              throw new Error("patient qr share payload incomplete");
-            }
-            openPatientShareQR(payload);
-          } catch (error) {
-            alert(error?.payload?.message || "No se pudo generar el código QR para compartir este estudio.");
-          } finally {
-            shareQRButton.disabled = false;
-            shareQRButton.textContent = originalLabel;
           }
           return;
         }
@@ -4212,6 +4123,31 @@
       patientShareQROverlay.addEventListener("click", event => {
         if (event.target === patientShareQROverlay) {
           closePatientShareQR();
+        }
+      });
+      patientShareQRShare.addEventListener("click", async () => {
+        const shareURL = patientShareQRCopy.dataset.shareUrl || "";
+        const shareText = "Te comparto mi estudio de diagnóstico por imágenes.";
+        let shared = false;
+        if (navigator.share) {
+          try {
+            await navigator.share({
+              title: "Te comparto mi estudio de diagnóstico por imágenes",
+              text: shareText,
+              url: shareURL
+            });
+            shared = true;
+          } catch (_error) {
+            shared = false;
+          }
+        }
+        if (!shared && shareURL && await copyTextToClipboard(shareURL)) {
+          alert("Enlace copiado al portapapeles.");
+          shared = true;
+        }
+        if (!shared && shareURL) {
+          patientShareQRLink.focus({ preventScroll: true });
+          patientShareQRLink.select();
         }
       });
       patientShareQRCopy.addEventListener("click", async () => {
