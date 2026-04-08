@@ -3065,7 +3065,7 @@
                   '<div class="chip-row">' +
                     (study.locations || []).map(location => '<div class="chip success">Hospital: ' + escapeHTML(location) + '</div>').join("") +
                     modalities +
-                    '<div class="chip">' + escapeHTML(study.study_instance_uid) + '</div>' +
+                    '<div class="chip">ID: ' + escapeHTML(study.study_instance_uid) + '</div>' +
                   '</div>' +
                   '<div class="inline-actions">' + previewAction + action + shareAction + ohifAction + downloadAction + '</div>' +
                 '</article>'
@@ -3286,7 +3286,7 @@
                 '<div class="chip-row">' +
                   (result.locations || []).map(location => '<div class="chip success">Hospital: ' + escapeHTML(location) + '</div>').join("") +
                   modalities +
-                  '<div class="chip">' + escapeHTML(result.study_instance_uid) + '</div>' +
+                  '<div class="chip">ID: ' + escapeHTML(result.study_instance_uid) + '</div>' +
                 '</div>' +
                 '<div class="inline-actions">' +
                   retrieveAction +
