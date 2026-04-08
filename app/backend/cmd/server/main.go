@@ -7749,6 +7749,18 @@ func (a *App) fetchPatientStudiesFromCFind(ctx context.Context, node PACSNodeCon
 	demographicName := strings.TrimSpace(patient.FullName)
 	demographicBirthDate := formatDICOMDate(patient.BirthDate)
 	demographicSex := normalizeRemoteSex(patient.Sex)
+	a.log("info", "patient_cfind_demographic_inputs", map[string]any{
+		"document_number":         patient.DocumentNumber,
+		"node_id":                 node.ID,
+		"full_name":               patient.FullName,
+		"birth_date":              patient.BirthDate,
+		"sex":                     patient.Sex,
+		"normalized_birth_date":   demographicBirthDate,
+		"normalized_sex":          demographicSex,
+		"has_demographic_name":    demographicName != "",
+		"has_demographic_birth":   demographicBirthDate != "",
+		"has_demographic_sex":     demographicSex != "",
+	})
 	if demographicName != "" && demographicBirthDate != "" && demographicSex != "" {
 		a.log("info", "patient_cfind_demographic_request_started", map[string]any{
 			"document_number": patient.DocumentNumber,
