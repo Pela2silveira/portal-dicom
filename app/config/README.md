@@ -140,11 +140,13 @@ Fields:
   - `fake_auth`: demo flow, validates patient existence but skips real mail-code delivery
   - `master_key`: transitional operational bypass, validates patient existence and uses one shared configured key for patient access while the real `mail` delivery/verification integration is incomplete
 - `master_key`: required when `auth_mode` is `master_key`
+- `match_debug_nodes`: optional list of PACS node ids for which the backend should log identity-comparison probes between the HIS patient dataset and the remote patient dataset returned by search
 
 Operational note:
 
 - `mail` is the intended steady-state patient authentication mode for production.
 - `master_key` is not the target product design; keep it only as a temporary fallback for controlled environments.
+- `match_debug_nodes` is intended only as a temporary diagnostic aid while defining patient matching rules for non-homogeneous remote datasets such as DIMSE-only PACS nodes.
 
 Backward compatibility:
 

@@ -1438,9 +1438,10 @@ type HISConfig struct {
 }
 
 type PatientConfig struct {
-	AuthMode  string `json:"auth_mode"`
-	FakeAuth  bool   `json:"fake_auth,omitempty"`
-	MasterKey string `json:"master_key,omitempty"`
+	AuthMode        string   `json:"auth_mode"`
+	FakeAuth        bool     `json:"fake_auth,omitempty"`
+	MasterKey       string   `json:"master_key,omitempty"`
+	MatchDebugNodes []string `json:"match_debug_nodes,omitempty"`
 }
 
 type ProfessionalConfig struct {
@@ -5614,6 +5615,78 @@ func buildPatientNameFuzzyQuery(value string) string {
 	return "*" + strings.Join(tokens, "*") + "*"
 }
 
+type remotePatientMatchCandidate struct {
+	NodeID           string
+	StudyInstanceUID string
+	PatientID        string
+	PatientName      string
+	BirthDate        string
+	Sex              string
+}
+
+func (a *App) shouldLogPatientMatchDebug(nodeID string) bool {
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" {
+		return false
+	}
+	for _, configured := range a.externalConfig.Patient.MatchDebugNodes {
+		if strings.EqualFold(strings.TrimSpace(configured), nodeID) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeRemoteBirthDate(value string) string {
+	trimmed := strings.TrimSpace(value)
+	switch {
+	case len(trimmed) == 8 && !strings.Contains(trimmed, "-"):
+		if parsed, err := time.Parse("20060102", trimmed); err == nil {
+			return parsed.Format("2006-01-02")
+		}
+	case len(trimmed) == 10:
+		if parsed, err := time.Parse("2006-01-02", trimmed); err == nil {
+			return parsed.Format("2006-01-02")
+		}
+	}
+	return trimmed
+}
+
+func normalizeRemoteSex(value string) string {
+	return strings.ToUpper(strings.TrimSpace(value))
+}
+
+func (a *App) logPatientIdentityComparison(patient PatientSummary, candidate remotePatientMatchCandidate) {
+	if !a.shouldLogPatientMatchDebug(candidate.NodeID) {
+		return
+	}
+	hisDocument := strings.TrimSpace(patient.DocumentNumber)
+	remotePatientID := strings.TrimSpace(candidate.PatientID)
+	hisName := normalizeFuzzySearchText(patient.FullName)
+	remoteName := normalizeFuzzySearchText(candidate.PatientName)
+	hisBirthDate := strings.TrimSpace(patient.BirthDate)
+	remoteBirthDate := normalizeRemoteBirthDate(candidate.BirthDate)
+	hisSex := normalizeRemoteSex(patient.Sex)
+	remoteSex := normalizeRemoteSex(candidate.Sex)
+
+	a.log("info", "patient_identity_match_probe", map[string]any{
+		"node_id":                     candidate.NodeID,
+		"study_instance_uid":          candidate.StudyInstanceUID,
+		"his_document_number":         hisDocument,
+		"remote_patient_id":           remotePatientID,
+		"document_matches_patient_id": hisDocument != "" && remotePatientID != "" && hisDocument == remotePatientID,
+		"his_full_name":               patient.FullName,
+		"remote_patient_name":         candidate.PatientName,
+		"normalized_name_match":       hisName != "" && remoteName != "" && hisName == remoteName,
+		"his_birth_date":              hisBirthDate,
+		"remote_birth_date":           remoteBirthDate,
+		"birth_date_match":            hisBirthDate != "" && remoteBirthDate != "" && hisBirthDate == remoteBirthDate,
+		"his_sex":                     hisSex,
+		"remote_sex":                  remoteSex,
+		"sex_match":                   hisSex != "" && remoteSex != "" && hisSex == remoteSex,
+	})
+}
+
 func matchesPatientNameFuzzy(candidate, query string) bool {
 	queryTokens := tokenizeFuzzySearch(query)
 	if len(queryTokens) == 0 {
@@ -7236,7 +7309,7 @@ func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConf
 	patientName := ""
 	studyByUID := make(map[string]PatientStudy)
 	for _, identifier := range identifiers {
-		identifierStudies, identifierPatientName, err := a.fetchPatientStudiesFromQIDOIdentifier(ctx, node, resolved, token, patient.DocumentNumber, identifier, filters)
+		identifierStudies, identifierPatientName, err := a.fetchPatientStudiesFromQIDOIdentifier(ctx, node, resolved, token, patient, identifier, filters)
 		if err != nil {
 			return nil, "", err
 		}
@@ -7292,7 +7365,7 @@ func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConf
 	return studies, patientName, nil
 }
 
-func (a *App) fetchPatientStudiesFromQIDOIdentifier(ctx context.Context, node PACSNodeConfig, resolved PACSNodeResolvedConfig, token, documentNumber string, identifier PatientAlternateIdentifier, filters PatientStudiesFilter) ([]PatientStudy, string, error) {
+func (a *App) fetchPatientStudiesFromQIDOIdentifier(ctx context.Context, node PACSNodeConfig, resolved PACSNodeResolvedConfig, token string, patient PatientSummary, identifier PatientAlternateIdentifier, filters PatientStudiesFilter) ([]PatientStudy, string, error) {
 	endpoint, err := url.Parse(strings.TrimRight(resolved.DICOMwebBaseURL, "/") + "/studies")
 	if err != nil {
 		return nil, "", fmt.Errorf("build qido url: %w", err)
@@ -7314,7 +7387,7 @@ func (a *App) fetchPatientStudiesFromQIDOIdentifier(ctx context.Context, node PA
 	endpoint.RawQuery = query.Encode()
 
 	a.log("info", "patient_qido_request_started", map[string]any{
-		"document_number": documentNumber,
+		"document_number": patient.DocumentNumber,
 		"patient_id_type": identifier.Type,
 		"patient_id_value": identifier.Value,
 		"node_id":         node.ID,
@@ -7363,6 +7436,12 @@ func (a *App) fetchPatientStudiesFromQIDOIdentifier(ctx context.Context, node PA
 			continue
 		}
 		a.logAccessionNumberProbe("patient_remote_qido", node.ID, studyUID, dicomFirstString(item, "00080050"))
+		a.logPatientIdentityComparison(patient, remotePatientMatchCandidate{
+			NodeID:           node.ID,
+			StudyInstanceUID: studyUID,
+			PatientID:        dicomFirstString(item, "00100020"),
+			PatientName:      dicomFirstPersonName(item, "00100010"),
+		})
 
 		study := PatientStudy{
 			StudyInstanceUID:   studyUID,

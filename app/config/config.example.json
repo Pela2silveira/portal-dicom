@@ -49,7 +49,8 @@
   },
   "patient": {
     "auth_mode": "mail",
-    "master_key": ""
+    "master_key": "",
+    "match_debug_nodes": []
   },
   "professional": {
     "fake_auth": true,
