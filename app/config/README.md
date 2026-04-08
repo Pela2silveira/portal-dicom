@@ -42,6 +42,8 @@ Required fields per node:
 - `id`: stable internal code for the node
 - `name`: visible name
 - `andes_organization_id`: optional ANDES organization id used to enrich professional QIDO results from Mongo `prestaciones`
+- `his`: optional boolean marker indicating whether the node is present in external HIS/Mongo PACS metadata
+- `tipoPrestacion`: optional list of HIS/Mongo procedure descriptors associated with the node
 - `protocol`: high-level node kind, for example `dicomweb`, `dimse`, or `hybrid`
 - `priority`: numeric priority, lower means more preferred
 - `search`: search capability config

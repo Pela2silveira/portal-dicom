@@ -4,6 +4,16 @@
       "id": "hpn",
       "name": "DCM4CHEE HPN",
       "andes_organization_id": "57e9670e52df311059bc8964",
+      "his": true,
+      "tipoPrestacion": [
+        {
+          "conceptId": "168537006",
+          "term": "radiografía simple (procedimiento)",
+          "nombre": "radiografía simple",
+          "fsn": "radiografía simple (procedimiento)",
+          "semanticTag": "procedimiento"
+        }
+      ],
       "protocol": "hybrid",
       "priority": 1,
       "search": {

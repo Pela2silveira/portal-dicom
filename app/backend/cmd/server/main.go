@@ -1393,6 +1393,8 @@ type PACSNodeConfig struct {
 	ID              string         `json:"id"`
 	Name            string         `json:"name"`
 	AndesOrganizationID string     `json:"andes_organization_id,omitempty"`
+	HIS             bool           `json:"his,omitempty"`
+	TipoPrestacion  []PACSTipoPrestacionConfig `json:"tipoPrestacion,omitempty"`
 	Protocol        string         `json:"protocol"`
 	Priority        int            `json:"priority"`
 	AET             string         `json:"aet"`
@@ -1488,6 +1490,8 @@ type PACSNodeResponse struct {
 	ID              string           `json:"id"`
 	Name            string           `json:"name"`
 	AndesOrganizationID string       `json:"andes_organization_id,omitempty"`
+	HIS             bool             `json:"his,omitempty"`
+	TipoPrestacion  []PACSTipoPrestacionConfig `json:"tipoPrestacion,omitempty"`
 	Protocol        string           `json:"protocol"`
 	Priority        int              `json:"priority"`
 	AET             string           `json:"aet"`
@@ -1522,10 +1526,20 @@ type PACSNodeHealthResponse struct {
 	CallingAET string `json:"calling_aet,omitempty"`
 }
 
+type PACSTipoPrestacionConfig struct {
+	ConceptID   string `json:"conceptId,omitempty"`
+	Term        string `json:"term,omitempty"`
+	Nombre      string `json:"nombre,omitempty"`
+	FSN         string `json:"fsn,omitempty"`
+	SemanticTag string `json:"semanticTag,omitempty"`
+}
+
 type PACSNodeResolvedConfig struct {
 	ID              string
 	Name            string
 	AndesOrganizationID string
+	HIS             bool
+	TipoPrestacion  []PACSTipoPrestacionConfig
 	Protocol        string
 	Priority        int
 	AET             string
@@ -1981,6 +1995,8 @@ func (a *App) handleConfig(appliedMigrations []string) http.HandlerFunc {
 				ID:              resolved.ID,
 				Name:            resolved.Name,
 				AndesOrganizationID: resolved.AndesOrganizationID,
+				HIS:             resolved.HIS,
+				TipoPrestacion:  resolved.TipoPrestacion,
 				Protocol:        resolved.Protocol,
 				Priority:        resolved.Priority,
 				AET:             resolved.AET,
@@ -4611,6 +4627,8 @@ func (n PACSNodeConfig) Resolved() PACSNodeResolvedConfig {
 		ID:              n.ID,
 		Name:            n.Name,
 		AndesOrganizationID: strings.TrimSpace(n.AndesOrganizationID),
+		HIS:             n.HIS,
+		TipoPrestacion:  append([]PACSTipoPrestacionConfig(nil), n.TipoPrestacion...),
 		Protocol:        strings.TrimSpace(n.Protocol),
 		Priority:        n.Priority,
 		AET:             strings.TrimSpace(n.AET),
