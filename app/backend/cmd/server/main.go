@@ -1319,6 +1319,7 @@ type PhysicianSummary struct {
 type PhysicianSearchFilters struct {
 	PatientID   string `json:"patient_id,omitempty"`
 	PatientName string `json:"patient_name,omitempty"`
+	PatientNameRaw string `json:"patient_name_raw,omitempty"`
 	BirthDate   string `json:"birth_date,omitempty"`
 	Sex         string `json:"sex,omitempty"`
 	DateFrom    string `json:"date_from,omitempty"`
@@ -7806,7 +7807,7 @@ func (a *App) fetchPatientStudiesFromCFind(ctx context.Context, node PACSNodeCon
 			"sex":             patient.Sex,
 		})
 		payload, err := a.runOrthancStudyCFind(ctx, node, PhysicianSearchFilters{
-			PatientName: demographicNameQuery,
+			PatientNameRaw: demographicNameQuery,
 			BirthDate:   demographicBirthDate,
 			Sex:         demographicSex,
 			DateFrom:    filters.DateFrom,
@@ -8868,7 +8869,9 @@ func (a *App) runOrthancStudyCFindWithRefresh(ctx context.Context, node PACSNode
 	if strings.TrimSpace(filters.PatientID) != "" {
 		queryTags["PatientID"] = strings.TrimSpace(filters.PatientID)
 	}
-	if strings.TrimSpace(filters.PatientName) != "" {
+	if strings.TrimSpace(filters.PatientNameRaw) != "" {
+		queryTags["PatientName"] = strings.TrimSpace(filters.PatientNameRaw)
+	} else if strings.TrimSpace(filters.PatientName) != "" {
 		queryTags["PatientName"] = buildPatientNameFuzzyQuery(filters.PatientName)
 	}
 	if birthDate := formatDICOMDate(filters.BirthDate); birthDate != "" {
