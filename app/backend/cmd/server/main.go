@@ -5658,6 +5658,18 @@ func normalizeRemoteSex(value string) string {
 	return strings.ToUpper(strings.TrimSpace(value))
 }
 
+func patientIdentifierSet(identifiers []PatientAlternateIdentifier) map[string]PatientAlternateIdentifier {
+	index := make(map[string]PatientAlternateIdentifier, len(identifiers))
+	for _, identifier := range identifiers {
+		value := strings.TrimSpace(identifier.Value)
+		if value == "" {
+			continue
+		}
+		index[value] = identifier
+	}
+	return index
+}
+
 func (a *App) logPatientIdentityComparison(patient PatientSummary, candidate remotePatientMatchCandidate) {
 	if !a.shouldLogPatientMatchDebug(candidate.NodeID) {
 		return
@@ -7497,6 +7509,8 @@ func (a *App) fetchPatientStudiesFromQIDOIdentifier(ctx context.Context, node PA
 func (a *App) fetchPatientStudiesFromCFind(ctx context.Context, node PACSNodeConfig, patient PatientSummary, filters PatientStudiesFilter, identifiers []PatientAlternateIdentifier) ([]PatientStudy, error) {
 	startedAt := time.Now()
 	observedStudies := make(map[string]struct{})
+	studyByUID := make(map[string]PatientStudy)
+	identifierIndex := patientIdentifierSet(identifiers)
 
 	a.log("info", "patient_cfind_probe_started", map[string]any{
 		"document_number":  patient.DocumentNumber,
@@ -7534,16 +7548,95 @@ func (a *App) fetchPatientStudiesFromCFind(ctx context.Context, node PACSNodeCon
 				continue
 			}
 			observedStudies[studyUID] = struct{}{}
+			remotePatientID := dicomFirstString(item, "00100020")
 			a.logPatientIdentityComparison(patient, remotePatientMatchCandidate{
 				NodeID:           node.ID,
 				StudyInstanceUID: studyUID,
-				PatientID:        dicomFirstString(item, "00100020"),
+				PatientID:        remotePatientID,
 				PatientName:      dicomFirstPersonName(item, "00100010"),
 				BirthDate:        dicomFirstString(item, "00100030"),
 				Sex:              dicomFirstString(item, "00100040"),
 			})
+			matchedIdentifier, ok := identifierIndex[strings.TrimSpace(remotePatientID)]
+			if !ok {
+				continue
+			}
+			a.logAccessionNumberProbe("patient_remote_cfind", node.ID, studyUID, dicomFirstString(item, "00080050"))
+
+			authorizationBasis := "patient_identifier_cfind_match"
+			if matchedIdentifier.Type == "document_number" {
+				authorizationBasis = "patient_document_cfind_match"
+			}
+
+			study := PatientStudy{
+				StudyInstanceUID:   studyUID,
+				StudyDate:          normalizeStudyDate(dicomFirstString(item, "00080020")),
+				StudyDescription:   dicomFirstString(item, "00081030"),
+				NumberOfImages:     dicomFirstInt(item, "00201208"),
+				ModalitiesInStudy:  dicomStringList(item, "00080061"),
+				Locations:          []string{node.Name},
+				AvailabilityStatus: "pending_retrieve",
+				AuthorizationBasis: authorizationBasis,
+				SourceNodeID:       node.ID,
+			}
+
+			cached, err := a.isStudyAvailableLocal(ctx, studyUID)
+			if err != nil {
+				return nil, fmt.Errorf("check local cache for study %s: %w", studyUID, err)
+			}
+			if cached {
+				study.AvailabilityStatus = "available_local"
+				study.ViewerURL = buildStoneViewerURL(studyUID)
+				study.OHIFViewerURL = buildOHIFViewerURL(studyUID)
+				study.DownloadURL = buildPatientDownloadURL(studyUID)
+			}
+
+			existing, ok := studyByUID[studyUID]
+			if !ok {
+				studyByUID[studyUID] = study
+				continue
+			}
+			if existing.StudyDate == "" && study.StudyDate != "" {
+				existing.StudyDate = study.StudyDate
+			}
+			if existing.StudyDescription == "" && study.StudyDescription != "" {
+				existing.StudyDescription = study.StudyDescription
+			}
+			if existing.NumberOfImages == 0 && study.NumberOfImages > 0 {
+				existing.NumberOfImages = study.NumberOfImages
+			}
+			if len(existing.ModalitiesInStudy) == 0 && len(study.ModalitiesInStudy) > 0 {
+				existing.ModalitiesInStudy = study.ModalitiesInStudy
+			}
+			if len(existing.Locations) == 0 && len(study.Locations) > 0 {
+				existing.Locations = study.Locations
+			}
+			if existing.AuthorizationBasis == "" && study.AuthorizationBasis != "" {
+				existing.AuthorizationBasis = study.AuthorizationBasis
+			}
+			if existing.SourceNodeID == "" && study.SourceNodeID != "" {
+				existing.SourceNodeID = study.SourceNodeID
+			}
+			if existing.AvailabilityStatus != "available_local" && study.AvailabilityStatus == "available_local" {
+				existing.AvailabilityStatus = study.AvailabilityStatus
+				existing.ViewerURL = study.ViewerURL
+				existing.OHIFViewerURL = study.OHIFViewerURL
+				existing.DownloadURL = study.DownloadURL
+			}
+			studyByUID[studyUID] = existing
 		}
 	}
+
+	studies := make([]PatientStudy, 0, len(studyByUID))
+	for _, study := range studyByUID {
+		studies = append(studies, study)
+	}
+	sort.Slice(studies, func(i, j int) bool {
+		if studies[i].StudyDate == studies[j].StudyDate {
+			return studies[i].StudyInstanceUID < studies[j].StudyInstanceUID
+		}
+		return studies[i].StudyDate > studies[j].StudyDate
+	})
 
 	a.log("info", "patient_cfind_probe_completed", map[string]any{
 		"document_number":  patient.DocumentNumber,
@@ -7551,13 +7644,11 @@ func (a *App) fetchPatientStudiesFromCFind(ctx context.Context, node PACSNodeCon
 		"node_id":          node.ID,
 		"identifier_count": len(identifiers),
 		"candidate_count":  len(observedStudies),
-		"study_count":      0,
+		"study_count":      len(studies),
 		"duration_ms":      time.Since(startedAt).Milliseconds(),
 	})
 
-	// First cut only: observe and log DIMSE candidates, but do not authorize or display them
-	// until configurable matching rules are in place.
-	return nil, nil
+	return studies, nil
 }
 
 func documentNumberOrFallback(documentNumber, fallback string) string {
