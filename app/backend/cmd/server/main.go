@@ -8389,8 +8389,8 @@ func (a *App) runOrthancStudyCFindWithRefresh(ctx context.Context, node PACSNode
 	if strings.TrimSpace(filters.Modality) != "" {
 		queryTags["ModalitiesInStudy"] = strings.TrimSpace(filters.Modality)
 	}
-	if filters.DateFrom != "" || filters.DateTo != "" {
-		queryTags["StudyDate"] = buildQIDODateRange(filters.DateFrom, filters.DateTo)
+	if studyDate := buildCFindStudyDate(filters.DateFrom, filters.DateTo); studyDate != "" {
+		queryTags["StudyDate"] = studyDate
 	}
 
 	body, err := json.Marshal(queryPayload)
@@ -8439,7 +8439,49 @@ func (a *App) runOrthancStudyCFindWithRefresh(ctx context.Context, node PACSNode
 		results = append(results, item)
 	}
 
+	if len(results) == 0 && shouldRetryCFindWithoutDate(filters) {
+		fallbackFilters := filters
+		fallbackFilters.DateFrom = ""
+		fallbackFilters.DateTo = ""
+		return a.runOrthancStudyCFindWithoutDate(ctx, node, fallbackFilters)
+	}
+
 	return results, nil
+}
+
+func (a *App) runOrthancStudyCFindWithoutDate(ctx context.Context, node PACSNodeConfig, filters PhysicianSearchFilters) ([]qidoResponseItem, error) {
+	resolved := node.Resolved()
+	a.log("warn", "physician_cfind_retry_without_date", map[string]any{
+		"node_id":      resolved.ID,
+		"patient_id":   filters.PatientID,
+		"patient_name": filters.PatientName,
+		"modality":     filters.Modality,
+	})
+	return a.runOrthancStudyCFindWithRefresh(ctx, node, filters, false)
+}
+
+func shouldRetryCFindWithoutDate(filters PhysicianSearchFilters) bool {
+	return strings.TrimSpace(filters.DateFrom) != "" &&
+		strings.TrimSpace(filters.PatientID) == "" &&
+		strings.TrimSpace(filters.PatientName) == "" &&
+		strings.TrimSpace(filters.Modality) == ""
+}
+
+func buildCFindStudyDate(dateFrom, dateTo string) string {
+	from := strings.ReplaceAll(strings.TrimSpace(dateFrom), "-", "")
+	to := strings.ReplaceAll(strings.TrimSpace(dateTo), "-", "")
+	switch {
+	case from != "" && to != "" && from == to:
+		return from
+	case from != "" && to != "":
+		return from + "-" + to
+	case from != "":
+		return from
+	case to != "":
+		return to
+	default:
+		return ""
+	}
 }
 
 func decodeOrthancQueryID(r io.Reader) (string, error) {
