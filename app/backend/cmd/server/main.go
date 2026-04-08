@@ -1064,6 +1064,22 @@ type PatientRetrieveResponse struct {
 	OHIFViewerURL    string `json:"ohif_viewer_url,omitempty"`
 }
 
+type PatientStudyPreviewItem struct {
+	InstanceID   string `json:"instance_id"`
+	ImageDataURL string `json:"image_data_url"`
+	DownloadName string `json:"download_name"`
+}
+
+type PatientStudyPreviewResponse struct {
+	Status           string                    `json:"status"`
+	StudyInstanceUID string                    `json:"study_instance_uid"`
+	Items            []PatientStudyPreviewItem `json:"items"`
+	TotalShown       int                       `json:"total_shown"`
+	Limit            int                       `json:"limit"`
+	TotalAvailable   int                       `json:"total_available"`
+	Truncated        bool                      `json:"truncated"`
+}
+
 type PatientStudyShareRequest struct {
 	ViewerKind       string `json:"viewer,omitempty"`
 	Channel          string `json:"channel,omitempty"`
@@ -2791,6 +2807,8 @@ func (a *App) handlePatientStudyRoute(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.HasSuffix(r.URL.Path, "/access"):
 		a.handlePatientStudyAccess(w, r)
+	case strings.HasSuffix(r.URL.Path, "/preview"):
+		a.handlePatientStudyPreview(w, r)
 	case strings.HasSuffix(r.URL.Path, "/share"):
 		a.handlePatientStudyShare(w, r)
 	default:
@@ -2851,6 +2869,59 @@ func (a *App) handlePatientStudyAccess(w http.ResponseWriter, r *http.Request) {
 		StudyInstanceUID: studyUID,
 		ViewerKind:       viewerKind,
 		ExpiresAt:        expiresAt.UTC().Format(time.RFC3339),
+	})
+}
+
+func (a *App) handlePatientStudyPreview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	studyUID := studyUIDFromActionPath(r.URL.Path, "/api/patient/studies/", "/preview")
+	if studyUID == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+
+	_, patient, err := a.requirePatientSessionSummary(ctx, r)
+	if err != nil {
+		http.Error(w, "invalid session", http.StatusUnauthorized)
+		return
+	}
+
+	authorized, err := a.patientStudyAvailableLocal(ctx, patient.ID, studyUID)
+	if err != nil {
+		http.Error(w, "failed to validate patient study access", http.StatusInternalServerError)
+		return
+	}
+	if !authorized {
+		http.Error(w, "study not available for patient preview", http.StatusNotFound)
+		return
+	}
+
+	const previewLimit = 5
+	items, totalAvailable, err := a.listStudyPreviewItems(ctx, studyUID, previewLimit)
+	if err != nil {
+		http.Error(w, "failed to load study preview", http.StatusBadGateway)
+		return
+	}
+	if len(items) == 0 {
+		http.Error(w, "no preview images available", http.StatusNotFound)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, PatientStudyPreviewResponse{
+		Status:           "ok",
+		StudyInstanceUID: studyUID,
+		Items:            items,
+		Limit:            previewLimit,
+		TotalShown:       len(items),
+		TotalAvailable:   totalAvailable,
+		Truncated:        totalAvailable > len(items),
 	})
 }
 
@@ -7373,6 +7444,116 @@ func (a *App) streamStudyArchiveByUID(ctx context.Context, w http.ResponseWriter
 func sanitizeDownloadToken(value string) string {
 	replacer := strings.NewReplacer("/", "_", "\\", "_", " ", "_", "\"", "", "'", "")
 	return replacer.Replace(strings.TrimSpace(value))
+}
+
+type orthancStudyResource struct {
+	Series []string `json:"Series"`
+}
+
+type orthancSeriesResource struct {
+	Instances []string `json:"Instances"`
+}
+
+func (a *App) listStudyPreviewItems(ctx context.Context, studyUID string, limit int) ([]PatientStudyPreviewItem, int, error) {
+	if limit <= 0 {
+		limit = 5
+	}
+
+	isLocal, orthancStudyID, err := a.findOrthancStudy(ctx, studyUID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if !isLocal || strings.TrimSpace(orthancStudyID) == "" {
+		return nil, 0, errors.New("study is not available in orthanc")
+	}
+
+	var study orthancStudyResource
+	if err := a.getOrthancJSON(ctx, "/studies/"+url.PathEscape(orthancStudyID), &study); err != nil {
+		return nil, 0, err
+	}
+
+	instanceIDs := make([]string, 0, limit)
+	totalAvailable := 0
+	for _, seriesID := range study.Series {
+		var series orthancSeriesResource
+		if err := a.getOrthancJSON(ctx, "/series/"+url.PathEscape(seriesID), &series); err != nil {
+			return nil, 0, err
+		}
+		totalAvailable += len(series.Instances)
+		for _, instanceID := range series.Instances {
+			if len(instanceIDs) >= limit {
+				continue
+			}
+			instanceIDs = append(instanceIDs, instanceID)
+		}
+	}
+
+	items := make([]PatientStudyPreviewItem, 0, len(instanceIDs))
+	for index, instanceID := range instanceIDs {
+		imageDataURL, err := a.getOrthancPreviewDataURL(ctx, instanceID)
+		if err != nil {
+			continue
+		}
+		items = append(items, PatientStudyPreviewItem{
+			InstanceID:   instanceID,
+			ImageDataURL: imageDataURL,
+			DownloadName: fmt.Sprintf("estudio-%s-imagen-%02d.jpg", sanitizeDownloadToken(studyUID), index+1),
+		})
+	}
+
+	return items, totalAvailable, nil
+}
+
+func (a *App) getOrthancJSON(ctx context.Context, path string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(a.cfg.OrthancURL, "/")+path, nil)
+	if err != nil {
+		return err
+	}
+	a.applyOrthancInternalRequestAuth(req)
+
+	res, err := a.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+		return fmt.Errorf("orthanc get %s bad status %d: %s", path, res.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	return json.NewDecoder(res.Body).Decode(out)
+}
+
+func (a *App) getOrthancPreviewDataURL(ctx context.Context, instanceID string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(a.cfg.OrthancURL, "/")+"/instances/"+url.PathEscape(instanceID)+"/preview", nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "image/jpeg")
+	a.applyOrthancInternalRequestAuth(req)
+
+	res, err := a.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+		return "", fmt.Errorf("orthanc preview bad status %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	contentType := strings.TrimSpace(res.Header.Get("Content-Type"))
+	if contentType == "" {
+		contentType = "image/jpeg"
+	}
+	imageBytes, err := io.ReadAll(io.LimitReader(res.Body, 8*1024*1024))
+	if err != nil {
+		return "", err
+	}
+
+	return "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(imageBytes), nil
 }
 
 func startOfCurrentWeek(now time.Time) time.Time {

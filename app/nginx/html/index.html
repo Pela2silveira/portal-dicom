@@ -761,6 +761,100 @@
         }
       }
 
+      .preview-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        display: grid;
+        place-items: center;
+        padding: 20px;
+        background: rgba(0, 39, 56, 0.7);
+      }
+
+      .preview-dialog {
+        width: min(100%, 920px);
+        max-height: min(calc(100vh - 40px), 820px);
+        border: 1px solid var(--line);
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        display: flex;
+        flex-direction: column;
+      }
+
+      .preview-header,
+      .preview-body,
+      .preview-footer {
+        padding: 18px;
+      }
+
+      .preview-header {
+        display: flex;
+        align-items: start;
+        justify-content: space-between;
+        gap: 12px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .preview-header h4 {
+        margin: 0 0 6px;
+        font-size: 1rem;
+      }
+
+      .preview-header p,
+      .preview-body p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+
+      .preview-body {
+        overflow-y: auto;
+        display: grid;
+        gap: 16px;
+      }
+
+      .preview-note {
+        border: 1px solid rgba(0, 168, 224, 0.2);
+        background: var(--accent-faint);
+        padding: 12px 14px;
+        color: var(--accent-dark);
+        font-size: 0.92rem;
+      }
+
+      .preview-grid {
+        display: grid;
+        gap: 14px;
+        grid-template-columns: 1fr;
+      }
+
+      .preview-item {
+        border: 1px solid var(--line);
+        background: var(--surface-soft);
+        padding: 14px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .preview-item img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border: 1px solid var(--line);
+        background: #ffffff;
+      }
+
+      .preview-footer {
+        display: flex;
+        justify-content: flex-end;
+        border-top: 1px solid var(--line);
+      }
+
+      @media (min-width: 640px) {
+        .preview-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
       .filter-grid {
         display: grid;
         gap: 12px;
@@ -1828,6 +1922,25 @@
         </div>
       </section>
 
+      <section class="preview-overlay" id="patient-preview-overlay" role="dialog" aria-modal="true" aria-labelledby="patient-preview-title">
+        <div class="preview-dialog">
+          <div class="preview-header">
+            <div>
+              <h4 id="patient-preview-title">Vista previa del estudio</h4>
+              <p id="patient-preview-summary">Se muestran hasta 5 imágenes del estudio.</p>
+            </div>
+            <button class="action ghost" id="patient-preview-close" type="button" aria-label="Cerrar vista previa">Cerrar</button>
+          </div>
+          <div class="preview-body">
+            <div class="preview-note" id="patient-preview-note">Vista rápida para compartir o descargar imágenes puntuales. No reemplaza la visualización diagnóstica completa.</div>
+            <div class="preview-grid" id="patient-preview-grid"></div>
+          </div>
+          <div class="preview-footer">
+            <button class="action ghost" id="patient-preview-close-footer" type="button">Cerrar</button>
+          </div>
+        </div>
+      </section>
+
       <footer class="site-footer">
         <div class="site-footer-copy">
           <strong>Portal de Imágenes</strong> integra acceso, consulta y visualización de estudios por imágenes desde un único portal.
@@ -1901,6 +2014,11 @@
       const patientShareQRCopy = document.getElementById("patient-share-qr-copy");
       const patientShareQRWhatsApp = document.getElementById("patient-share-qr-whatsapp");
       const patientShareQRClose = document.getElementById("patient-share-qr-close");
+      const patientPreviewOverlay = document.getElementById("patient-preview-overlay");
+      const patientPreviewSummary = document.getElementById("patient-preview-summary");
+      const patientPreviewGrid = document.getElementById("patient-preview-grid");
+      const patientPreviewClose = document.getElementById("patient-preview-close");
+      const patientPreviewCloseFooter = document.getElementById("patient-preview-close-footer");
       const mailCodeFeedback = document.getElementById("mail-code-feedback");
       const patientValidateButton = document.getElementById("patient-continue");
       const physicianDni = document.getElementById("physician-dni");
@@ -1936,6 +2054,8 @@
       authBody.insertBefore(flowAnchor, patientFlow);
       const patientShareQROverlayAnchor = document.createComment("patient-share-qr-overlay");
       patientShareQROverlay.parentNode.insertBefore(patientShareQROverlayAnchor, patientShareQROverlay);
+      const patientPreviewOverlayAnchor = document.createComment("patient-preview-overlay");
+      patientPreviewOverlay.parentNode.insertBefore(patientPreviewOverlayAnchor, patientPreviewOverlay);
       const mailCodeFeedbackAnchor = document.createComment("mail-code-feedback");
       mailCodeFeedback.parentNode.insertBefore(mailCodeFeedbackAnchor, mailCodeFeedback);
       const demoRibbonStates = Array.from(demoRibbons).map(ribbon => {
@@ -1953,6 +2073,7 @@
       let activePatientSearchKey = "";
       let patientMailCodeReady = false;
       let patientShareQROpen = false;
+      let patientPreviewOpen = false;
       let patientSyncPollHandle = null;
       let patientRetrieveEventSource = null;
       let physicianRetrieveEventSource = null;
@@ -2037,6 +2158,7 @@
         clearPatientRetrievePoll();
         clearPhysicianRetrievePoll();
         closePatientShareQR();
+        closePatientPreview();
         clearPortalSession();
         detachNode(patientWorkspace);
         detachNode(physicianWorkspace);
@@ -2115,6 +2237,34 @@
       function closePatientShareQR() {
         detachNode(patientShareQROverlay);
         patientShareQROpen = false;
+      }
+
+      function renderPatientPreview(payload) {
+        const totalShown = Number(payload.total_shown || 0);
+        const totalAvailable = Number(payload.total_available || totalShown);
+        const truncated = Boolean(payload.truncated);
+        patientPreviewSummary.textContent = truncated
+          ? "Se muestran " + totalShown + " de " + totalAvailable + " imágenes del estudio."
+          : "Se muestran " + totalShown + " imágenes del estudio.";
+
+        patientPreviewGrid.innerHTML = (payload.items || []).map((item, index) => (
+          '<article class="preview-item">' +
+            '<img src="' + escapeHTML(item.image_data_url || "") + '" alt="Vista previa ' + String(index + 1) + '">' +
+            '<a class="action ghost" href="' + escapeHTML(item.image_data_url || "") + '" download="' + escapeHTML(item.download_name || ("imagen-" + String(index + 1) + ".jpg")) + '">Descargar JPG</a>' +
+          '</article>'
+        )).join("");
+      }
+
+      function openPatientPreview(payload) {
+        renderPatientPreview(payload);
+        mountNodeAfter(patientPreviewOverlayAnchor, patientPreviewOverlay);
+        patientPreviewOpen = true;
+        patientPreviewClose.focus({ preventScroll: true });
+      }
+
+      function closePatientPreview() {
+        detachNode(patientPreviewOverlay);
+        patientPreviewOpen = false;
       }
 
       function clearPortalSession() {
@@ -2872,6 +3022,9 @@
               const ohifAction = study.ohif_viewer_url
                 ? '<button class="action action-primary" type="button" data-patient-viewer="' + escapeHTML(study.study_instance_uid) + '" data-viewer-kind="ohif">Visualizar con OHIF Viewer</button>'
                 : "";
+              const previewAction = study.viewer_url
+                ? '<button class="action ghost" type="button" data-patient-preview="' + escapeHTML(study.study_instance_uid) + '">Vista previa</button>'
+                : "";
               const downloadAction = study.download_url
                 ? '<a class="action action-primary" href="' + escapeHTML(study.download_url) + '" rel="noopener noreferrer">Descargar DICOM</a>'
                 : "";
@@ -2910,7 +3063,7 @@
                     modalities +
                     '<div class="chip">' + escapeHTML(study.study_instance_uid) + '</div>' +
                   '</div>' +
-                  '<div class="inline-actions">' + action + shareAction + ohifAction + downloadAction + '</div>' +
+                  '<div class="inline-actions">' + action + shareAction + ohifAction + previewAction + downloadAction + '</div>' +
                 '</article>'
               );
             })
@@ -3429,6 +3582,22 @@
         return response.json();
       }
 
+      async function loadPatientStudyPreview(studyInstanceUID) {
+        const response = await fetch("/api/patient/studies/" + encodeURIComponent(studyInstanceUID) + "/preview", {
+          headers: {
+            Accept: "application/json"
+          }
+        });
+
+        if (!response.ok) {
+          const error = new Error("patient preview request failed");
+          error.payload = await response.json().catch(() => ({}));
+          throw error;
+        }
+
+        return response.json();
+      }
+
       async function sendPatientMailCode(documentNumber) {
         const response = await fetch("/api/patient/send-code", {
           method: "POST",
@@ -3841,6 +4010,28 @@
           return;
         }
 
+        const previewButton = event.target.closest("[data-patient-preview]");
+        if (previewButton) {
+          const studyInstanceUID = previewButton.getAttribute("data-patient-preview");
+          if (!studyInstanceUID) {
+            return;
+          }
+
+          previewButton.disabled = true;
+          const originalLabel = previewButton.textContent;
+          previewButton.textContent = "Cargando...";
+          try {
+            const payload = await loadPatientStudyPreview(studyInstanceUID);
+            openPatientPreview(payload);
+          } catch (error) {
+            alert(error?.payload?.message || "No se pudo cargar la vista previa de este estudio.");
+          } finally {
+            previewButton.disabled = false;
+            previewButton.textContent = originalLabel;
+          }
+          return;
+        }
+
         const button = event.target.closest("[data-patient-retrieve]");
         if (!button) {
           return;
@@ -4085,6 +4276,7 @@
       detachNode(physicianWorkspace);
       detachNode(physicianFlow);
       detachNode(patientShareQROverlay);
+      detachNode(patientPreviewOverlay);
       detachNode(mailCodeFeedback);
       demoRibbonStates.forEach(({ ribbon }) => detachNode(ribbon));
 
@@ -4188,6 +4380,16 @@
       document.addEventListener("keydown", event => {
         if (event.key === "Escape" && patientShareQROpen) {
           closePatientShareQR();
+        }
+        if (event.key === "Escape" && patientPreviewOpen) {
+          closePatientPreview();
+        }
+      });
+      patientPreviewClose.addEventListener("click", closePatientPreview);
+      patientPreviewCloseFooter.addEventListener("click", closePatientPreview);
+      patientPreviewOverlay.addEventListener("click", event => {
+        if (event.target === patientPreviewOverlay) {
+          closePatientPreview();
         }
       });
       physicianDni.addEventListener("input", () => {
