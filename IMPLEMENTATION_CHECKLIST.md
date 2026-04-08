@@ -187,3 +187,7 @@ Do not start with full search or C-GET before this is working.
 - Define and implement a weekly login limit policy where applicable:
   - clarify whether the limit applies to patient logins, professional logins, or both
   - define how the weekly window is measured, how the user is informed, and what operational exceptions or resets are needed
+- Revisit default viewer language for non-English users:
+  - Stone Web Viewer does not appear to expose a straightforward official Spanish-by-default setting
+  - if the product remains Spanish-only, evaluate whether Stone should stay the primary viewer UX
+  - compare the localization potential of OHIF versus Stone before making a long-term viewer decision
