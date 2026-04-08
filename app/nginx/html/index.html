@@ -642,6 +642,114 @@
         border: 1px solid var(--line);
       }
 
+      .share-qr-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        display: grid;
+        place-items: center;
+        padding: 20px;
+        background: rgba(0, 39, 56, 0.7);
+      }
+
+      .share-qr-dialog {
+        width: min(100%, 420px);
+        border: 1px solid var(--line);
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+
+      .share-qr-header,
+      .share-qr-body,
+      .share-qr-footer {
+        padding: 18px;
+      }
+
+      .share-qr-header {
+        display: flex;
+        align-items: start;
+        justify-content: space-between;
+        gap: 12px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .share-qr-header h4 {
+        margin: 0 0 6px;
+        font-size: 1rem;
+      }
+
+      .share-qr-header p,
+      .share-qr-body p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+
+      .share-qr-close {
+        min-width: 44px;
+        padding: 12px 14px;
+      }
+
+      .share-qr-card {
+        display: grid;
+        gap: 14px;
+        justify-items: center;
+        margin-bottom: 16px;
+      }
+
+      .share-qr-frame {
+        width: min(100%, 280px);
+        padding: 14px;
+        border: 1px solid var(--line);
+        background: #ffffff;
+      }
+
+      .share-qr-frame img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      .share-qr-meta {
+        display: grid;
+        gap: 8px;
+        margin-bottom: 16px;
+        font-size: 0.92rem;
+      }
+
+      .share-qr-meta strong {
+        color: var(--ink);
+      }
+
+      .share-qr-link {
+        display: grid;
+        gap: 8px;
+      }
+
+      .share-qr-link label {
+        font-size: 0.82rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+
+      .share-qr-link input {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 0;
+        padding: 12px 14px;
+        font: inherit;
+      }
+
+      .share-qr-footer {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: flex-end;
+        border-top: 1px solid var(--line);
+      }
+
       .filter-grid {
         display: grid;
         gap: 12px;
@@ -1677,6 +1785,37 @@
         </section>
       </main>
 
+      <section class="share-qr-overlay" id="patient-share-qr-overlay" role="dialog" aria-modal="true" aria-labelledby="patient-share-qr-title">
+        <div class="share-qr-dialog">
+          <div class="share-qr-header">
+            <div>
+              <h4 id="patient-share-qr-title">Compartir estudio con código QR</h4>
+              <p>Escanee este código o comparta el enlace si la otra persona no tiene el teléfono a mano.</p>
+            </div>
+            <button class="action ghost share-qr-close" id="patient-share-qr-close" type="button" aria-label="Cerrar código QR">Cerrar</button>
+          </div>
+          <div class="share-qr-body">
+            <div class="share-qr-card">
+              <div class="share-qr-frame">
+                <img id="patient-share-qr-image" alt="Código QR del enlace compartido del estudio">
+              </div>
+            </div>
+            <div class="share-qr-meta">
+              <div><span>Vence</span><br><strong id="patient-share-qr-expires-at">-</strong></div>
+              <div><span>Usos disponibles</span><br><strong id="patient-share-qr-max-uses">-</strong></div>
+            </div>
+            <div class="share-qr-link">
+              <label for="patient-share-qr-link">Enlace</label>
+              <input id="patient-share-qr-link" type="text" readonly>
+            </div>
+          </div>
+          <div class="share-qr-footer">
+            <button class="action ghost" id="patient-share-qr-copy" type="button">Copiar enlace</button>
+            <button class="action action-primary" id="patient-share-qr-whatsapp" type="button">Abrir WhatsApp</button>
+          </div>
+        </div>
+      </section>
+
       <footer class="site-footer">
         <div class="site-footer-copy">
           <strong>Portal de Imágenes</strong> integra acceso, consulta y visualización de estudios por imágenes desde un único portal.
@@ -1741,6 +1880,14 @@
       const patientBirthDateValue = document.getElementById("patient-birth-date-value");
       const patientSexValue = document.getElementById("patient-sex-value");
       const patientGenderIdentityValue = document.getElementById("patient-gender-identity-value");
+      const patientShareQROverlay = document.getElementById("patient-share-qr-overlay");
+      const patientShareQRImage = document.getElementById("patient-share-qr-image");
+      const patientShareQRExpiresAt = document.getElementById("patient-share-qr-expires-at");
+      const patientShareQRMaxUses = document.getElementById("patient-share-qr-max-uses");
+      const patientShareQRLink = document.getElementById("patient-share-qr-link");
+      const patientShareQRCopy = document.getElementById("patient-share-qr-copy");
+      const patientShareQRWhatsApp = document.getElementById("patient-share-qr-whatsapp");
+      const patientShareQRClose = document.getElementById("patient-share-qr-close");
       const mailCodeFeedback = document.getElementById("mail-code-feedback");
       const patientValidateButton = document.getElementById("patient-continue");
       const physicianDni = document.getElementById("physician-dni");
@@ -1774,6 +1921,8 @@
       shell.insertBefore(screenAnchor, hero);
       const flowAnchor = document.createComment("active-flow");
       authBody.insertBefore(flowAnchor, patientFlow);
+      const patientShareQROverlayAnchor = document.createComment("patient-share-qr-overlay");
+      patientShareQROverlay.parentNode.insertBefore(patientShareQROverlayAnchor, patientShareQROverlay);
       const mailCodeFeedbackAnchor = document.createComment("mail-code-feedback");
       mailCodeFeedback.parentNode.insertBefore(mailCodeFeedbackAnchor, mailCodeFeedback);
       const demoRibbonStates = Array.from(demoRibbons).map(ribbon => {
@@ -1790,6 +1939,7 @@
       let activePatientSearchRequestID = "";
       let activePatientSearchKey = "";
       let patientMailCodeReady = false;
+      let patientShareQROpen = false;
       let patientSyncPollHandle = null;
       let patientRetrieveEventSource = null;
       let physicianRetrieveEventSource = null;
@@ -1873,6 +2023,7 @@
         clearPatientSyncPoll();
         clearPatientRetrievePoll();
         clearPhysicianRetrievePoll();
+        closePatientShareQR();
         clearPortalSession();
         detachNode(patientWorkspace);
         detachNode(physicianWorkspace);
@@ -1904,6 +2055,53 @@
         physicianNote.classList.remove("warning");
         physicianNote.textContent = "Ingrese su DNI y contraseña institucional para acceder.";
         syncPhysicianContinueState();
+      }
+
+      function formatShareExpiration(value) {
+        if (!value) {
+          return "-";
+        }
+
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+          return value;
+        }
+
+        return new Intl.DateTimeFormat("es-AR", {
+          dateStyle: "short",
+          timeStyle: "short",
+          timeZone: "UTC"
+        }).format(date) + " UTC";
+      }
+
+      async function copyTextToClipboard(value) {
+        if (!value) {
+          return false;
+        }
+
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(value);
+          return true;
+        }
+
+        return false;
+      }
+
+      function openPatientShareQR(payload) {
+        patientShareQRImage.src = payload.qr_code_data_url || "";
+        patientShareQRLink.value = payload.share_url || "";
+        patientShareQRExpiresAt.textContent = formatShareExpiration(payload.expires_at);
+        patientShareQRMaxUses.textContent = String(payload.max_uses || "-");
+        patientShareQRCopy.dataset.shareUrl = payload.share_url || "";
+        patientShareQRWhatsApp.dataset.shareUrl = payload.whatsapp_url || "";
+        mountNodeAfter(patientShareQROverlayAnchor, patientShareQROverlay);
+        patientShareQROpen = true;
+        patientShareQRClose.focus({ preventScroll: true });
+      }
+
+      function closePatientShareQR() {
+        detachNode(patientShareQROverlay);
+        patientShareQROpen = false;
       }
 
       function clearPortalSession() {
@@ -2670,6 +2868,9 @@
               const shareAction = study.viewer_url
                 ? '<button class="action ghost" type="button" data-patient-share="' + escapeHTML(study.study_instance_uid) + '" data-viewer-kind="stone">Compartir</button>'
                 : "";
+              const shareQRAction = study.viewer_url
+                ? '<button class="action ghost" type="button" data-patient-share-qr="' + escapeHTML(study.study_instance_uid) + '" data-viewer-kind="stone">QR</button>'
+                : "";
 
               const statusChips =
                 '<div class="chip-row status-chips">' +
@@ -2702,7 +2903,7 @@
                     modalities +
                     '<div class="chip">' + escapeHTML(study.study_instance_uid) + '</div>' +
                   '</div>' +
-                  '<div class="inline-actions">' + action + shareWhatsAppAction + shareAction + ohifAction + downloadAction + '</div>' +
+                  '<div class="inline-actions">' + action + shareWhatsAppAction + shareAction + shareQRAction + ohifAction + downloadAction + '</div>' +
                 '</article>'
               );
             })
@@ -3199,7 +3400,7 @@
         return response.json();
       }
 
-      async function createPatientStudyShare(studyInstanceUID, viewerKind = "stone") {
+      async function createPatientStudyShare(studyInstanceUID, viewerKind = "stone", channel = "share") {
         const response = await fetch("/api/patient/studies/" + encodeURIComponent(studyInstanceUID) + "/share", {
           method: "POST",
           headers: {
@@ -3208,7 +3409,7 @@
           },
           body: JSON.stringify({
             viewer: viewerKind,
-            channel: "share"
+            channel
           })
         });
 
@@ -3619,7 +3820,7 @@
           const originalLabel = shareWhatsAppButton.textContent;
           shareWhatsAppButton.textContent = "Preparando...";
           try {
-            const payload = await createPatientStudyShare(studyInstanceUID, viewerKind);
+            const payload = await createPatientStudyShare(studyInstanceUID, viewerKind, "whatsapp");
             if (payload.whatsapp_url) {
               const popup = window.open(payload.whatsapp_url, "_blank", "noopener");
               if (popup) {
@@ -3628,8 +3829,7 @@
             }
 
             const shareURL = payload.share_url || "";
-            if (shareURL && navigator.clipboard?.writeText) {
-              await navigator.clipboard.writeText(shareURL);
+            if (shareURL && await copyTextToClipboard(shareURL)) {
               alert("No se pudo abrir WhatsApp automáticamente. Enlace copiado al portapapeles.\n\nVence: " + (payload.expires_at || "-"));
               return;
             }
@@ -3658,7 +3858,7 @@
           const originalLabel = shareButton.textContent;
           shareButton.textContent = "Preparando...";
           try {
-            const payload = await createPatientStudyShare(studyInstanceUID, viewerKind);
+            const payload = await createPatientStudyShare(studyInstanceUID, viewerKind, "share");
             const shareURL = payload.share_url || "";
             const shareText = "Te comparto mi estudio de diagnóstico por imágenes.";
             let shared = false;
@@ -3676,8 +3876,7 @@
               }
             }
 
-            if (!shared && shareURL && navigator.clipboard?.writeText) {
-              await navigator.clipboard.writeText(shareURL);
+            if (!shared && shareURL && await copyTextToClipboard(shareURL)) {
               alert("Enlace copiado al portapapeles.\n\nVence: " + (payload.expires_at || "-"));
               shared = true;
             }
@@ -3690,6 +3889,32 @@
           } finally {
             shareButton.disabled = false;
             shareButton.textContent = originalLabel;
+          }
+          return;
+        }
+
+        const shareQRButton = event.target.closest("[data-patient-share-qr]");
+        if (shareQRButton) {
+          const studyInstanceUID = shareQRButton.getAttribute("data-patient-share-qr");
+          const viewerKind = shareQRButton.getAttribute("data-viewer-kind") || "stone";
+          if (!studyInstanceUID) {
+            return;
+          }
+
+          shareQRButton.disabled = true;
+          const originalLabel = shareQRButton.textContent;
+          shareQRButton.textContent = "Preparando...";
+          try {
+            const payload = await createPatientStudyShare(studyInstanceUID, viewerKind, "qr");
+            if (!payload.qr_code_data_url || !payload.share_url) {
+              throw new Error("patient qr share payload incomplete");
+            }
+            openPatientShareQR(payload);
+          } catch (error) {
+            alert(error?.payload?.message || "No se pudo generar el código QR para compartir este estudio.");
+          } finally {
+            shareQRButton.disabled = false;
+            shareQRButton.textContent = originalLabel;
           }
           return;
         }
@@ -3937,6 +4162,7 @@
       detachNode(patientWorkspace);
       detachNode(physicianWorkspace);
       detachNode(physicianFlow);
+      detachNode(patientShareQROverlay);
       detachNode(mailCodeFeedback);
       demoRibbonStates.forEach(({ ribbon }) => detachNode(ribbon));
 
@@ -3980,6 +4206,41 @@
             return;
           }
           focusPatientContinueButton();
+        }
+      });
+      patientShareQRClose.addEventListener("click", closePatientShareQR);
+      patientShareQROverlay.addEventListener("click", event => {
+        if (event.target === patientShareQROverlay) {
+          closePatientShareQR();
+        }
+      });
+      patientShareQRCopy.addEventListener("click", async () => {
+        const shareURL = patientShareQRCopy.dataset.shareUrl || "";
+        try {
+          if (await copyTextToClipboard(shareURL)) {
+            alert("Enlace copiado al portapapeles.");
+            return;
+          }
+        } catch (_error) {
+        }
+        if (shareURL) {
+          patientShareQRLink.focus({ preventScroll: true });
+          patientShareQRLink.select();
+        }
+      });
+      patientShareQRWhatsApp.addEventListener("click", () => {
+        const whatsAppURL = patientShareQRWhatsApp.dataset.shareUrl || "";
+        if (!whatsAppURL) {
+          return;
+        }
+        const popup = window.open(whatsAppURL, "_blank", "noopener");
+        if (!popup) {
+          alert("No se pudo abrir WhatsApp automáticamente.");
+        }
+      });
+      document.addEventListener("keydown", event => {
+        if (event.key === "Escape" && patientShareQROpen) {
+          closePatientShareQR();
         }
       });
       physicianDni.addEventListener("input", () => {

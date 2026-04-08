@@ -29,6 +29,7 @@ import (
 
 	"github.com/go-ldap/ldap/v3"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	qrcode "github.com/skip2/go-qrcode"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -1077,6 +1078,7 @@ type PatientStudyShareResponse struct {
 	StudyInstanceUID string `json:"study_instance_uid"`
 	ViewerKind       string `json:"viewer_kind"`
 	ShareURL         string `json:"share_url"`
+	QRCodeDataURL    string `json:"qr_code_data_url,omitempty"`
 	WhatsAppURL      string `json:"whatsapp_url,omitempty"`
 	MailToURL        string `json:"mailto_url,omitempty"`
 	ExpiresAt        string `json:"expires_at"`
@@ -2856,6 +2858,8 @@ func normalizeStudyShareChannel(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "", "share":
 		return "share"
+	case "qr":
+		return "qr"
 	case "whatsapp":
 		return "whatsapp"
 	case "email":
@@ -2955,6 +2959,11 @@ func (a *App) handlePatientStudyShare(w http.ResponseWriter, r *http.Request) {
 	}
 
 	shareMessage := fmt.Sprintf("Te comparto mi estudio de diagnóstico por imágenes. Está disponible hasta el %s.", expiresAt.In(time.UTC).Format("2006-01-02 15:04 UTC"))
+	qrCodeDataURL, err := buildStudyShareQRCodeDataURL(shareURL)
+	if err != nil {
+		http.Error(w, "failed to build share qr", http.StatusInternalServerError)
+		return
+	}
 	whatsAppURL := "https://wa.me/?text=" + url.QueryEscape(shareMessage+" "+shareURL)
 	mailSubject := "Estudio por imágenes compartido | Salud Pública Neuquén"
 	mailBody := shareMessage + "\n\n" + shareURL
@@ -2976,11 +2985,21 @@ func (a *App) handlePatientStudyShare(w http.ResponseWriter, r *http.Request) {
 		StudyInstanceUID: studyUID,
 		ViewerKind:       viewerKind,
 		ShareURL:         shareURL,
+		QRCodeDataURL:    qrCodeDataURL,
 		WhatsAppURL:      whatsAppURL,
 		MailToURL:        mailToURL,
 		ExpiresAt:        expiresAt.UTC().Format(time.RFC3339),
 		MaxUses:          maxUses,
 	})
+}
+
+func buildStudyShareQRCodeDataURL(shareURL string) (string, error) {
+	png, err := qrcode.Encode(shareURL, qrcode.Medium, 320)
+	if err != nil {
+		return "", err
+	}
+
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(png), nil
 }
 
 func (a *App) createStudyShareLink(ctx context.Context, patientID, studyUID, viewerKind, channel string, reqBody PatientStudyShareRequest, r *http.Request, maxExpiresAt time.Time) (string, string, time.Time, int, error) {

@@ -5,6 +5,7 @@ go 1.22
 require (
 	github.com/go-ldap/ldap/v3 v3.4.8
 	github.com/jackc/pgx/v5 v5.7.2
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	go.mongodb.org/mongo-driver v1.17.6
 )
 
