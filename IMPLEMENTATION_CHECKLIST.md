@@ -173,3 +173,11 @@ Do not start with full search or C-GET before this is working.
   - field-level error announcement and live-region messaging for login, retrieve progress, and session expiration
   - avoid relying only on color for error/status communication
   - run a dedicated pass with real assistive technology targets (VoiceOver / TalkBack / NVDA as applicable)
+- Debate a preview screen for low-image-count studies, available to both patient and professional:
+  - evaluate whether Orthanc preview/rendered-image APIs are sufficient to show thumbnails and per-image JPG exports for local studies with very few renderable instances
+  - constrain the discussion to convenience preview/export only, not diagnostic replacement for the viewer or DICOM download
+  - capture risks already identified:
+    - a JPG can be mistaken for a complete or diagnostically sufficient study artifact
+    - not every study with 1-5 images is clinically simple or safe to summarize visually
+    - some modalities/encodings may not render consistently through Orthanc core APIs without plugin support
+    - multiframe / cine / secondary-capture edge cases complicate the notion of “download the study as JPG”
