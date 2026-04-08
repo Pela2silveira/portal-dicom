@@ -1935,6 +1935,7 @@
             <div class="preview-grid" id="patient-preview-grid"></div>
           </div>
           <div class="preview-footer">
+            <button class="action action-primary" id="patient-preview-share" type="button">Compartir</button>
             <button class="action ghost" id="patient-preview-close-footer" type="button">Cerrar</button>
           </div>
         </div>
@@ -2016,6 +2017,7 @@
       const patientPreviewOverlay = document.getElementById("patient-preview-overlay");
       const patientPreviewSummary = document.getElementById("patient-preview-summary");
       const patientPreviewGrid = document.getElementById("patient-preview-grid");
+      const patientPreviewShare = document.getElementById("patient-preview-share");
       const patientPreviewCloseFooter = document.getElementById("patient-preview-close-footer");
       const mailCodeFeedback = document.getElementById("mail-code-feedback");
       const patientValidateButton = document.getElementById("patient-continue");
@@ -2072,6 +2074,7 @@
       let patientMailCodeReady = false;
       let patientShareQROpen = false;
       let patientPreviewOpen = false;
+      let patientPreviewShareStudyUID = "";
       let patientSyncPollHandle = null;
       let patientRetrieveEventSource = null;
       let physicianRetrieveEventSource = null;
@@ -2250,8 +2253,10 @@
         )).join("");
       }
 
-      function openPatientPreview(payload) {
+      function openPatientPreview(payload, options = {}) {
         renderPatientPreview(payload);
+        patientPreviewShareStudyUID = options.shareEnabled ? String(payload.study_instance_uid || "") : "";
+        patientPreviewShare.hidden = !patientPreviewShareStudyUID;
         mountNodeAfter(patientPreviewOverlayAnchor, patientPreviewOverlay);
         patientPreviewOpen = true;
         patientPreviewCloseFooter.focus({ preventScroll: true });
@@ -2260,6 +2265,7 @@
       function closePatientPreview() {
         detachNode(patientPreviewOverlay);
         patientPreviewOpen = false;
+        patientPreviewShareStudyUID = "";
       }
 
       function clearPortalSession() {
@@ -4043,7 +4049,7 @@
           previewButton.textContent = "Cargando...";
           try {
             const payload = await loadPatientStudyPreview(studyInstanceUID);
-            openPatientPreview(payload);
+            openPatientPreview(payload, { shareEnabled: true });
           } catch (error) {
             alert(error?.payload?.message || "No se pudo cargar la vista previa de este estudio.");
           } finally {
@@ -4428,6 +4434,28 @@
         }
       });
       patientPreviewCloseFooter.addEventListener("click", closePatientPreview);
+      patientPreviewShare.addEventListener("click", async () => {
+        if (!patientPreviewShareStudyUID) {
+          return;
+        }
+
+        patientPreviewShare.disabled = true;
+        const originalLabel = patientPreviewShare.textContent;
+        patientPreviewShare.textContent = "Preparando...";
+        try {
+          const payload = await createPatientStudyShare(patientPreviewShareStudyUID, "stone", "share");
+          if (!payload.qr_code_data_url || !payload.share_url) {
+            throw new Error("patient share payload incomplete");
+          }
+          closePatientPreview();
+          openPatientShareQR(payload);
+        } catch (error) {
+          alert(error?.payload?.message || "No se pudo crear el enlace para compartir este estudio.");
+        } finally {
+          patientPreviewShare.disabled = false;
+          patientPreviewShare.textContent = originalLabel;
+        }
+      });
       patientPreviewOverlay.addEventListener("click", event => {
         if (event.target === patientPreviewOverlay) {
           closePatientPreview();
