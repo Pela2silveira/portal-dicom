@@ -15,6 +15,7 @@
 - [Ready] **Landing + portal surfaces**: patient/professional mock flows route to portal-owned pages first; responsive requirement captured.
 - [Ready] **Patient list contract**: `GET /api/patient/studies` is resolved from the active patient session, returns `200` with `studies: []` if none, and does not trust caller-supplied document identifiers for authorization.
 - [Ready] **Patient async search worker**: remote patient search runs through `search_requests`/`search_node_runs`, started by `POST /api/patient/search`, polled through `GET /api/patient/search?request_id=...`, with visible `queued/running` state in the patient results surface.
+- [Ready] **Patient DIMSE observation pass**: patient remote search may probe `c_find` nodes and emit identity-comparison logs, but those DIMSE results remain non-authoritative and are not shown until configurable matching rules are implemented.
 - [Ready] **Patient in-flight search reuse**: if the patient UI repeats the same `document + filters` while a search is already `queued` or `running`, the browser reuses the active `request_id` instead of emitting another redundant `POST /api/patient/search`.
 - [Ready] **Stale patient search reconciliation**: patient searches left in `queued` or `running` after backend restart are reconciled to `failed`, so the portal does not restore a phantom in-progress state from persisted rows.
 - [Ready] **Manual retrieve contract**: `POST /api/patient/retrieve`, `POST /api/physician/retrieve`, job persistence and state transitions exist (queued→running→done/failed).

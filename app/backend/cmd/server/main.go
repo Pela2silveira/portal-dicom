@@ -1137,6 +1137,8 @@ var orthancQueryAnswerTagMappings = []struct {
 	{tag: "0020000D", keys: []string{"StudyInstanceUID", "0020,000D"}},
 	{tag: "00100010", keys: []string{"PatientName", "0010,0010"}},
 	{tag: "00100020", keys: []string{"PatientID", "0010,0020"}},
+	{tag: "00100030", keys: []string{"PatientBirthDate", "0010,0030"}},
+	{tag: "00100040", keys: []string{"PatientSex", "0010,0040"}},
 	{tag: "00080020", keys: []string{"StudyDate", "0008,0020"}},
 	{tag: "00081030", keys: []string{"StudyDescription", "0008,1030"}},
 	{tag: "00080061", keys: []string{"ModalitiesInStudy", "0008,0061"}},
@@ -6541,12 +6543,13 @@ func (a *App) getPatientSummaryByID(ctx context.Context, patientID string) (Pati
 func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient PatientSummary, documentNumber string, filters PatientStudiesFilter) (PatientSummary, error) {
 	nodes := make([]PACSNodeConfig, 0, len(a.externalConfig.PACSNodes))
 	for _, node := range a.externalConfig.PACSNodes {
-		if strings.EqualFold(node.Resolved().SearchMode, "qido_rs") {
+		searchMode := strings.ToLower(strings.TrimSpace(node.Resolved().SearchMode))
+		if searchMode == "qido_rs" || searchMode == "c_find" {
 			nodes = append(nodes, node)
 		}
 	}
 	if len(nodes) == 0 {
-		return patient, errors.New("patient qido flow requires at least one qido_rs pacs node")
+		return patient, errors.New("patient remote flow requires at least one searchable pacs node")
 	}
 	sort.SliceStable(nodes, func(i, j int) bool {
 		left := nodes[i].Resolved()
@@ -6565,6 +6568,18 @@ func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient Pati
 		"sync_filters":    filters,
 	})
 
+	identifiers, err := a.loadPatientSearchIdentifiers(ctx, patient)
+	if err != nil {
+		return patient, err
+	}
+	if len(identifiers) == 0 {
+		identifiers = []PatientAlternateIdentifier{{
+			Type:      "document_number",
+			Value:     patient.DocumentNumber,
+			IsPrimary: true,
+		}}
+	}
+
 	studyByUID := make(map[string]PatientStudy)
 	successfulNodeCount := 0
 	failedNodeCount := 0
@@ -6572,7 +6587,15 @@ func (a *App) syncPatientStudiesFromSingleNode(ctx context.Context, patient Pati
 	cacheCandidates := make([]PatientStudy, 0)
 
 	for _, node := range nodes {
-		remoteStudies, _, err := a.fetchPatientStudiesFromQIDO(ctx, node, patient, filters)
+		var remoteStudies []PatientStudy
+		switch strings.ToLower(strings.TrimSpace(node.Resolved().SearchMode)) {
+		case "qido_rs":
+			remoteStudies, _, err = a.fetchPatientStudiesFromQIDO(ctx, node, patient, filters, identifiers)
+		case "c_find":
+			remoteStudies, err = a.fetchPatientStudiesFromCFind(ctx, node, patient, filters, identifiers)
+		default:
+			continue
+		}
 		if err != nil {
 			failedNodeCount++
 			lastErr = err
@@ -7286,17 +7309,12 @@ func writeSystemHealthSSEEvent(w io.Writer, eventName string, event any) error {
 	return nil
 }
 
-func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConfig, patient PatientSummary, filters PatientStudiesFilter) ([]PatientStudy, string, error) {
+func (a *App) fetchPatientStudiesFromQIDO(ctx context.Context, node PACSNodeConfig, patient PatientSummary, filters PatientStudiesFilter, identifiers []PatientAlternateIdentifier) ([]PatientStudy, string, error) {
 	resolved := node.Resolved()
 	qidoStartedAt := time.Now()
 	token, err := a.fetchPACSBearerToken(ctx, node)
 	if err != nil {
 		return nil, "", fmt.Errorf("fetch pacs token for %s: %w", node.ID, err)
-	}
-
-	identifiers, err := a.loadPatientSearchIdentifiers(ctx, patient)
-	if err != nil {
-		return nil, "", err
 	}
 	if len(identifiers) == 0 {
 		identifiers = []PatientAlternateIdentifier{{
@@ -7474,6 +7492,79 @@ func (a *App) fetchPatientStudiesFromQIDOIdentifier(ctx context.Context, node PA
 	}
 
 	return studies, patientName, nil
+}
+
+func (a *App) fetchPatientStudiesFromCFind(ctx context.Context, node PACSNodeConfig, patient PatientSummary, filters PatientStudiesFilter, identifiers []PatientAlternateIdentifier) ([]PatientStudy, error) {
+	startedAt := time.Now()
+	observedStudies := make(map[string]struct{})
+
+	a.log("info", "patient_cfind_probe_started", map[string]any{
+		"document_number":  patient.DocumentNumber,
+		"patient_id":       patient.ID,
+		"node_id":          node.ID,
+		"identifier_count": len(identifiers),
+		"sync_filters":     filters,
+	})
+
+	for _, identifier := range identifiers {
+		identifierValue := strings.TrimSpace(identifier.Value)
+		if identifierValue == "" {
+			continue
+		}
+		a.log("info", "patient_cfind_request_started", map[string]any{
+			"document_number": documentNumberOrFallback(patient.DocumentNumber, identifierValue),
+			"node_id":         node.ID,
+			"patient_id_type": identifier.Type,
+			"patient_id_value": identifierValue,
+		})
+
+		payload, err := a.runOrthancStudyCFind(ctx, node, PhysicianSearchFilters{
+			PatientID: identifierValue,
+			DateFrom:  filters.DateFrom,
+			DateTo:    filters.DateTo,
+			Modality:  filters.Modality,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("run patient c-find on %s with %s=%s: %w", node.ID, identifier.Type, identifierValue, err)
+		}
+
+		for _, item := range payload {
+			studyUID := dicomFirstString(item, "0020000D")
+			if studyUID == "" {
+				continue
+			}
+			observedStudies[studyUID] = struct{}{}
+			a.logPatientIdentityComparison(patient, remotePatientMatchCandidate{
+				NodeID:           node.ID,
+				StudyInstanceUID: studyUID,
+				PatientID:        dicomFirstString(item, "00100020"),
+				PatientName:      dicomFirstPersonName(item, "00100010"),
+				BirthDate:        dicomFirstString(item, "00100030"),
+				Sex:              dicomFirstString(item, "00100040"),
+			})
+		}
+	}
+
+	a.log("info", "patient_cfind_probe_completed", map[string]any{
+		"document_number":  patient.DocumentNumber,
+		"patient_id":       patient.ID,
+		"node_id":          node.ID,
+		"identifier_count": len(identifiers),
+		"candidate_count":  len(observedStudies),
+		"study_count":      0,
+		"duration_ms":      time.Since(startedAt).Milliseconds(),
+	})
+
+	// First cut only: observe and log DIMSE candidates, but do not authorize or display them
+	// until configurable matching rules are in place.
+	return nil, nil
+}
+
+func documentNumberOrFallback(documentNumber, fallback string) string {
+	if strings.TrimSpace(documentNumber) != "" {
+		return strings.TrimSpace(documentNumber)
+	}
+	return strings.TrimSpace(fallback)
 }
 
 func (a *App) fetchPACSBearerToken(ctx context.Context, node PACSNodeConfig) (string, error) {
@@ -8478,6 +8569,8 @@ func (a *App) runOrthancStudyCFindWithRefresh(ctx context.Context, node PACSNode
 			"ModalitiesInStudy":           "",
 			"PatientName":                 "",
 			"PatientID":                   "",
+			"PatientBirthDate":            "",
+			"PatientSex":                  "",
 			"AccessionNumber":             "",
 			"NumberOfStudyRelatedInstances": "",
 		},
