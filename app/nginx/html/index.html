@@ -654,15 +654,22 @@
 
       .share-qr-dialog {
         width: min(100%, 420px);
+        max-height: min(calc(100vh - 40px), 760px);
         border: 1px solid var(--line);
         background: var(--surface);
         box-shadow: var(--shadow);
+        display: flex;
+        flex-direction: column;
       }
 
       .share-qr-header,
       .share-qr-body,
       .share-qr-footer {
         padding: 18px;
+      }
+
+      .share-qr-body {
+        overflow-y: auto;
       }
 
       .share-qr-header {
@@ -743,11 +750,15 @@
       }
 
       .share-qr-footer {
-        display: flex;
-        flex-wrap: wrap;
+        display: grid;
         gap: 10px;
-        justify-content: flex-end;
         border-top: 1px solid var(--line);
+      }
+
+      @media (min-width: 640px) {
+        .share-qr-footer {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
       }
 
       .filter-grid {
@@ -1810,9 +1821,9 @@
             </div>
           </div>
           <div class="share-qr-footer">
+            <button class="action action-primary" id="patient-share-qr-whatsapp" type="button">Abrir WhatsApp</button>
             <button class="action ghost" id="patient-share-qr-share" type="button">Compartir</button>
             <button class="action ghost" id="patient-share-qr-copy" type="button">Copiar enlace</button>
-            <button class="action action-primary" id="patient-share-qr-whatsapp" type="button">Abrir WhatsApp</button>
           </div>
         </div>
       </section>
