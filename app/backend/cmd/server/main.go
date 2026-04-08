@@ -7826,21 +7826,33 @@ func (a *App) getPatientSourceNode(ctx context.Context, patientID, studyInstance
 }
 
 func (a *App) getPhysicianSourceNodeFromRecentQueries(ctx context.Context, physicianID, studyInstanceUID string) (PACSNodeConfig, string, error) {
-	var sourceNodeID string
+	var (
+		resultSourceNodeID string
+		querySource        string
+	)
 	err := a.db.QueryRowContext(ctx, `
-		SELECT COALESCE(result->>'source_node_id', '')
+		SELECT
+			COALESCE(result->>'source_node_id', ''),
+			COALESCE(prq.query_json->>'source', '')
 		FROM physician_recent_queries prq
 		CROSS JOIN LATERAL jsonb_array_elements(COALESCE(prq.query_json->'results', '[]'::jsonb)) AS result
 		WHERE prq.physician_id = $1::uuid
 		  AND result->>'study_instance_uid' = $2
 		ORDER BY prq.searched_at DESC, prq.id DESC
 		LIMIT 1
-	`, physicianID, studyInstanceUID).Scan(&sourceNodeID)
+	`, physicianID, studyInstanceUID).Scan(&resultSourceNodeID, &querySource)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return PACSNodeConfig{}, "", sql.ErrNoRows
 		}
 		return PACSNodeConfig{}, "", fmt.Errorf("resolve physician source from recent queries: %w", err)
+	}
+	sourceNodeID := strings.TrimSpace(resultSourceNodeID)
+	if sourceNodeID == "" {
+		sourceNodeID = normalizePhysicianSearchSource(querySource)
+		if sourceNodeID == physicianSearchSourceLocalCache {
+			sourceNodeID = ""
+		}
 	}
 	if strings.TrimSpace(sourceNodeID) == "" {
 		return PACSNodeConfig{}, "", sql.ErrNoRows
