@@ -8592,6 +8592,13 @@ func (a *App) fetchOrthancQueryAnswerContent(ctx context.Context, queryID, answe
 	if err != nil {
 		return nil, fmt.Errorf("decode orthanc query answer content: %w", err)
 	}
+	if dicomFirstString(item, "0020000D") == "" {
+		a.log("warn", "physician_cfind_answer_missing_study_uid", map[string]any{
+			"query_id":  queryID,
+			"answer_id": answerID,
+			"body":      strings.TrimSpace(string(body)),
+		})
+	}
 	return item, nil
 }
 
