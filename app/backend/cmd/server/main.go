@@ -8638,6 +8638,12 @@ func assignOrthancQueryAnswerValue(target qidoResponseItem, tag string, flat map
 		return
 	}
 	value, ok := flat[key]
+	if !ok {
+		value, ok = flat[strings.ToLower(key)]
+	}
+	if !ok {
+		value, ok = flat[strings.ToUpper(key)]
+	}
 	if !ok || value == nil {
 		return
 	}
@@ -8659,6 +8665,51 @@ func assignOrthancQueryAnswerValue(target qidoResponseItem, tag string, flat map
 				continue
 			}
 			values = append(values, mustMarshalJSON(text))
+		}
+		if len(values) > 0 {
+			target[tag] = dicomJSONAttribute{Value: values}
+		}
+	case map[string]any:
+		assignOrthancQueryAnswerNestedValue(target, tag, typed)
+	}
+}
+
+func assignOrthancQueryAnswerNestedValue(target qidoResponseItem, tag string, payload map[string]any) {
+	if target == nil || payload == nil || target[tag].Value != nil {
+		return
+	}
+	rawValue, ok := payload["Value"]
+	if !ok || rawValue == nil {
+		return
+	}
+	switch typed := rawValue.(type) {
+	case string:
+		trimmed := strings.TrimSpace(typed)
+		if trimmed == "" {
+			return
+		}
+		target[tag] = dicomJSONAttribute{Value: []json.RawMessage{mustMarshalJSON(trimmed)}}
+	case float64:
+		target[tag] = dicomJSONAttribute{Value: []json.RawMessage{mustMarshalJSON(strconv.Itoa(int(typed)))}}
+	case []any:
+		values := make([]json.RawMessage, 0, len(typed))
+		for _, entry := range typed {
+			switch item := entry.(type) {
+			case map[string]any:
+				if alphabetic, ok := item["Alphabetic"].(string); ok && strings.TrimSpace(alphabetic) != "" {
+					values = append(values, mustMarshalJSON(strings.TrimSpace(alphabetic)))
+					continue
+				}
+				text := strings.TrimSpace(fmt.Sprint(item))
+				if text != "" {
+					values = append(values, mustMarshalJSON(text))
+				}
+			default:
+				text := strings.TrimSpace(fmt.Sprint(entry))
+				if text != "" {
+					values = append(values, mustMarshalJSON(text))
+				}
+			}
 		}
 		if len(values) > 0 {
 			target[tag] = dicomJSONAttribute{Value: values}
