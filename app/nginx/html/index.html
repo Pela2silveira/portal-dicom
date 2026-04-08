@@ -2732,6 +2732,13 @@
         return (modalities || []).map(modality => modalityLabel(modality)).join(", ");
       }
 
+      function andesMetadataLabel(item, key) {
+        if (item && item.his === false) {
+          return "n/a";
+        }
+        return (item && item[key]) || "-";
+      }
+
       function patientDateRangeForPeriod(period) {
         if (!period) {
           return {};
@@ -3058,8 +3065,8 @@
                   '</div>' +
                   '<div class="meta-grid">' +
                   '<div><span>Hospitales</span><strong>' + escapeHTML((study.locations || []).join(", ") || "-") + '</strong></div>' +
-                  '<div><span>Prestación en ANDES</span><strong>' + escapeHTML(study.andes_prestacion || "-") + '</strong></div>' +
-                  '<div><span>Profesional en ANDES</span><strong>' + escapeHTML(study.andes_professional || "-") + '</strong></div>' +
+                  '<div><span>Prestación en ANDES</span><strong>' + escapeHTML(andesMetadataLabel(study, "andes_prestacion")) + '</strong></div>' +
+                  '<div><span>Profesional en ANDES</span><strong>' + escapeHTML(andesMetadataLabel(study, "andes_professional")) + '</strong></div>' +
                   '<div><span>Imágenes</span><strong>' + escapeHTML(imageCountLabel) + '</strong></div>' +
                 '</div>' +
                   '<div class="chip-row">' +
@@ -3278,8 +3285,8 @@
                   '<div><span>Paciente</span><strong>' + escapeHTML(result.patient_id) + '</strong></div>' +
                   '<div><span>Modalidades</span><strong>' + escapeHTML(formatModalityList(result.modalities || [])) + '</strong></div>' +
                   '<div><span>Hospitales</span><strong>' + escapeHTML((result.locations || []).join(", ") || "-") + '</strong></div>' +
-                  '<div><span>Prestación en ANDES</span><strong>' + escapeHTML(result.andes_prestacion || "-") + '</strong></div>' +
-                  '<div><span>Profesional en ANDES</span><strong>' + escapeHTML(result.andes_professional || "-") + '</strong></div>' +
+                  '<div><span>Prestación en ANDES</span><strong>' + escapeHTML(andesMetadataLabel(result, "andes_prestacion")) + '</strong></div>' +
+                  '<div><span>Profesional en ANDES</span><strong>' + escapeHTML(andesMetadataLabel(result, "andes_professional")) + '</strong></div>' +
                   '<div><span>Imágenes</span><strong>' + escapeHTML(imageCountLabel) + '</strong></div>' +
                   '<div><span>Caché local</span><strong>' + escapeHTML(labelForCacheStatus(result.cache_status)) + '</strong></div>' +
                 '</div>' +

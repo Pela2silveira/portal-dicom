@@ -1050,6 +1050,7 @@ type PatientStudy struct {
 	ViewerURL          string   `json:"viewer_url,omitempty"`
 	OHIFViewerURL      string   `json:"ohif_viewer_url,omitempty"`
 	DownloadURL        string   `json:"download_url,omitempty"`
+	HIS                bool     `json:"his"`
 	SourceNodeAvailable bool    `json:"source_node_available"`
 	SourceNodeID       string   `json:"-"`
 }
@@ -1350,6 +1351,7 @@ type PhysicianResult struct {
 	ViewerURL        string   `json:"viewer_url,omitempty"`
 	OHIFViewerURL    string   `json:"ohif_viewer_url,omitempty"`
 	DownloadURL      string   `json:"download_url,omitempty"`
+	HIS              bool     `json:"his"`
 	SourceNodeAvailable bool  `json:"source_node_available"`
 }
 
@@ -4523,6 +4525,18 @@ func (a *App) sourceNodeAvailable(nodeID string) bool {
 	return componentHealthy(event.Components, "remote_pacs:"+nodeID)
 }
 
+func (a *App) sourceNodeUsesHIS(nodeID string) bool {
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" {
+		return true
+	}
+	node, ok := a.configuredPACSNodeByID(nodeID)
+	if !ok {
+		return true
+	}
+	return node.HIS
+}
+
 func overallHealthStatus(components []ComponentHealth) string {
 	optionalDegraded := false
 	for _, component := range components {
@@ -7648,6 +7662,7 @@ func (a *App) fetchPatientStudiesFromQIDOIdentifier(ctx context.Context, node PA
 			Locations:          []string{node.Name},
 			AvailabilityStatus: "pending_retrieve",
 			AuthorizationBasis: authorizationBasis,
+			HIS:                node.HIS,
 			SourceNodeID:       node.ID,
 		}
 
@@ -7716,6 +7731,7 @@ func (a *App) fetchPatientStudiesFromCFind(ctx context.Context, node PACSNodeCon
 			Locations:          []string{node.Name},
 			AvailabilityStatus: "pending_retrieve",
 			AuthorizationBasis: authorizationBasis,
+			HIS:                node.HIS,
 			SourceNodeID:       node.ID,
 		}
 
@@ -9591,6 +9607,7 @@ func (a *App) searchPhysicianResultsFromQIDONode(ctx context.Context, physician 
 			Modalities:          dicomStringList(item, "00080061"),
 			Locations:           []string{node.Name},
 			SourceNodeID:        node.ID,
+			HIS:                 node.HIS,
 			CacheStatus:         "not_local",
 			RetrieveStatus:      "idle",
 			PartialFilter:       false,
@@ -9671,6 +9688,7 @@ func (a *App) searchPhysicianResultsFromDIMSENode(ctx context.Context, physician
 			Modalities:          dicomStringList(item, "00080061"),
 			Locations:           []string{node.Name},
 			SourceNodeID:        resolved.ID,
+			HIS:                 node.HIS,
 			CacheStatus:         "not_local",
 			RetrieveStatus:      "idle",
 			PartialFilter:       false,
@@ -9901,6 +9919,10 @@ func (a *App) searchPhysicianResultsFromLocalCache(ctx context.Context, username
 				}
 				return buildPhysicianDownloadURL(studyUID)
 			}(),
+			HIS: func() bool {
+				sourceNodeID := a.resolveConfiguredNodeIDForStudy("", locations)
+				return a.sourceNodeUsesHIS(sourceNodeID)
+			}(),
 		})
 	}
 
@@ -10042,6 +10064,9 @@ func (a *App) enrichPatientStudiesWithAndes(ctx context.Context, patientID strin
 
 	missingStudyUIDs := make([]string, 0, len(studies))
 	for _, study := range studies {
+		if !a.sourceNodeUsesHIS(study.SourceNodeID) {
+			continue
+		}
 		if strings.TrimSpace(study.AndesPrestacionID) != "" || strings.TrimSpace(study.AndesPrestacion) != "" || strings.TrimSpace(study.AndesProfessional) != "" {
 			continue
 		}
@@ -10113,6 +10138,9 @@ func (a *App) enrichPhysicianResultsWithAndes(ctx context.Context, results []Phy
 		}
 		node, ok := a.configuredPACSNodeByID(nodeID)
 		if !ok {
+			continue
+		}
+		if !node.HIS {
 			continue
 		}
 		orgID := strings.TrimSpace(node.AndesOrganizationID)
@@ -10511,6 +10539,7 @@ func (a *App) listPatientStudies(ctx context.Context, patientID, documentNumber 
 			AvailabilityStatus: availabilityStatus,
 			RetrieveStatus:     "idle",
 			AuthorizationBasis: authorizationBasis,
+			HIS:                a.sourceNodeUsesHIS(source.SourceNodeID),
 			SourceNodeAvailable: a.sourceNodeAvailable(source.SourceNodeID),
 			SourceNodeID:       source.SourceNodeID,
 		}
