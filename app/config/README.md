@@ -1,8 +1,9 @@
 # Config JSON Guide
 
 `app/config/config.json` is the local runtime configuration file for the portal stack.
+`app/config/config-prd.json` follows the same local-only rule when you keep a separate production-oriented variant on disk.
 
-This file is local-only and must not be committed.
+These files are local-only and must not be committed.
 Use [`config.example.json`](./config.example.json) as the starting point.
 
 ## Recommended workflow
@@ -243,6 +244,6 @@ Fields:
 
 ## Notes
 
-- `app/config/config.json` is ignored and should remain local to the environment.
+- `app/config/config.json` and `app/config/config-prd.json` are ignored and should remain local to the environment.
 - Only update [`config.example.json`](./config.example.json) when the shared config shape changes.
 - Keep tokens, passwords, and private host-specific secrets out of tracked files.

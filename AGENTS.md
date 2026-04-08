@@ -24,7 +24,7 @@ This includes, when applicable:
 - Include both implementation and documentation/spec synchronization in the same commit unless the user explicitly asks to separate them.
 - Before making a new change, check whether there are pending uncommitted changes from the previous step and commit them first when feasible.
 - Never commit secrets, tokens, passwords, or private environment values into tracked config files.
-- `app/config/config.json` is local-only and must remain ignored by git.
+- `app/config/config.json` and `app/config/config-prd.json` are local-only and must remain ignored by git.
 - `Makefile.deploy.local` is local-only and must remain ignored by git unless the user explicitly asks to start versioning it.
 - Changes to shared config shape must be reflected in `app/config/config.example.json`, not by committing local runtime values.
 - If a release version changes, update `VERSION` and any user-visible version label in the UI in the same task so they stay aligned.
