@@ -5672,7 +5672,17 @@ func formatDICOMDate(value string) string {
 }
 
 func normalizeRemoteSex(value string) string {
-	return strings.ToUpper(strings.TrimSpace(value))
+	normalized := normalizeFuzzySearchText(value)
+	switch normalized {
+	case "F", "FEMENINO", "FEMALE", "MUJER":
+		return "F"
+	case "M", "MASCULINO", "MALE", "VARON", "HOMBRE":
+		return "M"
+	case "O", "OTRO", "OTRA", "OTHER", "NO BINARIO", "NO BINARIA", "NB", "X":
+		return "O"
+	default:
+		return strings.ToUpper(strings.TrimSpace(value))
+	}
 }
 
 func patientIdentifierSet(identifiers []PatientAlternateIdentifier) map[string]PatientAlternateIdentifier {
