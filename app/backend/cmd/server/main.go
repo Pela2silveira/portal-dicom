@@ -53,6 +53,7 @@ type App struct {
 	cfg            Config
 	db             *sql.DB
 	httpClient     *http.Client
+	orthancSearchClient *http.Client
 	logger         *log.Logger
 	loginRateLimiter *InMemoryRateLimiter
 	orthancModalityMu sync.Mutex
@@ -1575,6 +1576,7 @@ type DIMSECechoHealthAdapter struct{}
 const (
 	systemHealthCheckTimeout = 8 * time.Second
 	dimseEchoHealthTimeout   = 7 * time.Second
+	orthancCFindTimeout      = 75 * time.Second
 	retrieveJobStaleAfter    = 10 * time.Minute
 )
 
@@ -1714,6 +1716,9 @@ func main() {
 		db:  db,
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
+		},
+		orthancSearchClient: &http.Client{
+			Timeout: orthancCFindTimeout,
 		},
 		loginRateLimiter: newInMemoryRateLimiter(),
 		orthancModalities: make(map[string]string),
@@ -4173,7 +4178,7 @@ func (a *App) checkOrthanc(ctx context.Context) bool {
 	}
 	a.applyOrthancInternalRequestAuth(req)
 
-	res, err := a.httpClient.Do(req)
+	res, err := a.orthancSearchClient.Do(req)
 	if err != nil {
 		a.log("error", "orthanc_ping_failed", map[string]any{"error": err.Error()})
 		return false
@@ -9020,7 +9025,7 @@ func (a *App) fetchOrthancQueryAnswerIDs(ctx context.Context, queryID string) ([
 		return nil, err
 	}
 	a.applyOrthancInternalRequestAuth(req2)
-	res2, err := a.httpClient.Do(req2)
+	res2, err := a.orthancSearchClient.Do(req2)
 	if err != nil {
 		return nil, err
 	}
@@ -9045,7 +9050,7 @@ func (a *App) fetchOrthancQueryAnswerContent(ctx context.Context, queryID, answe
 	}
 	a.applyOrthancInternalRequestAuth(req)
 
-	res, err := a.httpClient.Do(req)
+	res, err := a.orthancSearchClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
