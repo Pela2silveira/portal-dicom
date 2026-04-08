@@ -18,6 +18,9 @@
     "Enable": true,
     "Root": "/dicom-web/"
   },
+  "StoneWebViewer": {
+    "ShowNotForDiagnosticUsageDisclaimer": false
+  },
   "Authorization": {
     "WebServiceTokenCreationBaseUrl": "http://backend:8081/api/orthanc-auth/tokens/",
     "WebServiceTokenDecoderUrl": "http://backend:8081/api/orthanc-auth/tokens/decode",
