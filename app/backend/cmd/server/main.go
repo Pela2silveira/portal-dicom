@@ -5670,6 +5670,86 @@ func patientIdentifierSet(identifiers []PatientAlternateIdentifier) map[string]P
 	return index
 }
 
+func patientNameTokenSet(value string) map[string]struct{} {
+	tokens := tokenizeFuzzySearch(value)
+	if len(tokens) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(tokens))
+	for _, token := range tokens {
+		if token == "" {
+			continue
+		}
+		set[token] = struct{}{}
+	}
+	return set
+}
+
+func sharedPatientNameTokenCount(left, right map[string]struct{}) int {
+	if len(left) == 0 || len(right) == 0 {
+		return 0
+	}
+	if len(left) > len(right) {
+		left, right = right, left
+	}
+	shared := 0
+	for token := range left {
+		if _, ok := right[token]; ok {
+			shared++
+		}
+	}
+	return shared
+}
+
+func hasHighPatientNameMatch(left, right string) bool {
+	leftNormalized := normalizeFuzzySearchText(left)
+	rightNormalized := normalizeFuzzySearchText(right)
+	if leftNormalized == "" || rightNormalized == "" {
+		return false
+	}
+	if leftNormalized == rightNormalized {
+		return true
+	}
+
+	leftSet := patientNameTokenSet(leftNormalized)
+	rightSet := patientNameTokenSet(rightNormalized)
+	shared := sharedPatientNameTokenCount(leftSet, rightSet)
+	if shared == 0 {
+		return false
+	}
+
+	leftCount := len(leftSet)
+	rightCount := len(rightSet)
+	minCount := leftCount
+	if rightCount < minCount {
+		minCount = rightCount
+	}
+	if minCount == 0 {
+		return false
+	}
+	if shared == minCount && minCount >= 2 {
+		return true
+	}
+	if minCount >= 3 && shared >= minCount-1 {
+		return true
+	}
+	return false
+}
+
+func patientDemographicMatch(patient PatientSummary, candidate remotePatientMatchCandidate) bool {
+	hisBirthDate := strings.TrimSpace(patient.BirthDate)
+	remoteBirthDate := normalizeRemoteBirthDate(candidate.BirthDate)
+	if hisBirthDate == "" || remoteBirthDate == "" || hisBirthDate != remoteBirthDate {
+		return false
+	}
+	hisSex := normalizeRemoteSex(patient.Sex)
+	remoteSex := normalizeRemoteSex(candidate.Sex)
+	if hisSex == "" || remoteSex == "" || hisSex != remoteSex {
+		return false
+	}
+	return hasHighPatientNameMatch(patient.FullName, candidate.PatientName)
+}
+
 func (a *App) logPatientIdentityComparison(patient PatientSummary, candidate remotePatientMatchCandidate) {
 	if !a.shouldLogPatientMatchDebug(candidate.NodeID) {
 		return
@@ -5698,6 +5778,7 @@ func (a *App) logPatientIdentityComparison(patient PatientSummary, candidate rem
 		"his_sex":                     hisSex,
 		"remote_sex":                  remoteSex,
 		"sex_match":                   hisSex != "" && remoteSex != "" && hisSex == remoteSex,
+		"demographic_match":           patientDemographicMatch(patient, candidate),
 	})
 }
 
@@ -7549,24 +7630,29 @@ func (a *App) fetchPatientStudiesFromCFind(ctx context.Context, node PACSNodeCon
 			}
 			observedStudies[studyUID] = struct{}{}
 			remotePatientID := dicomFirstString(item, "00100020")
-			a.logPatientIdentityComparison(patient, remotePatientMatchCandidate{
+			candidate := remotePatientMatchCandidate{
 				NodeID:           node.ID,
 				StudyInstanceUID: studyUID,
 				PatientID:        remotePatientID,
 				PatientName:      dicomFirstPersonName(item, "00100010"),
 				BirthDate:        dicomFirstString(item, "00100030"),
 				Sex:              dicomFirstString(item, "00100040"),
-			})
-			matchedIdentifier, ok := identifierIndex[strings.TrimSpace(remotePatientID)]
-			if !ok {
+			}
+			a.logPatientIdentityComparison(patient, candidate)
+
+			authorizationBasis := ""
+			if matchedIdentifier, ok := identifierIndex[strings.TrimSpace(remotePatientID)]; ok {
+				authorizationBasis = "patient_identifier_cfind_match"
+				if matchedIdentifier.Type == "document_number" {
+					authorizationBasis = "patient_document_cfind_match"
+				}
+			} else if patientDemographicMatch(patient, candidate) {
+				authorizationBasis = "patient_demographic_cfind_match"
+			}
+			if authorizationBasis == "" {
 				continue
 			}
 			a.logAccessionNumberProbe("patient_remote_cfind", node.ID, studyUID, dicomFirstString(item, "00080050"))
-
-			authorizationBasis := "patient_identifier_cfind_match"
-			if matchedIdentifier.Type == "document_number" {
-				authorizationBasis = "patient_document_cfind_match"
-			}
 
 			study := PatientStudy{
 				StudyInstanceUID:   studyUID,
