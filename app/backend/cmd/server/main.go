@@ -8519,11 +8519,85 @@ func (a *App) fetchOrthancQueryAnswerContent(ctx context.Context, queryID, answe
 		return nil, fmt.Errorf("orthanc query answer content bad status %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
 	}
 
-	var item qidoResponseItem
-	if err := json.NewDecoder(res.Body).Decode(&item); err != nil {
+	body, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
+	if err != nil {
+		return nil, fmt.Errorf("read orthanc query answer content: %w", err)
+	}
+
+	item, err := decodeOrthancQueryAnswerItem(body)
+	if err != nil {
 		return nil, fmt.Errorf("decode orthanc query answer content: %w", err)
 	}
 	return item, nil
+}
+
+func decodeOrthancQueryAnswerItem(body []byte) (qidoResponseItem, error) {
+	var item qidoResponseItem
+	if err := json.Unmarshal(body, &item); err == nil {
+		return item, nil
+	}
+
+	var flat map[string]any
+	if err := json.Unmarshal(body, &flat); err != nil {
+		return nil, err
+	}
+
+	normalized := make(qidoResponseItem)
+	assignOrthancQueryAnswerValue(normalized, "0020000D", flat, "StudyInstanceUID")
+	assignOrthancQueryAnswerValue(normalized, "00100010", flat, "PatientName")
+	assignOrthancQueryAnswerValue(normalized, "00100020", flat, "PatientID")
+	assignOrthancQueryAnswerValue(normalized, "00080020", flat, "StudyDate")
+	assignOrthancQueryAnswerValue(normalized, "00081030", flat, "StudyDescription")
+	assignOrthancQueryAnswerValue(normalized, "00080061", flat, "ModalitiesInStudy")
+	assignOrthancQueryAnswerValue(normalized, "00080050", flat, "AccessionNumber")
+	assignOrthancQueryAnswerValue(normalized, "00201208", flat, "NumberOfStudyRelatedInstances")
+	assignOrthancQueryAnswerValue(normalized, "0020000D", flat, "0020,000D")
+	assignOrthancQueryAnswerValue(normalized, "00100010", flat, "0010,0010")
+	assignOrthancQueryAnswerValue(normalized, "00100020", flat, "0010,0020")
+	assignOrthancQueryAnswerValue(normalized, "00080020", flat, "0008,0020")
+	assignOrthancQueryAnswerValue(normalized, "00081030", flat, "0008,1030")
+	assignOrthancQueryAnswerValue(normalized, "00080061", flat, "0008,0061")
+	assignOrthancQueryAnswerValue(normalized, "00080050", flat, "0008,0050")
+	assignOrthancQueryAnswerValue(normalized, "00201208", flat, "0020,1208")
+	return normalized, nil
+}
+
+func assignOrthancQueryAnswerValue(target qidoResponseItem, tag string, flat map[string]any, key string) {
+	if target == nil || flat == nil || target[tag].Value != nil {
+		return
+	}
+	value, ok := flat[key]
+	if !ok || value == nil {
+		return
+	}
+
+	switch typed := value.(type) {
+	case string:
+		trimmed := strings.TrimSpace(typed)
+		if trimmed == "" {
+			return
+		}
+		target[tag] = dicomJSONAttribute{Value: []json.RawMessage{mustMarshalJSON(trimmed)}}
+	case float64:
+		target[tag] = dicomJSONAttribute{Value: []json.RawMessage{mustMarshalJSON(strconv.Itoa(int(typed)))}}
+	case []any:
+		values := make([]json.RawMessage, 0, len(typed))
+		for _, entry := range typed {
+			text := strings.TrimSpace(fmt.Sprint(entry))
+			if text == "" {
+				continue
+			}
+			values = append(values, mustMarshalJSON(text))
+		}
+		if len(values) > 0 {
+			target[tag] = dicomJSONAttribute{Value: values}
+		}
+	}
+}
+
+func mustMarshalJSON(value string) json.RawMessage {
+	encoded, _ := json.Marshal(value)
+	return encoded
 }
 
 func (a *App) startOrthancCGetWithRefresh(ctx context.Context, node PACSNodeConfig, studyInstanceUID string, allowRefresh bool) (string, error) {
