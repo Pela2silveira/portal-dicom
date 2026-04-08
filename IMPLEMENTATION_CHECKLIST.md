@@ -194,3 +194,6 @@ Do not start with full search or C-GET before this is working.
 - Revisit Stone startup layout behavior by device type:
   - evaluate opening Stone with `menu=hidden` only on mobile/tablet instead of forcing the hidden menu for all devices
   - if kept device-specific, move the decision from backend URL generation to frontend viewer-launch logic
+- Add patient identity matching support based on DICOM identifier sequences in study/instance metadata:
+  - after trying direct `PatientID` matches against all known patient identifiers, inspect metadata sequences such as alternate/other patient identifiers to see whether any known patient identifier is present
+  - use this as a strong secondary signal before falling back to demographic matching
