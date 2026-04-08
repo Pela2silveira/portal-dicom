@@ -5619,6 +5619,22 @@ func buildPatientNameFuzzyQuery(value string) string {
 	return "*" + strings.Join(tokens, "*") + "*"
 }
 
+func buildPatientSurnameCFindQuery(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	surnamePart := trimmed
+	if idx := strings.Index(trimmed, ","); idx >= 0 {
+		surnamePart = strings.TrimSpace(trimmed[:idx])
+	}
+	tokens := tokenizeFuzzySearch(surnamePart)
+	if len(tokens) == 0 {
+		return ""
+	}
+	return tokens[0] + "*"
+}
+
 type remotePatientMatchCandidate struct {
 	NodeID           string
 	StudyInstanceUID string
@@ -7764,31 +7780,33 @@ func (a *App) fetchPatientStudiesFromCFind(ctx context.Context, node PACSNodeCon
 		}
 	}
 
-	demographicName := strings.TrimSpace(patient.FullName)
 	demographicBirthDate := formatDICOMDate(patient.BirthDate)
 	demographicSex := normalizeRemoteSex(patient.Sex)
+	demographicNameQuery := buildPatientSurnameCFindQuery(patient.FullName)
 	a.log("info", "patient_cfind_demographic_inputs", map[string]any{
 		"document_number":         patient.DocumentNumber,
 		"node_id":                 node.ID,
 		"full_name":               patient.FullName,
+		"name_query":              demographicNameQuery,
 		"birth_date":              patient.BirthDate,
 		"sex":                     patient.Sex,
 		"normalized_birth_date":   demographicBirthDate,
 		"normalized_sex":          demographicSex,
-		"has_demographic_name":    demographicName != "",
+		"has_demographic_name":    demographicNameQuery != "",
 		"has_demographic_birth":   demographicBirthDate != "",
 		"has_demographic_sex":     demographicSex != "",
 	})
-	if demographicName != "" && demographicBirthDate != "" && demographicSex != "" {
+	if demographicNameQuery != "" && demographicBirthDate != "" && demographicSex != "" {
 		a.log("info", "patient_cfind_demographic_request_started", map[string]any{
 			"document_number": patient.DocumentNumber,
 			"node_id":         node.ID,
 			"patient_name":    patient.FullName,
+			"name_query":      demographicNameQuery,
 			"birth_date":      patient.BirthDate,
 			"sex":             patient.Sex,
 		})
 		payload, err := a.runOrthancStudyCFind(ctx, node, PhysicianSearchFilters{
-			PatientName: patient.FullName,
+			PatientName: demographicNameQuery,
 			BirthDate:   demographicBirthDate,
 			Sex:         demographicSex,
 			DateFrom:    filters.DateFrom,
