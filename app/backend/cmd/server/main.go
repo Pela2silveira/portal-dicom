@@ -8404,16 +8404,6 @@ func (a *App) runOrthancStudyCFindWithRefresh(ctx context.Context, node PACSNode
 	if studyDate := buildCFindStudyDate(filters.DateFrom, filters.DateTo); studyDate != "" {
 		queryTags["StudyDate"] = studyDate
 	}
-	a.log("info", "physician_cfind_query_payload", map[string]any{
-		"node_id":      resolved.ID,
-		"patient_id":   filters.PatientID,
-		"patient_name": filters.PatientName,
-		"date_from":    filters.DateFrom,
-		"date_to":      filters.DateTo,
-		"modality":     filters.Modality,
-		"study_date":   queryTags["StudyDate"],
-		"query":        queryTags,
-	})
 
 	body, err := json.Marshal(queryPayload)
 	if err != nil {
@@ -8451,12 +8441,6 @@ func (a *App) runOrthancStudyCFindWithRefresh(ctx context.Context, node PACSNode
 	if err != nil {
 		return nil, err
 	}
-	a.log("info", "physician_cfind_query_answers", map[string]any{
-		"node_id":      resolved.ID,
-		"query_id":     queryID,
-		"answer_count": len(answerIDs),
-		"study_date":   queryTags["StudyDate"],
-	})
 
 	results := make([]qidoResponseItem, 0, len(answerIDs))
 	for _, answerID := range answerIDs {
@@ -8473,12 +8457,6 @@ func (a *App) runOrthancStudyCFindWithRefresh(ctx context.Context, node PACSNode
 		fallbackFilters.DateTo = ""
 		return a.runOrthancStudyCFindWithoutDate(ctx, node, fallbackFilters)
 	}
-	a.log("info", "physician_cfind_query_decoded", map[string]any{
-		"node_id":       resolved.ID,
-		"query_id":      queryID,
-		"decoded_count": len(results),
-		"study_date":    queryTags["StudyDate"],
-	})
 
 	return results, nil
 }
@@ -8603,13 +8581,6 @@ func (a *App) fetchOrthancQueryAnswerContent(ctx context.Context, queryID, answe
 	item, err := decodeOrthancQueryAnswerItem(body)
 	if err != nil {
 		return nil, fmt.Errorf("decode orthanc query answer content: %w", err)
-	}
-	if dicomFirstString(item, "0020000D") == "" {
-		a.log("warn", "physician_cfind_answer_missing_study_uid", map[string]any{
-			"query_id":  queryID,
-			"answer_id": answerID,
-			"body":      strings.TrimSpace(string(body)),
-		})
 	}
 	return item, nil
 }
@@ -9309,7 +9280,6 @@ func (a *App) searchPhysicianResultsFromDIMSENode(ctx context.Context, physician
 		"physician_id": physician.ID,
 		"username":     physician.Username,
 		"node_id":      node.ID,
-		"payload_count": len(payload),
 		"result_count": len(results),
 		"duration_ms":  time.Since(searchStartedAt).Milliseconds(),
 	})
