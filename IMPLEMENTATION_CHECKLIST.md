@@ -191,3 +191,6 @@ Do not start with full search or C-GET before this is working.
   - Stone Web Viewer does not appear to expose a straightforward official Spanish-by-default setting
   - if the product remains Spanish-only, evaluate whether Stone should stay the primary viewer UX
   - compare the localization potential of OHIF versus Stone before making a long-term viewer decision
+- Revisit Stone startup layout behavior by device type:
+  - evaluate opening Stone with `menu=hidden` only on mobile/tablet instead of forcing the hidden menu for all devices
+  - if kept device-specific, move the decision from backend URL generation to frontend viewer-launch logic
