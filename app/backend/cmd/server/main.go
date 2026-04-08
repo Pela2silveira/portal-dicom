@@ -8344,6 +8344,178 @@ func (a *App) startOrthancCGet(ctx context.Context, node PACSNodeConfig, studyIn
 	return a.startOrthancCGetWithRefresh(ctx, node, studyInstanceUID, true)
 }
 
+func (a *App) runOrthancStudyCFind(ctx context.Context, node PACSNodeConfig, filters PhysicianSearchFilters) ([]qidoResponseItem, error) {
+	return a.runOrthancStudyCFindWithRefresh(ctx, node, filters, true)
+}
+
+func (a *App) runOrthancStudyCFindWithRefresh(ctx context.Context, node PACSNodeConfig, filters PhysicianSearchFilters, allowRefresh bool) ([]qidoResponseItem, error) {
+	resolved := node.Resolved()
+	if err := a.ensureOrthancModality(ctx, node); err != nil {
+		return nil, fmt.Errorf("orthanc modality ensure failed: %w", err)
+	}
+
+	queryPayload := map[string]any{
+		"Level": "Study",
+		"Query": map[string]string{
+			"StudyInstanceUID":            "",
+			"StudyDate":                   "",
+			"StudyDescription":            "",
+			"ModalitiesInStudy":           "",
+			"PatientName":                 "",
+			"PatientID":                   "",
+			"AccessionNumber":             "",
+			"NumberOfStudyRelatedInstances": "",
+		},
+		"Timeout": 60,
+	}
+
+	queryTags := queryPayload["Query"].(map[string]string)
+	if strings.TrimSpace(filters.PatientID) != "" {
+		queryTags["PatientID"] = strings.TrimSpace(filters.PatientID)
+	}
+	if strings.TrimSpace(filters.PatientName) != "" {
+		queryTags["PatientName"] = buildPatientNameFuzzyQuery(filters.PatientName)
+	}
+	if strings.TrimSpace(filters.Modality) != "" {
+		queryTags["ModalitiesInStudy"] = strings.TrimSpace(filters.Modality)
+	}
+	if filters.DateFrom != "" || filters.DateTo != "" {
+		queryTags["StudyDate"] = buildQIDODateRange(filters.DateFrom, filters.DateTo)
+	}
+
+	body, err := json.Marshal(queryPayload)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(a.cfg.OrthancURL, "/")+"/modalities/"+url.PathEscape(resolved.ID)+"/query", strings.NewReader(string(body)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	a.applyOrthancInternalRequestAuth(req)
+
+	res, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		errorBody, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+		bodyText := strings.TrimSpace(string(errorBody))
+		if allowRefresh && orthancModalityMissing(res.StatusCode, bodyText) {
+			a.invalidateOrthancModality(node.ID)
+			return a.runOrthancStudyCFindWithRefresh(ctx, node, filters, false)
+		}
+		return nil, fmt.Errorf("orthanc c-find bad status %d: %s", res.StatusCode, bodyText)
+	}
+
+	queryID, err := decodeOrthancQueryID(res.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	answerIDs, err := a.fetchOrthancQueryAnswerIDs(ctx, queryID)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]qidoResponseItem, 0, len(answerIDs))
+	for _, answerID := range answerIDs {
+		item, err := a.fetchOrthancQueryAnswerContent(ctx, queryID, answerID)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, item)
+	}
+
+	return results, nil
+}
+
+func decodeOrthancQueryID(r io.Reader) (string, error) {
+	if r == nil {
+		return "", errors.New("empty orthanc c-find response")
+	}
+
+	var objectPayload struct {
+		ID string `json:"ID"`
+	}
+	if err := json.NewDecoder(r).Decode(&objectPayload); err == nil && strings.TrimSpace(objectPayload.ID) != "" {
+		return strings.TrimSpace(objectPayload.ID), nil
+	}
+
+	return "", errors.New("orthanc c-find did not return query id")
+}
+
+func (a *App) fetchOrthancQueryAnswerIDs(ctx context.Context, queryID string) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(a.cfg.OrthancURL, "/")+"/queries/"+url.PathEscape(queryID)+"/answers", nil)
+	if err != nil {
+		return nil, err
+	}
+	a.applyOrthancInternalRequestAuth(req)
+
+	res, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+		return nil, fmt.Errorf("orthanc query answers bad status %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var stringIDs []string
+	if err := json.NewDecoder(res.Body).Decode(&stringIDs); err == nil {
+		return uniqueTrimmedStrings(stringIDs), nil
+	}
+
+	req2, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(a.cfg.OrthancURL, "/")+"/queries/"+url.PathEscape(queryID)+"/answers", nil)
+	if err != nil {
+		return nil, err
+	}
+	a.applyOrthancInternalRequestAuth(req2)
+	res2, err := a.httpClient.Do(req2)
+	if err != nil {
+		return nil, err
+	}
+	defer res2.Body.Close()
+
+	var intIDs []int
+	if err := json.NewDecoder(res2.Body).Decode(&intIDs); err != nil {
+		return nil, fmt.Errorf("decode orthanc query answers: %w", err)
+	}
+
+	result := make([]string, 0, len(intIDs))
+	for _, id := range intIDs {
+		result = append(result, strconv.Itoa(id))
+	}
+	return result, nil
+}
+
+func (a *App) fetchOrthancQueryAnswerContent(ctx context.Context, queryID, answerID string) (qidoResponseItem, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(a.cfg.OrthancURL, "/")+"/queries/"+url.PathEscape(queryID)+"/answers/"+url.PathEscape(answerID)+"/content", nil)
+	if err != nil {
+		return nil, err
+	}
+	a.applyOrthancInternalRequestAuth(req)
+
+	res, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+		return nil, fmt.Errorf("orthanc query answer content bad status %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var item qidoResponseItem
+	if err := json.NewDecoder(res.Body).Decode(&item); err != nil {
+		return nil, fmt.Errorf("decode orthanc query answer content: %w", err)
+	}
+	return item, nil
+}
+
 func (a *App) startOrthancCGetWithRefresh(ctx context.Context, node PACSNodeConfig, studyInstanceUID string, allowRefresh bool) (string, error) {
 	resolved := node.Resolved()
 	payload, err := json.Marshal(map[string]any{
@@ -8662,10 +8834,18 @@ func (a *App) configuredPACSNodeByID(nodeID string) (PACSNodeConfig, bool) {
 
 func (a *App) searchPhysicianResultsFromNode(ctx context.Context, physician PhysicianSummary, node PACSNodeConfig, filters PhysicianSearchFilters) ([]PhysicianResult, error) {
 	resolved := node.Resolved()
-	if strings.ToLower(resolved.SearchMode) != "qido_rs" {
-		return nil, fmt.Errorf("physician qido flow requires qido_rs search mode, found %s", resolved.SearchMode)
+	switch strings.ToLower(resolved.SearchMode) {
+	case "qido_rs":
+		return a.searchPhysicianResultsFromQIDONode(ctx, physician, node, filters)
+	case "c_find":
+		return a.searchPhysicianResultsFromDIMSENode(ctx, physician, node, filters)
+	default:
+		return nil, fmt.Errorf("unsupported physician search mode %s", resolved.SearchMode)
 	}
+}
 
+func (a *App) searchPhysicianResultsFromQIDONode(ctx context.Context, physician PhysicianSummary, node PACSNodeConfig, filters PhysicianSearchFilters) ([]PhysicianResult, error) {
+	resolved := node.Resolved()
 	searchStartedAt := time.Now()
 	a.log("info", "physician_qido_search_started", map[string]any{
 		"physician_id": physician.ID,
@@ -8814,6 +8994,82 @@ func (a *App) searchPhysicianResultsFromNode(ctx context.Context, physician Phys
 	}
 
 	a.log("info", "physician_qido_search_completed", map[string]any{
+		"physician_id": physician.ID,
+		"username":     physician.Username,
+		"node_id":      node.ID,
+		"result_count": len(results),
+		"duration_ms":  time.Since(searchStartedAt).Milliseconds(),
+	})
+
+	return results, nil
+}
+
+func (a *App) searchPhysicianResultsFromDIMSENode(ctx context.Context, physician PhysicianSummary, node PACSNodeConfig, filters PhysicianSearchFilters) ([]PhysicianResult, error) {
+	resolved := node.Resolved()
+	searchStartedAt := time.Now()
+	a.log("info", "physician_cfind_search_started", map[string]any{
+		"physician_id": physician.ID,
+		"username":     physician.Username,
+		"node_id":      node.ID,
+		"patient_id":   filters.PatientID,
+		"patient_name": filters.PatientName,
+		"date_from":    filters.DateFrom,
+		"date_to":      filters.DateTo,
+		"modality":     filters.Modality,
+	})
+
+	payload, err := a.runOrthancStudyCFind(ctx, node, filters)
+	if err != nil {
+		return nil, fmt.Errorf("run physician c-find on %s: %w", node.ID, err)
+	}
+
+	results := make([]PhysicianResult, 0, len(payload))
+	for _, item := range payload {
+		studyUID := dicomFirstString(item, "0020000D")
+		if studyUID == "" {
+			continue
+		}
+
+		result := PhysicianResult{
+			StudyInstanceUID:    studyUID,
+			PatientName:         dicomFirstPersonName(item, "00100010"),
+			PatientID:           dicomFirstString(item, "00100020"),
+			StudyDate:           normalizeStudyDate(dicomFirstString(item, "00080020")),
+			StudyDescription:    dicomFirstString(item, "00081030"),
+			NumberOfImages:      dicomFirstInt(item, "00201208"),
+			Modalities:          dicomStringList(item, "00080061"),
+			Locations:           []string{node.Name},
+			SourceNodeID:        resolved.ID,
+			CacheStatus:         "not_local",
+			RetrieveStatus:      "idle",
+			PartialFilter:       false,
+			SourceNodeAvailable: a.sourceNodeAvailable(node.ID),
+		}
+
+		cacheStatus, retrieveStatus, retrievePhase, retrieveProgress, viewerURL, ohifViewerURL, err := a.getStudyOperationalState(ctx, studyUID, result.CacheStatus, result.RetrieveStatus)
+		if err != nil {
+			return nil, fmt.Errorf("resolve physician c-find state for %s: %w", studyUID, err)
+		}
+		result.CacheStatus = cacheStatus
+		result.RetrieveStatus = retrieveStatus
+		result.RetrievePhase = retrievePhase
+		result.RetrieveProgress = retrieveProgress
+		result.ViewerURL = viewerURL
+		result.OHIFViewerURL = ohifViewerURL
+		if viewerURL != "" {
+			result.DownloadURL = buildPhysicianDownloadURL(studyUID)
+		}
+		results = append(results, result)
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].StudyDate == results[j].StudyDate {
+			return results[i].StudyInstanceUID < results[j].StudyInstanceUID
+		}
+		return results[i].StudyDate > results[j].StudyDate
+	})
+
+	a.log("info", "physician_cfind_search_completed", map[string]any{
 		"physician_id": physician.ID,
 		"username":     physician.Username,
 		"node_id":      node.ID,
