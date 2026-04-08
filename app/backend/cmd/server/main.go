@@ -9674,7 +9674,7 @@ func nullIfBlank(value string) any {
 }
 
 func buildStoneViewerURL(studyInstanceUID string) string {
-	return "/stone-webviewer/index.html?study=" + url.QueryEscape(strings.TrimSpace(studyInstanceUID))
+	return "/stone-webviewer/index.html?study=" + url.QueryEscape(strings.TrimSpace(studyInstanceUID)) + "&menu=hidden"
 }
 
 func buildOHIFViewerURL(studyInstanceUID string) string {
