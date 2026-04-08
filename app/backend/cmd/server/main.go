@@ -9287,6 +9287,24 @@ func (a *App) searchPhysicianResultsFromDIMSENode(ctx context.Context, physician
 		return results[i].StudyDate > results[j].StudyDate
 	})
 
+	if err := a.enrichPhysicianResultsWithAndes(ctx, results); err != nil {
+		a.log("error", "physician_andes_enrichment_failed", map[string]any{
+			"physician_id": physician.ID,
+			"node_id":      node.ID,
+			"error":        err.Error(),
+		})
+	}
+	if err := a.persistPhysicianResultsToQIDOCache(ctx, results); err != nil {
+		a.log("error", "physician_qido_cache_persist_failed", map[string]any{
+			"physician_id": physician.ID,
+			"node_id":      node.ID,
+			"error":        err.Error(),
+		})
+	}
+	if err := a.persistPhysicianRecentQuery(ctx, physician.ID, filters, results); err != nil {
+		return nil, fmt.Errorf("persist physician recent query: %w", err)
+	}
+
 	a.log("info", "physician_cfind_search_completed", map[string]any{
 		"physician_id": physician.ID,
 		"username":     physician.Username,
