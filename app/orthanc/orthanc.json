@@ -7,7 +7,7 @@
   "RemoteAccessAllowed": true,
   "AuthenticationEnabled": false,
   "RegisteredUsers": {},
-  "DicomAet": "ORTHANC",
+  "DicomAet": "PORTALIMG",
   "DicomCheckCalledAet": false,
   "DicomAlwaysAllowEcho": true,
   "Plugins": [
