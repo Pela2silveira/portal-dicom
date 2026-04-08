@@ -1130,6 +1130,20 @@ type dicomJSONAttribute struct {
 	Value []json.RawMessage `json:"Value"`
 }
 
+var orthancQueryAnswerTagMappings = []struct {
+	tag  string
+	keys []string
+}{
+	{tag: "0020000D", keys: []string{"StudyInstanceUID", "0020,000D"}},
+	{tag: "00100010", keys: []string{"PatientName", "0010,0010"}},
+	{tag: "00100020", keys: []string{"PatientID", "0010,0020"}},
+	{tag: "00080020", keys: []string{"StudyDate", "0008,0020"}},
+	{tag: "00081030", keys: []string{"StudyDescription", "0008,1030"}},
+	{tag: "00080061", keys: []string{"ModalitiesInStudy", "0008,0061"}},
+	{tag: "00080050", keys: []string{"AccessionNumber", "0008,0050"}},
+	{tag: "00201208", keys: []string{"NumberOfStudyRelatedInstances", "0020,1208"}},
+}
+
 type PhysicianResultsResponse struct {
 	Physician PhysicianSummary       `json:"physician"`
 	Filters   PhysicianSearchFilters `json:"filters"`
@@ -8597,36 +8611,17 @@ func decodeOrthancQueryAnswerItem(body []byte) (qidoResponseItem, error) {
 	}
 
 	normalized := make(qidoResponseItem)
-	assignOrthancQueryAnswerValue(normalized, "0020000D", flat, "StudyInstanceUID")
-	assignOrthancQueryAnswerValue(normalized, "00100010", flat, "PatientName")
-	assignOrthancQueryAnswerValue(normalized, "00100020", flat, "PatientID")
-	assignOrthancQueryAnswerValue(normalized, "00080020", flat, "StudyDate")
-	assignOrthancQueryAnswerValue(normalized, "00081030", flat, "StudyDescription")
-	assignOrthancQueryAnswerValue(normalized, "00080061", flat, "ModalitiesInStudy")
-	assignOrthancQueryAnswerValue(normalized, "00080050", flat, "AccessionNumber")
-	assignOrthancQueryAnswerValue(normalized, "00201208", flat, "NumberOfStudyRelatedInstances")
-	assignOrthancQueryAnswerValue(normalized, "0020000D", flat, "0020,000D")
-	assignOrthancQueryAnswerValue(normalized, "00100010", flat, "0010,0010")
-	assignOrthancQueryAnswerValue(normalized, "00100020", flat, "0010,0020")
-	assignOrthancQueryAnswerValue(normalized, "00080020", flat, "0008,0020")
-	assignOrthancQueryAnswerValue(normalized, "00081030", flat, "0008,1030")
-	assignOrthancQueryAnswerValue(normalized, "00080061", flat, "0008,0061")
-	assignOrthancQueryAnswerValue(normalized, "00080050", flat, "0008,0050")
-	assignOrthancQueryAnswerValue(normalized, "00201208", flat, "0020,1208")
+	for _, mapping := range orthancQueryAnswerTagMappings {
+		assignOrthancQueryAnswerValue(normalized, mapping.tag, flat, mapping.keys...)
+	}
 	return normalized, nil
 }
 
-func assignOrthancQueryAnswerValue(target qidoResponseItem, tag string, flat map[string]any, key string) {
+func assignOrthancQueryAnswerValue(target qidoResponseItem, tag string, flat map[string]any, keys ...string) {
 	if target == nil || flat == nil || target[tag].Value != nil {
 		return
 	}
-	value, ok := flat[key]
-	if !ok {
-		value, ok = flat[strings.ToLower(key)]
-	}
-	if !ok {
-		value, ok = flat[strings.ToUpper(key)]
-	}
+	value, ok := orthancQueryAnswerValue(flat, keys...)
 	if !ok || value == nil {
 		return
 	}
@@ -8655,6 +8650,24 @@ func assignOrthancQueryAnswerValue(target qidoResponseItem, tag string, flat map
 	case map[string]any:
 		assignOrthancQueryAnswerNestedValue(target, tag, typed)
 	}
+}
+
+func orthancQueryAnswerValue(flat map[string]any, keys ...string) (any, bool) {
+	if flat == nil {
+		return nil, false
+	}
+	for _, key := range keys {
+		if value, ok := flat[key]; ok {
+			return value, true
+		}
+		if value, ok := flat[strings.ToLower(key)]; ok {
+			return value, true
+		}
+		if value, ok := flat[strings.ToUpper(key)]; ok {
+			return value, true
+		}
+	}
+	return nil, false
 }
 
 func assignOrthancQueryAnswerNestedValue(target qidoResponseItem, tag string, payload map[string]any) {
@@ -9163,23 +9176,8 @@ func (a *App) searchPhysicianResultsFromQIDONode(ctx context.Context, physician 
 		return results[i].StudyDate > results[j].StudyDate
 	})
 
-	if err := a.enrichPhysicianResultsWithAndes(ctx, results); err != nil {
-		a.log("error", "physician_andes_enrichment_failed", map[string]any{
-			"physician_id": physician.ID,
-			"node_id":      node.ID,
-			"error":        err.Error(),
-		})
-	}
-	if err := a.persistPhysicianResultsToQIDOCache(ctx, results); err != nil {
-		a.log("error", "physician_qido_cache_persist_failed", map[string]any{
-			"physician_id": physician.ID,
-			"node_id":      node.ID,
-			"error":        err.Error(),
-		})
-	}
-
-	if err := a.persistPhysicianRecentQuery(ctx, physician.ID, filters, results); err != nil {
-		return nil, fmt.Errorf("persist physician recent query: %w", err)
+	if err := a.persistAndEnrichPhysicianRemoteResults(ctx, physician, node, filters, results); err != nil {
+		return nil, err
 	}
 
 	a.log("info", "physician_qido_search_completed", map[string]any{
@@ -9258,22 +9256,8 @@ func (a *App) searchPhysicianResultsFromDIMSENode(ctx context.Context, physician
 		return results[i].StudyDate > results[j].StudyDate
 	})
 
-	if err := a.enrichPhysicianResultsWithAndes(ctx, results); err != nil {
-		a.log("error", "physician_andes_enrichment_failed", map[string]any{
-			"physician_id": physician.ID,
-			"node_id":      node.ID,
-			"error":        err.Error(),
-		})
-	}
-	if err := a.persistPhysicianResultsToQIDOCache(ctx, results); err != nil {
-		a.log("error", "physician_qido_cache_persist_failed", map[string]any{
-			"physician_id": physician.ID,
-			"node_id":      node.ID,
-			"error":        err.Error(),
-		})
-	}
-	if err := a.persistPhysicianRecentQuery(ctx, physician.ID, filters, results); err != nil {
-		return nil, fmt.Errorf("persist physician recent query: %w", err)
+	if err := a.persistAndEnrichPhysicianRemoteResults(ctx, physician, node, filters, results); err != nil {
+		return nil, err
 	}
 
 	a.log("info", "physician_cfind_search_completed", map[string]any{
@@ -9851,6 +9835,27 @@ func (a *App) applyPersistedQIDOCacheToPhysicianResults(ctx context.Context, res
 		}
 	}
 
+	return nil
+}
+
+func (a *App) persistAndEnrichPhysicianRemoteResults(ctx context.Context, physician PhysicianSummary, node PACSNodeConfig, filters PhysicianSearchFilters, results []PhysicianResult) error {
+	if err := a.enrichPhysicianResultsWithAndes(ctx, results); err != nil {
+		a.log("error", "physician_andes_enrichment_failed", map[string]any{
+			"physician_id": physician.ID,
+			"node_id":      node.ID,
+			"error":        err.Error(),
+		})
+	}
+	if err := a.persistPhysicianResultsToQIDOCache(ctx, results); err != nil {
+		a.log("error", "physician_qido_cache_persist_failed", map[string]any{
+			"physician_id": physician.ID,
+			"node_id":      node.ID,
+			"error":        err.Error(),
+		})
+	}
+	if err := a.persistPhysicianRecentQuery(ctx, physician.ID, filters, results); err != nil {
+		return fmt.Errorf("persist physician recent query: %w", err)
+	}
 	return nil
 }
 
