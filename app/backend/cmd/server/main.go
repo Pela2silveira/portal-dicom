@@ -6944,7 +6944,25 @@ func (a *App) processPatientSearchRequest(requestID string) {
 		return
 	}
 
-	patient := PatientSummary{ID: patientID, DocumentNumber: documentNumber}
+	patient, err := a.getPatientSummaryByID(ctx, patientID)
+	if err != nil {
+		a.log("error", "patient_search_patient_load_failed", map[string]any{
+			"request_id": requestID,
+			"patient_id": patientID,
+			"error":      err.Error(),
+		})
+		_, _ = a.db.ExecContext(ctx, `
+			UPDATE search_requests
+			SET status = 'failed', finished_at = now()
+			WHERE id = $1::uuid
+		`, requestID)
+		_, _ = a.db.ExecContext(ctx, `
+			UPDATE search_node_runs
+			SET status = 'failed', finished_at = now(), error = $2
+			WHERE search_request_id = $1::uuid
+		`, requestID, err.Error())
+		return
+	}
 	filters := PatientStudiesFilter{
 		DateFrom: payload.DateFrom,
 		DateTo:   payload.DateTo,
