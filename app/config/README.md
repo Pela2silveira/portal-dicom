@@ -164,6 +164,7 @@ Fields:
 - `scheduled_retrieve_interval_minutes`: interval between scheduler cycles
 - `scheduled_retrieve_max_study_age_days`: maximum study age considered by the scheduler, based on study date or last seen date fallback
 - `scheduled_retrieve_batch_size`: maximum number of studies enqueued per scheduler cycle
+- `retrieve_blocked_modalities`: optional list of DICOM modality codes that must never be enqueued for retrieve; defaults effectively include `KO`
 
 Public exposure note:
 

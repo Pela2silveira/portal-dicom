@@ -1582,6 +1582,7 @@ type PortalConfig struct {
 	ScheduledRetrieveIntervalMinutes int `json:"scheduled_retrieve_interval_minutes"`
 	ScheduledRetrieveMaxStudyAgeDays int `json:"scheduled_retrieve_max_study_age_days"`
 	ScheduledRetrieveBatchSize      int  `json:"scheduled_retrieve_batch_size"`
+	RetrieveBlockedModalities       []string `json:"retrieve_blocked_modalities"`
 }
 
 func main() {
@@ -6893,6 +6894,13 @@ func (a *App) queuePatientRetrieve(ctx context.Context, patient PatientSummary, 
 	if !a.sourceNodeAvailable(sourceNodeID) {
 		return PatientRetrieveResponse{}, fmt.Errorf("%w: %s", ErrSourceNodeUnavailable, sourceNodeID)
 	}
+	modalities, err := a.patientStudyModalities(ctx, patient.ID, studyInstanceUID)
+	if err != nil {
+		return PatientRetrieveResponse{}, err
+	}
+	if blocked := a.blockedRetrieveModality(modalities); blocked != "" {
+		return PatientRetrieveResponse{}, fmt.Errorf("retrieve blocked for modality %s", blocked)
+	}
 
 	jobID, err := a.insertRetrieveJob(ctx, studyInstanceUID, sourceNodeID, "patient", patient.ID)
 	if err != nil {
@@ -6932,6 +6940,13 @@ func (a *App) queuePhysicianRetrieve(ctx context.Context, physician PhysicianSum
 	}
 	if !a.sourceNodeAvailable(sourceNodeID) {
 		return PhysicianRetrieveResponse{}, fmt.Errorf("%w: %s", ErrSourceNodeUnavailable, sourceNodeID)
+	}
+	modalities, err := a.physicianStudyModalities(ctx, physician.ID, studyInstanceUID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return PhysicianRetrieveResponse{}, err
+	}
+	if blocked := a.blockedRetrieveModality(modalities); blocked != "" {
+		return PhysicianRetrieveResponse{}, fmt.Errorf("retrieve blocked for modality %s", blocked)
 	}
 
 	jobID, err := a.insertRetrieveJob(ctx, studyInstanceUID, sourceNodeID, "physician", physician.ID)
@@ -7444,6 +7459,85 @@ func (a *App) streamStudyArchiveByUID(ctx context.Context, w http.ResponseWriter
 func sanitizeDownloadToken(value string) string {
 	replacer := strings.NewReplacer("/", "_", "\\", "_", " ", "_", "\"", "", "'", "")
 	return replacer.Replace(strings.TrimSpace(value))
+}
+
+func (a *App) retrieveBlockedModalities() map[string]struct{} {
+	out := map[string]struct{}{}
+	configured := []string{"KO"}
+	if a.externalConfig != nil && len(a.externalConfig.Portal.RetrieveBlockedModalities) > 0 {
+		configured = a.externalConfig.Portal.RetrieveBlockedModalities
+	}
+	for _, modality := range configured {
+		normalized := strings.ToUpper(strings.TrimSpace(modality))
+		if normalized == "" {
+			continue
+		}
+		out[normalized] = struct{}{}
+	}
+	return out
+}
+
+func (a *App) blockedRetrieveModality(modalities []string) string {
+	blocked := a.retrieveBlockedModalities()
+	for _, modality := range modalities {
+		normalized := strings.ToUpper(strings.TrimSpace(modality))
+		if normalized == "" {
+			continue
+		}
+		if _, found := blocked[normalized]; found {
+			return normalized
+		}
+	}
+	return ""
+}
+
+func (a *App) patientStudyModalities(ctx context.Context, patientID, studyInstanceUID string) ([]string, error) {
+	var raw []byte
+	err := a.db.QueryRowContext(ctx, `
+		SELECT source_json
+		FROM patient_study_access
+		WHERE patient_id = $1::uuid
+		  AND study_instance_uid = $2
+	`, patientID, studyInstanceUID).Scan(&raw)
+	if err != nil {
+		return nil, err
+	}
+
+	var source struct {
+		ModalitiesInStudy []string `json:"modalities_in_study"`
+	}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &source); err != nil {
+			return nil, fmt.Errorf("parse patient retrieve source_json: %w", err)
+		}
+	}
+	return source.ModalitiesInStudy, nil
+}
+
+func (a *App) physicianStudyModalities(ctx context.Context, physicianID, studyInstanceUID string) ([]string, error) {
+	var raw []byte
+	err := a.db.QueryRowContext(ctx, `
+		SELECT result
+		FROM physician_recent_queries prq
+		CROSS JOIN LATERAL jsonb_array_elements(COALESCE(prq.query_json->'results', '[]'::jsonb)) AS result
+		WHERE prq.physician_id = $1::uuid
+		  AND result->>'study_instance_uid' = $2
+		ORDER BY prq.searched_at DESC, prq.id DESC
+		LIMIT 1
+	`, physicianID, studyInstanceUID).Scan(&raw)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Modalities []string `json:"modalities"`
+	}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &result); err != nil {
+			return nil, fmt.Errorf("parse physician retrieve result json: %w", err)
+		}
+	}
+	return result.Modalities, nil
 }
 
 type orthancStudyResource struct {
