@@ -19,7 +19,8 @@
     "Root": "/dicom-web/"
   },
   "StoneWebViewer": {
-    "ShowNotForDiagnosticUsageDisclaimer": false
+    "ShowNotForDiagnosticUsageDisclaimer": false,
+    "ShowInfoPanelAtStartup": "Never"
   },
   "Authorization": {
     "WebServiceTokenCreationBaseUrl": "http://backend:8081/api/orthanc-auth/tokens/",
