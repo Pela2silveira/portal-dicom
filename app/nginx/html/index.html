@@ -3026,6 +3026,8 @@
               const shareAction = study.viewer_url
                 ? '<button class="action action-primary" type="button" data-patient-share="' + escapeHTML(study.study_instance_uid) + '" data-viewer-kind="stone">Compartir</button>'
                 : "";
+              const imageCount = Number(study.number_of_images || 0);
+              const imageCountLabel = imageCount > 0 ? String(imageCount) : "-";
 
               const statusChips =
                 '<div class="chip-row status-chips">' +
@@ -3052,6 +3054,7 @@
                   '<div><span>Hospitales</span><strong>' + escapeHTML((study.locations || []).join(", ") || "-") + '</strong></div>' +
                   '<div><span>Prestación en ANDES</span><strong>' + escapeHTML(study.andes_prestacion || "-") + '</strong></div>' +
                   '<div><span>Profesional en ANDES</span><strong>' + escapeHTML(study.andes_professional || "-") + '</strong></div>' +
+                  '<div><span>Imágenes</span><strong>' + escapeHTML(imageCountLabel) + '</strong></div>' +
                 '</div>' +
                   '<div class="chip-row">' +
                     (study.locations || []).map(location => '<div class="chip success">Hospital: ' + escapeHTML(location) + '</div>').join("") +
@@ -3238,6 +3241,8 @@
             const downloadAction = result.download_url
               ? '<a class="action action-primary" href="' + escapeHTML(result.download_url) + '" rel="noopener noreferrer">Descargar DICOM</a>'
               : "";
+            const imageCount = Number(result.number_of_images || 0);
+            const imageCountLabel = imageCount > 0 ? String(imageCount) : "-";
             let retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '">Recuperar estudio</button>';
             if (result.retrieve_status === "done" && result.viewer_url) {
               retrieveAction = '<button class="action action-secondary" type="button" disabled data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">Recuperado</button>';
@@ -3269,6 +3274,7 @@
                   '<div><span>Hospitales</span><strong>' + escapeHTML((result.locations || []).join(", ") || "-") + '</strong></div>' +
                   '<div><span>Prestación en ANDES</span><strong>' + escapeHTML(result.andes_prestacion || "-") + '</strong></div>' +
                   '<div><span>Profesional en ANDES</span><strong>' + escapeHTML(result.andes_professional || "-") + '</strong></div>' +
+                  '<div><span>Imágenes</span><strong>' + escapeHTML(imageCountLabel) + '</strong></div>' +
                   '<div><span>Caché local</span><strong>' + escapeHTML(labelForCacheStatus(result.cache_status)) + '</strong></div>' +
                 '</div>' +
                 '<div class="chip-row">' +

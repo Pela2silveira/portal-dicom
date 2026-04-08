@@ -463,6 +463,7 @@ type PersistedQIDOStudy struct {
 	PatientName       string
 	PatientID         string
 	StudyDescription  string
+	NumberOfImages    int
 	Modalities        []string
 	Locations         []string
 	AndesPrestacionID string
@@ -1034,6 +1035,7 @@ type PatientStudy struct {
 	StudyInstanceUID   string   `json:"study_instance_uid"`
 	StudyDate          string   `json:"study_date"`
 	StudyDescription   string   `json:"study_description"`
+	NumberOfImages     int      `json:"number_of_images,omitempty"`
 	ModalitiesInStudy  []string `json:"modalities_in_study"`
 	Locations          []string `json:"locations,omitempty"`
 	AndesPrestacionID  string   `json:"andes_prestacion_id,omitempty"`
@@ -1313,6 +1315,7 @@ type PhysicianResult struct {
 	PatientID        string   `json:"patient_id"`
 	StudyDate        string   `json:"study_date"`
 	StudyDescription string   `json:"study_description"`
+	NumberOfImages   int      `json:"number_of_images,omitempty"`
 	Modalities       []string `json:"modalities"`
 	Locations        []string `json:"locations"`
 	SourceNodeID     string   `json:"source_node_id,omitempty"`
@@ -6862,6 +6865,7 @@ func (a *App) replacePatientStudyAccessSlice(ctx context.Context, patientID stri
 		sourceJSON, err := json.Marshal(map[string]any{
 			"study_date":          study.StudyDate,
 			"study_description":   study.StudyDescription,
+			"number_of_images":    study.NumberOfImages,
 			"modalities_in_study": study.ModalitiesInStudy,
 			"locations":           study.Locations,
 			"source_node_id":      study.SourceNodeID,
@@ -7282,6 +7286,7 @@ func (a *App) fetchPatientStudiesFromQIDOIdentifier(ctx context.Context, node PA
 	query.Add("includefield", "ModalitiesInStudy")
 	query.Add("includefield", "PatientName")
 	query.Add("includefield", "AccessionNumber")
+	query.Add("includefield", "NumberOfStudyRelatedInstances")
 	endpoint.RawQuery = query.Encode()
 
 	a.log("info", "patient_qido_request_started", map[string]any{
@@ -7339,6 +7344,7 @@ func (a *App) fetchPatientStudiesFromQIDOIdentifier(ctx context.Context, node PA
 			StudyInstanceUID:   studyUID,
 			StudyDate:          normalizeStudyDate(dicomFirstString(item, "00080020")),
 			StudyDescription:   dicomFirstString(item, "00081030"),
+			NumberOfImages:     dicomFirstInt(item, "00201208"),
 			ModalitiesInStudy:  dicomStringList(item, "00080061"),
 			Locations:          []string{node.Name},
 			AvailabilityStatus: "pending_retrieve",
@@ -8539,6 +8545,18 @@ func dicomFirstPersonName(item qidoResponseItem, tag string) string {
 	return dicomFirstString(item, tag)
 }
 
+func dicomFirstInt(item qidoResponseItem, tag string) int {
+	value := dicomFirstString(item, tag)
+	if value == "" {
+		return 0
+	}
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || parsed < 0 {
+		return 0
+	}
+	return parsed
+}
+
 func normalizeStudyDate(value string) string {
 	trimmed := strings.TrimSpace(value)
 	if len(trimmed) == 8 && !strings.Contains(trimmed, "-") {
@@ -8679,6 +8697,7 @@ func (a *App) searchPhysicianResultsFromNode(ctx context.Context, physician Phys
 	query.Add("includefield", "PatientName")
 	query.Add("includefield", "PatientID")
 	query.Add("includefield", "AccessionNumber")
+	query.Add("includefield", "NumberOfStudyRelatedInstances")
 	if filters.PatientID != "" {
 		query.Set("PatientID", filters.PatientID)
 	}
@@ -8742,6 +8761,7 @@ func (a *App) searchPhysicianResultsFromNode(ctx context.Context, physician Phys
 			PatientID:           dicomFirstString(item, "00100020"),
 			StudyDate:           normalizeStudyDate(dicomFirstString(item, "00080020")),
 			StudyDescription:    dicomFirstString(item, "00081030"),
+			NumberOfImages:      dicomFirstInt(item, "00201208"),
 			Modalities:          dicomStringList(item, "00080061"),
 			Locations:           []string{node.Name},
 			SourceNodeID:        node.ID,
@@ -8906,6 +8926,7 @@ func (a *App) searchPhysicianResultsFromLocalCache(ctx context.Context, username
 	query.Add("includefield", "PatientName")
 	query.Add("includefield", "PatientID")
 	query.Add("includefield", "AccessionNumber")
+	query.Add("includefield", "NumberOfStudyRelatedInstances")
 	if strings.TrimSpace(filters.PatientID) != "" {
 		query.Set("PatientID", strings.TrimSpace(filters.PatientID))
 	}
@@ -8972,6 +8993,7 @@ func (a *App) searchPhysicianResultsFromLocalCache(ctx context.Context, username
 			PatientID:        dicomFirstString(item, "00100020"),
 			StudyDate:        normalizeStudyDate(dicomFirstString(item, "00080020")),
 			StudyDescription: dicomFirstString(item, "00081030"),
+			NumberOfImages:   dicomFirstInt(item, "00201208"),
 			Modalities:       dicomStringList(item, "00080061"),
 			Locations:        locations,
 			CacheStatus:      cacheStatus,
@@ -9454,6 +9476,7 @@ func (a *App) persistPatientStudiesToQIDOCache(ctx context.Context, rawStudies [
 			SourceNodeID:      study.SourceNodeID,
 			StudyDate:         study.StudyDate,
 			StudyDescription:  study.StudyDescription,
+			NumberOfImages:    study.NumberOfImages,
 			Modalities:        study.ModalitiesInStudy,
 			Locations:         study.Locations,
 			AndesPrestacionID: enriched.AndesPrestacionID,
@@ -9479,6 +9502,7 @@ func (a *App) persistPhysicianResultsToQIDOCache(ctx context.Context, results []
 			PatientName:       result.PatientName,
 			PatientID:         result.PatientID,
 			StudyDescription:  result.StudyDescription,
+			NumberOfImages:    result.NumberOfImages,
 			Modalities:        result.Modalities,
 			Locations:         result.Locations,
 			AndesPrestacionID: result.AndesPrestacionID,
@@ -9548,6 +9572,7 @@ func (a *App) listPatientStudies(ctx context.Context, patientID, documentNumber 
 		var source struct {
 			StudyDate         string   `json:"study_date"`
 			StudyDescription  string   `json:"study_description"`
+			NumberOfImages    int      `json:"number_of_images"`
 			ModalitiesInStudy []string `json:"modalities_in_study"`
 			Locations         []string `json:"locations"`
 			SourceNodeID      string   `json:"source_node_id"`
@@ -9565,6 +9590,7 @@ func (a *App) listPatientStudies(ctx context.Context, patientID, documentNumber 
 			StudyInstanceUID:   studyUID,
 			StudyDate:          source.StudyDate,
 			StudyDescription:   source.StudyDescription,
+			NumberOfImages:     source.NumberOfImages,
 			ModalitiesInStudy:  source.ModalitiesInStudy,
 			Locations:          source.Locations,
 			AndesPrestacionID:  source.AndesPrestacionID,
