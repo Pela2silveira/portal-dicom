@@ -3004,7 +3004,7 @@
                 .join("");
 
               const action = study.viewer_url
-                ? '<button class="action action-viewer-preferred" type="button" data-patient-viewer="' + escapeHTML(study.study_instance_uid) + '" data-viewer-kind="stone">Visualizar</button>'
+                ? '<button class="action action-primary" type="button" data-patient-viewer="' + escapeHTML(study.study_instance_uid) + '" data-viewer-kind="stone">Visualizar</button>'
                 : study.source_node_available === false
                   ? '<button class="action action-secondary" type="button" disabled>Origen no disponible</button>'
                 : (study.retrieve_status === "running" || study.retrieve_status === "queued")
@@ -3018,7 +3018,7 @@
                 ? '<button class="action action-primary" type="button" data-patient-viewer="' + escapeHTML(study.study_instance_uid) + '" data-viewer-kind="ohif">Visualizador Alternativo</button>'
                 : "";
               const previewAction = study.viewer_url
-                ? '<button class="action action-primary" type="button" data-patient-preview="' + escapeHTML(study.study_instance_uid) + '">Vista previa</button>'
+                ? '<button class="action action-viewer-preferred" type="button" data-patient-preview="' + escapeHTML(study.study_instance_uid) + '">Vista previa</button>'
                 : "";
               const downloadAction = study.download_url
                 ? '<a class="action action-primary" href="' + escapeHTML(study.download_url) + '" rel="noopener noreferrer">Descargar DICOM</a>'
@@ -3061,7 +3061,7 @@
                     modalities +
                     '<div class="chip">' + escapeHTML(study.study_instance_uid) + '</div>' +
                   '</div>' +
-                  '<div class="inline-actions">' + action + previewAction + shareAction + ohifAction + downloadAction + '</div>' +
+                  '<div class="inline-actions">' + previewAction + action + shareAction + ohifAction + downloadAction + '</div>' +
                 '</article>'
               );
             })
