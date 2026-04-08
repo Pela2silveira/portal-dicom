@@ -8392,6 +8392,16 @@ func (a *App) runOrthancStudyCFindWithRefresh(ctx context.Context, node PACSNode
 	if studyDate := buildCFindStudyDate(filters.DateFrom, filters.DateTo); studyDate != "" {
 		queryTags["StudyDate"] = studyDate
 	}
+	a.log("info", "physician_cfind_query_payload", map[string]any{
+		"node_id":      resolved.ID,
+		"patient_id":   filters.PatientID,
+		"patient_name": filters.PatientName,
+		"date_from":    filters.DateFrom,
+		"date_to":      filters.DateTo,
+		"modality":     filters.Modality,
+		"study_date":   queryTags["StudyDate"],
+		"query":        queryTags,
+	})
 
 	body, err := json.Marshal(queryPayload)
 	if err != nil {
@@ -8429,6 +8439,12 @@ func (a *App) runOrthancStudyCFindWithRefresh(ctx context.Context, node PACSNode
 	if err != nil {
 		return nil, err
 	}
+	a.log("info", "physician_cfind_query_answers", map[string]any{
+		"node_id":      resolved.ID,
+		"query_id":     queryID,
+		"answer_count": len(answerIDs),
+		"study_date":   queryTags["StudyDate"],
+	})
 
 	results := make([]qidoResponseItem, 0, len(answerIDs))
 	for _, answerID := range answerIDs {
@@ -8445,6 +8461,12 @@ func (a *App) runOrthancStudyCFindWithRefresh(ctx context.Context, node PACSNode
 		fallbackFilters.DateTo = ""
 		return a.runOrthancStudyCFindWithoutDate(ctx, node, fallbackFilters)
 	}
+	a.log("info", "physician_cfind_query_decoded", map[string]any{
+		"node_id":       resolved.ID,
+		"query_id":      queryID,
+		"decoded_count": len(results),
+		"study_date":    queryTags["StudyDate"],
+	})
 
 	return results, nil
 }
@@ -9199,6 +9221,7 @@ func (a *App) searchPhysicianResultsFromDIMSENode(ctx context.Context, physician
 		"physician_id": physician.ID,
 		"username":     physician.Username,
 		"node_id":      node.ID,
+		"payload_count": len(payload),
 		"result_count": len(results),
 		"duration_ms":  time.Since(searchStartedAt).Milliseconds(),
 	})
