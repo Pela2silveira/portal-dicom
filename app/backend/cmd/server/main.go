@@ -1730,7 +1730,7 @@ func main() {
 	mux.HandleFunc("/api/physician/logout", app.withBrowserOriginCheck(app.handlePhysicianLogout))
 	mux.HandleFunc("/api/retrieve/jobs/", app.handleRetrieveJobEvents)
 	mux.HandleFunc("/api/physician/results", app.handlePhysicianResults)
-	mux.HandleFunc("/api/physician/studies/", app.handlePhysicianStudyAccess)
+	mux.HandleFunc("/api/physician/studies/", app.withBrowserOriginCheck(app.handlePhysicianStudyRoute))
 	mux.HandleFunc("/api/physician/download", app.handlePhysicianDownload)
 	mux.HandleFunc("/api/physician/retrieve", app.withBrowserOriginCheck(app.handlePhysicianRetrieve))
 	mux.HandleFunc("/api/orthanc-auth/tokens/", app.handleOrthancTokenCreate)
@@ -2817,6 +2817,17 @@ func (a *App) handlePatientStudyRoute(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (a *App) handlePhysicianStudyRoute(w http.ResponseWriter, r *http.Request) {
+	switch {
+	case strings.HasSuffix(r.URL.Path, "/access"):
+		a.handlePhysicianStudyAccess(w, r)
+	case strings.HasSuffix(r.URL.Path, "/preview"):
+		a.handlePhysicianStudyPreview(w, r)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
 func (a *App) handlePatientStudyAccess(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -2921,6 +2932,58 @@ func (a *App) handlePatientStudyPreview(w http.ResponseWriter, r *http.Request) 
 		Items:            items,
 		Limit:            previewLimit,
 		TotalShown:       len(items),
+		TotalAvailable:   totalAvailable,
+		Truncated:        totalAvailable > len(items),
+	})
+}
+
+func (a *App) handlePhysicianStudyPreview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	studyUID := studyUIDFromActionPath(r.URL.Path, "/api/physician/studies/", "/preview")
+	if studyUID == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+
+	if _, _, err := a.requirePhysicianSessionSummary(ctx, r); err != nil {
+		http.Error(w, "invalid session", http.StatusUnauthorized)
+		return
+	}
+
+	isLocal, _, err := a.findOrthancStudy(ctx, studyUID)
+	if err != nil {
+		http.Error(w, "failed to validate physician study access", http.StatusInternalServerError)
+		return
+	}
+	if !isLocal {
+		http.Error(w, "study not available for physician preview", http.StatusNotFound)
+		return
+	}
+
+	const previewLimit = 5
+	items, totalAvailable, err := a.listStudyPreviewItems(ctx, studyUID, previewLimit)
+	if err != nil {
+		http.Error(w, "failed to load study preview", http.StatusBadGateway)
+		return
+	}
+	if len(items) == 0 {
+		http.Error(w, "no preview images available", http.StatusNotFound)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, PatientStudyPreviewResponse{
+		Status:           "ok",
+		StudyInstanceUID: studyUID,
+		Items:            items,
+		TotalShown:       len(items),
+		Limit:            previewLimit,
 		TotalAvailable:   totalAvailable,
 		Truncated:        totalAvailable > len(items),
 	})

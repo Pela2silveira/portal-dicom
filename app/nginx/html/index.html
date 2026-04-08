@@ -1927,12 +1927,11 @@
           <div class="preview-header">
             <div>
               <h4 id="patient-preview-title">Vista previa del estudio</h4>
-              <p id="patient-preview-summary">Se muestran hasta 5 imágenes del estudio.</p>
+              <p id="patient-preview-summary">0/0 imágenes del estudio.</p>
             </div>
-            <button class="action ghost" id="patient-preview-close" type="button" aria-label="Cerrar vista previa">Cerrar</button>
           </div>
           <div class="preview-body">
-            <div class="preview-note" id="patient-preview-note">Vista rápida para compartir o descargar imágenes puntuales. No reemplaza la visualización diagnóstica completa.</div>
+            <div class="preview-note" id="patient-preview-note">Vista rápida. <strong>No es apto para diagnóstico.</strong></div>
             <div class="preview-grid" id="patient-preview-grid"></div>
           </div>
           <div class="preview-footer">
@@ -2017,7 +2016,6 @@
       const patientPreviewOverlay = document.getElementById("patient-preview-overlay");
       const patientPreviewSummary = document.getElementById("patient-preview-summary");
       const patientPreviewGrid = document.getElementById("patient-preview-grid");
-      const patientPreviewClose = document.getElementById("patient-preview-close");
       const patientPreviewCloseFooter = document.getElementById("patient-preview-close-footer");
       const mailCodeFeedback = document.getElementById("mail-code-feedback");
       const patientValidateButton = document.getElementById("patient-continue");
@@ -2242,10 +2240,7 @@
       function renderPatientPreview(payload) {
         const totalShown = Number(payload.total_shown || 0);
         const totalAvailable = Number(payload.total_available || totalShown);
-        const truncated = Boolean(payload.truncated);
-        patientPreviewSummary.textContent = truncated
-          ? "Se muestran " + totalShown + " de " + totalAvailable + " imágenes del estudio."
-          : "Se muestran " + totalShown + " imágenes del estudio.";
+        patientPreviewSummary.textContent = totalShown + "/" + totalAvailable + " imágenes del estudio.";
 
         patientPreviewGrid.innerHTML = (payload.items || []).map((item, index) => (
           '<article class="preview-item">' +
@@ -2259,7 +2254,7 @@
         renderPatientPreview(payload);
         mountNodeAfter(patientPreviewOverlayAnchor, patientPreviewOverlay);
         patientPreviewOpen = true;
-        patientPreviewClose.focus({ preventScroll: true });
+        patientPreviewCloseFooter.focus({ preventScroll: true });
       }
 
       function closePatientPreview() {
@@ -3237,6 +3232,9 @@
             const ohifAction = result.ohif_viewer_url
               ? '<button class="action action-primary" type="button" data-physician-viewer="' + escapeHTML(result.study_instance_uid) + '" data-viewer-kind="ohif">Visualizar con OHIF Viewer</button>'
               : "";
+            const previewAction = result.viewer_url
+              ? '<button class="action ghost" type="button" data-physician-preview="' + escapeHTML(result.study_instance_uid) + '">Vista previa</button>'
+              : "";
             const downloadAction = result.download_url
               ? '<a class="action action-primary" href="' + escapeHTML(result.download_url) + '" rel="noopener noreferrer">Descargar DICOM</a>'
               : "";
@@ -3282,6 +3280,7 @@
                   retrieveAction +
                   action +
                   ohifAction +
+                  previewAction +
                   downloadAction +
                 '</div>' +
               '</article>'
@@ -3591,6 +3590,22 @@
 
         if (!response.ok) {
           const error = new Error("patient preview request failed");
+          error.payload = await response.json().catch(() => ({}));
+          throw error;
+        }
+
+        return response.json();
+      }
+
+      async function loadPhysicianStudyPreview(studyInstanceUID) {
+        const response = await fetch("/api/physician/studies/" + encodeURIComponent(studyInstanceUID) + "/preview", {
+          headers: {
+            Accept: "application/json"
+          }
+        });
+
+        if (!response.ok) {
+          const error = new Error("physician preview request failed");
           error.payload = await response.json().catch(() => ({}));
           throw error;
         }
@@ -4075,6 +4090,27 @@
           return;
         }
 
+        const previewButton = event.target.closest("[data-physician-preview]");
+        if (previewButton) {
+          const studyInstanceUID = previewButton.getAttribute("data-physician-preview");
+          if (!studyInstanceUID) {
+            return;
+          }
+          previewButton.disabled = true;
+          const originalLabel = previewButton.textContent;
+          previewButton.textContent = "Cargando...";
+          try {
+            const payload = await loadPhysicianStudyPreview(studyInstanceUID);
+            openPatientPreview(payload);
+          } catch (error) {
+            alert(error?.payload?.message || "No se pudo cargar la vista previa de este estudio.");
+          } finally {
+            previewButton.disabled = false;
+            previewButton.textContent = originalLabel;
+          }
+          return;
+        }
+
         const button = event.target.closest("[data-physician-retrieve]");
         if (!button) {
           return;
@@ -4385,7 +4421,6 @@
           closePatientPreview();
         }
       });
-      patientPreviewClose.addEventListener("click", closePatientPreview);
       patientPreviewCloseFooter.addEventListener("click", closePatientPreview);
       patientPreviewOverlay.addEventListener("click", event => {
         if (event.target === patientPreviewOverlay) {
