@@ -2732,8 +2732,12 @@
         return (modalities || []).map(modality => modalityLabel(modality)).join(", ");
       }
 
+      function andesMetadataAvailable(item) {
+        return !(item && item.his === false);
+      }
+
       function andesMetadataLabel(item, key) {
-        if (item && item.his === false) {
+        if (!andesMetadataAvailable(item)) {
           return "n/a";
         }
         return (item && item[key]) || "-";

@@ -4537,6 +4537,19 @@ func (a *App) sourceNodeUsesHIS(nodeID string) bool {
 	return node.HIS
 }
 
+func (a *App) andesMetadataAvailableForSourceNode(nodeID string) bool {
+	return a.sourceNodeUsesHIS(nodeID)
+}
+
+func (a *App) andesMetadataAvailableForPatientStudy(study PatientStudy) bool {
+	return a.andesMetadataAvailableForSourceNode(study.SourceNodeID)
+}
+
+func (a *App) andesMetadataAvailableForPhysicianResult(result PhysicianResult) bool {
+	sourceNodeID := a.resolveConfiguredNodeIDForStudy(result.SourceNodeID, result.Locations)
+	return a.andesMetadataAvailableForSourceNode(sourceNodeID)
+}
+
 func overallHealthStatus(components []ComponentHealth) string {
 	optionalDegraded := false
 	for _, component := range components {
@@ -9921,7 +9934,7 @@ func (a *App) searchPhysicianResultsFromLocalCache(ctx context.Context, username
 			}(),
 			HIS: func() bool {
 				sourceNodeID := a.resolveConfiguredNodeIDForStudy("", locations)
-				return a.sourceNodeUsesHIS(sourceNodeID)
+				return a.andesMetadataAvailableForSourceNode(sourceNodeID)
 			}(),
 		})
 	}
@@ -10064,7 +10077,7 @@ func (a *App) enrichPatientStudiesWithAndes(ctx context.Context, patientID strin
 
 	missingStudyUIDs := make([]string, 0, len(studies))
 	for _, study := range studies {
-		if !a.sourceNodeUsesHIS(study.SourceNodeID) {
+		if !a.andesMetadataAvailableForPatientStudy(study) {
 			continue
 		}
 		if strings.TrimSpace(study.AndesPrestacionID) != "" || strings.TrimSpace(study.AndesPrestacion) != "" || strings.TrimSpace(study.AndesProfessional) != "" {
@@ -10140,7 +10153,7 @@ func (a *App) enrichPhysicianResultsWithAndes(ctx context.Context, results []Phy
 		if !ok {
 			continue
 		}
-		if !node.HIS {
+		if !a.andesMetadataAvailableForPhysicianResult(results[i]) {
 			continue
 		}
 		orgID := strings.TrimSpace(node.AndesOrganizationID)
@@ -10539,7 +10552,7 @@ func (a *App) listPatientStudies(ctx context.Context, patientID, documentNumber 
 			AvailabilityStatus: availabilityStatus,
 			RetrieveStatus:     "idle",
 			AuthorizationBasis: authorizationBasis,
-			HIS:                a.sourceNodeUsesHIS(source.SourceNodeID),
+			HIS:                a.andesMetadataAvailableForSourceNode(source.SourceNodeID),
 			SourceNodeAvailable: a.sourceNodeAvailable(source.SourceNodeID),
 			SourceNodeID:       source.SourceNodeID,
 		}

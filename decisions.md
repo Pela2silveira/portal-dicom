@@ -28,11 +28,20 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Patient remote QIDO search must use both the canonical document number and the persisted Mongo `_id` string (`mongo_object_id`) when available, merging matches by `StudyInstanceUID`.
 - Patient remote QIDO search must fan out across all configured `qido_rs` PACS nodes instead of assuming a single remote node.
 - Patient remote search may now also probe `c_find` / DIMSE nodes. The first authorization rule is strict: studies are exposed only when the remote `PatientID` matches one of the patient identifiers loaded from Andes/HIS, while identity-comparison signals continue to be logged for later matching rules.
+- Patient DIMSE search now performs two discovery paths against compatible nodes: identifier-based probing using all known patient identifiers, and demographic probing using normalized birth date, normalized sex, and a Synapse-compatible surname wildcard query.
+- Patient demographic DIMSE probing against Synapse must use a surname wildcard `PatientName` query such as `CASTRO*`; the previous full-name fuzzy formatting is not reliable for this interoperability path.
+- Patient DIMSE authorization currently accepts studies either by strict `PatientID` match against portal-known identifiers or by a strong demographic match combining birth date, sex, and high-confidence patient-name correspondence.
+- Background patient search workers must reload the full persisted `PatientSummary` before remote execution so DIMSE demographic probing always has access to `full_name`, `birth_date`, and `sex`.
 - Professional remote search must stop assuming a single globally configured PACS; the physician UI now selects one remote online PACS explicitly, while `local_cache` remains a first-class searchable source backed by Orthanc QIDO.
 - Each PACS node may now carry an optional `andes_organization_id` in config so the physician flow can enrich QIDO results from Mongo `prestaciones` using `solicitud.organizacion.id` plus `metadata.pacs-uid`.
 - The ANDES `prestaciones` enrichment must be guarded by `his.prestaciones_enrichment_enabled`; the feature is opt-in and remains disabled by default so Mongo latency cannot penalize the main search flows unless explicitly enabled.
 - QIDO result persistence must be modeled as a shared cache keyed by `study_instance_uid + source_node_id`; this entity is independent of patient/professional flows and can be reused by both.
 - The same shared cache must persist resolved ANDES enrichment fields when available so future searches can reuse them without re-querying Mongo `prestaciones`.
+- Physician DIMSE `C-FIND` results must persist through the same shared remote-study cache and recent-query path used by QIDO results; otherwise retrieve from physician DIMSE result rows is not reliable.
+- Professional retrieve must preserve source-node provenance for studies discovered by DIMSE `C-FIND`; when the primary source field is absent, origin resolution may fall back to equivalent recent-query source data.
+- PACS nodes may declare `his: true|false` as a semantic flag indicating whether ANDES/HIS study metadata applies to studies originating from that node; this flag is provider-agnostic and must not be tied to Mongo vs REST transport details.
+- PACS nodes may also declare `tipoPrestacion[]` metadata obtained from external HIS/Mongo sources; for now this data is configuration-only and does not yet affect search or rendering beyond being available for future features.
+- For study cards and result cards coming from `his:false` nodes, the portal must render `Prestación en ANDES` and `Profesional en ANDES` as `n/a`, and backend enrichment paths must skip any attempt to resolve those fields for such nodes.
 - The invalidation policy for removing cache rows when studies disappear from a PACS, or when ANDES enrichment should be refreshed, remains an explicit TO-DO and is not solved in this iteration.
 - A future professional multiselect search should keep the physical cache keyed by `study_instance_uid + source_node_id`, but the logical API contract should aggregate by `StudyInstanceUID` and expose `source_node_ids[]` (plus `locations[]`) instead of relying on a single origin.
 - The patient `Enviar código` step is a backend prevalidation step: patient must exist and have an active email before the future mail delivery integration is attempted.
@@ -42,6 +51,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - With `patient.auth_mode = "master_key"`, the backend still requires the patient to exist and relies on one configured shared key in `patient.master_key`; this mode is transitional and not the intended steady-state production design.
 - The patient `Continuar` action must call backend validation; in `master_key` mode, the entered code is compared against `patient.master_key` while preserving the same visible login flow used in demos.
 - The public runtime payload may expose the effective patient auth mode so the landing can mask the patient code field when `master_key` is active, without exposing the full config payload.
+- In `master_key` mode, the patient code input must be masked from the initial HTML render and not only after runtime-config hydration, so typed input is never briefly shown in clear text.
 - Portal session lifetime is shared by patient and professional surfaces and is configured through `portal.session_timeout_minutes` rather than hardcoded in the frontend.
 - Patient and professional protected backend routes must authorize from the active server-side session, not from request-supplied `document_number` / `username` parameters.
 - Public UI runtime config must be exposed through a minimal endpoint (`/api/runtime-config`) instead of publishing `/api/config`; only non-sensitive values needed by the landing/workspace shell belong there.
@@ -52,6 +62,8 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - In deployments behind Cloudflare and a second Nginx, the edge proxy must restore and forward the real client IP so backend rate limiting can use `CF-Connecting-IP` / `X-Forwarded-For` meaningfully.
 - DIMSE health/retrieve through Orthanc should not re-register the same remote modality on every check; the backend keeps an in-memory modality cache by node and refreshes it only when the configuration changes or Orthanc reports the modality as missing.
 - DIMSE C-ECHO health checks use a slightly higher timeout than the previous default to reduce false negatives without adding startup delay or background warm-up behavior.
+- Orthanc-mediated Synapse `C-FIND` decoding must tolerate nested Orthanc tag objects of the form `{ Name, Type, Value }` rather than assuming flat string values.
+- Orthanc-mediated `C-FIND` HTTP operations use a dedicated extended timeout window because Synapse demographic queries can take materially longer than ordinary backend HTTP calls.
 - Patient send-code confirmation must show the destination email obfuscated (`first 3 chars + **** + @domain`) both in demo mode and in real mode when an active email exists.
 - Professional auth mode must be switchable at runtime through `professional.fake_auth` in `config.json`, defaulting to `true` for current MVP/demo compatibility.
 - With `professional.fake_auth = true`, the backend keeps the current transitional professional access validation against Mongo `profesional`; with `false`, professional login is reserved for future `LDAP provincial + MFA`.
