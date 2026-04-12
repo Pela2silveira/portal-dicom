@@ -99,7 +99,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The transition to local availability must be transactional: only after Orthanc confirms local presence may the backend commit `retrieve_jobs=done`, `patient_study_access.availability_status=available_local`, and `cached_studies.cache_status=local_complete`.
 - Retrieve completion feedback in the browser should follow a per-job SSE stream (`GET /api/retrieve/jobs/:id/events`) instead of unbounded full-list polling.
 - The terminal refresh after a patient retrieve must also be silent: keep the current list mounted, preserve viewport/focus, and avoid placeholder flicker when reloading the study set.
-- The current preferred viewer handoff must open Stone with a specific `StudyInstanceUID`, and the alternative handoff must open OHIF with the same explicit study scoping.
+- The current preferred viewer handoff must open Stone with a specific `StudyInstanceUID`; an alternative OHIF handoff remains available only on the professional surface with the same explicit study scoping.
 - OHIF root (`/ohif/`) must not be exposed as a navigable entrypoint; Nginx should redirect it back to the landing and keep only study-specific viewer URLs as supported entrypoints.
 - Physician access must use a portal-owned search and workflow panel.
 - Professional identity may be resolved temporarily from Mongo collection `profesional` when `his.provider = his_mongo_direct`.
@@ -150,7 +150,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Committed configuration files must contain placeholders or env references only; local runtime values belong in ignored files such as `app/config/config.json`.
 - The Andes MPI patient lookup candidate endpoint is `GET /api/core-v2/mpi/pacientes?documento=<dni>`.
 - If Andes MPI returns multiple matches, the backend should refine using `fechaNacimiento`, `sexo`, `apellido`, or `nombre`.
-- The MVP includes a minimal web UI served by Nginx: search form, streaming results, Retrieve action, preferred Stone viewer link, alternative OHIF viewer link, and download action.
+- The MVP includes a minimal web UI served by Nginx: search form, streaming results, Retrieve action, preferred Stone viewer link, download action, and an alternative OHIF viewer link only on the professional surface.
 - Search result streaming uses SSE, not WebSocket.
 - The minimum MVP search fields are `patient_id`, `patient_name`, `date_from`, `date_to`, and `modalities`.
 - The physician `patient_name` filter must behave as a fuzzy normalized term search, not as an exact literal match.
@@ -159,7 +159,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The operator result list must show `PatientName`, `PatientID`, `StudyDate`, `StudyTime`, `ModalitiesInStudy`, `StudyDescription`, `source nodes`, and `cache status`.
 - Deduplicated study metadata should prefer the highest-priority remote node; cache state is shown separately from study metadata.
 - The Visualizar action is enabled only after the retrieve job reaches `done`.
-- When local availability exists, the primary emphasized viewer action is `Visualizar estudio` (Stone), followed by `Visualizar con OHIF Viewer` as an explicit alternative.
+- When local availability exists, the primary emphasized viewer action is `Visualizar estudio` (Stone); the explicit OHIF alternative is kept only for the professional surface.
 - Retrieve is manual-only in the MVP.
 - The MVP must support both `C-MOVE` and `C-GET`.
 - `C-MOVE` is initiated against the remote PACS, targeting local Orthanc as the destination AE.

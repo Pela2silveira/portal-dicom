@@ -74,8 +74,8 @@ Allow a patient to see only their authorized studies and open one selected study
 - Compact patient data summary section at the top of the page
 - Simple filters in a dedicated block below the patient data section
 - Authorized study list grouped by modality in a full-width results block as the primary visual element
-- Per-study actions: `Recuperar estudio`, `Visualizar estudio`, `Visualizar con OHIF Viewer`, and `Descargar DICOM` when local
-- When local viewing is available, `Visualizar estudio` is the preferred emphasized action and should appear before `Visualizar con OHIF Viewer`, which in turn should appear before `Descargar DICOM`
+- Per-study actions: `Recuperar estudio`, `Visualizar estudio`, `Compartir`, and `Descargar DICOM` when local
+- When local viewing is available, `Visualizar estudio` is the preferred emphasized action and should appear before `Compartir`, which in turn should appear before `Descargar DICOM`
 - Empty state message when the document has no matching studies
 
 ### Allowed Fields In The List
@@ -161,8 +161,8 @@ Allow a patient to see only their authorized studies and open one selected study
 ### Viewer Handoff
 
 - Portal opens Stone Web Viewer for a specific `studyInstanceUID` as the preferred patient viewer
-- Portal also exposes OHIF for the same `studyInstanceUID` as an explicit alternative viewer
 - The current portal UX opens the viewer in a new browser tab
+- The patient surface does not expose an alternative OHIF action; patient viewing is routed only through the preferred Stone handoff plus share flows
 - OHIF should not expose a global study list in the final patient flow
 
 ### Backend Contract For Patient Surface

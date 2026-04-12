@@ -1855,7 +1855,7 @@
                   <label for="physician-search-source">Origen de búsqueda</label>
                   <div class="field-group">
                     <select id="physician-search-source">
-                      <option value="local_cache">Caché local</option>
+                      <option value="local_cache">Local</option>
                     </select>
                   </div>
                 </div>
@@ -2791,6 +2791,24 @@
         return new Date(value + "T00:00:00").toLocaleDateString("es-AR");
       }
 
+      function formatDICOMPersonName(value) {
+        const raw = String(value || "").trim();
+        if (!raw) {
+          return "-";
+        }
+
+        if (!raw.includes("^")) {
+          return raw.replace(/\s+/g, " ").trim();
+        }
+
+        const parts = raw
+          .split("^")
+          .map(part => part.replace(/\s+/g, " ").trim())
+          .filter(Boolean);
+
+        return parts.join(", ") || "-";
+      }
+
       function syncPatientDateSummary() {
         if (patientDateFilter.from && patientDateFilter.to) {
           patientDateSummary.textContent =
@@ -3031,9 +3049,6 @@
                     : study.retrieve_status === "failed"
                       ? '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '" data-patient-retrieve-button="' + escapeHTML(study.study_instance_uid) + '">Reintentar recuperación</button>'
                       : '<button class="action action-secondary" type="button" data-patient-retrieve="' + escapeHTML(study.study_instance_uid) + '" data-patient-retrieve-button="' + escapeHTML(study.study_instance_uid) + '">Recuperar estudio</button>';
-              const ohifAction = study.ohif_viewer_url
-                ? '<button class="action action-primary" type="button" data-patient-viewer="' + escapeHTML(study.study_instance_uid) + '" data-viewer-kind="ohif">Visualizador Alternativo</button>'
-                : "";
               const previewAction = study.viewer_url
                 ? '<button class="action action-viewer-preferred" type="button" data-patient-preview="' + escapeHTML(study.study_instance_uid) + '">Vista previa</button>'
                 : "";
@@ -3076,9 +3091,8 @@
                   '<div class="chip-row">' +
                     (study.locations || []).map(location => '<div class="chip success">Hospital: ' + escapeHTML(location) + '</div>').join("") +
                     modalities +
-                    '<div class="chip">ID: ' + escapeHTML(study.study_instance_uid) + '</div>' +
                   '</div>' +
-                  '<div class="inline-actions">' + previewAction + action + shareAction + ohifAction + downloadAction + '</div>' +
+                  '<div class="inline-actions">' + previewAction + action + shareAction + downloadAction + '</div>' +
                 '</article>'
               );
             })
@@ -3145,7 +3159,7 @@
       function upsertPhysicianSourceOptions(onlineComponents) {
         const selectedValue = physicianSearchSource.value || physicianLocalCacheSourceValue;
         const options = [
-          { value: physicianLocalCacheSourceValue, label: "Caché local" }
+          { value: physicianLocalCacheSourceValue, label: "Local" }
         ];
 
         (onlineComponents || []).forEach(component => {
@@ -3260,6 +3274,8 @@
               : "";
             const imageCount = Number(result.number_of_images || 0);
             const imageCountLabel = imageCount > 0 ? String(imageCount) : "-";
+            const patientNameLabel = formatDICOMPersonName(result.patient_name);
+            const studyDateLabel = result.study_date ? formatDateLabel(result.study_date) : "Sin fecha";
             let retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '">Recuperar estudio</button>';
             if (result.retrieve_status === "done" && result.viewer_url) {
               retrieveAction = '<button class="action action-secondary" type="button" disabled data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">Recuperado</button>';
@@ -3279,7 +3295,7 @@
                 '<div class="item-head">' +
                   '<div>' +
                     '<strong>Descripción del estudio: ' + escapeHTML(result.study_description || "Estudio sin descripción") + '</strong>' +
-                    '<span>' + escapeHTML(result.patient_name) + " · " + escapeHTML(result.study_date || "Sin fecha") + '</span>' +
+                    '<span>' + escapeHTML(patientNameLabel) + " · " + escapeHTML(studyDateLabel) + '</span>' +
                   '</div>' +
                   '<div class="' + chipClassForRetrieve(result.retrieve_status) + '" data-physician-retrieve-chip="' + escapeHTML(result.study_instance_uid) + '">' +
                     escapeHTML(labelForRetrieveStatus(result.retrieve_status, result.retrieve_phase, result.retrieve_progress)) +
@@ -3292,7 +3308,7 @@
                   '<div><span>Prestación en ANDES</span><strong>' + escapeHTML(andesMetadataLabel(result, "andes_prestacion")) + '</strong></div>' +
                   '<div><span>Profesional en ANDES</span><strong>' + escapeHTML(andesMetadataLabel(result, "andes_professional")) + '</strong></div>' +
                   '<div><span>Imágenes</span><strong>' + escapeHTML(imageCountLabel) + '</strong></div>' +
-                  '<div><span>Caché local</span><strong>' + escapeHTML(labelForCacheStatus(result.cache_status)) + '</strong></div>' +
+                  '<div><span>Local</span><strong>' + escapeHTML(labelForCacheStatus(result.cache_status)) + '</strong></div>' +
                 '</div>' +
                 '<div class="chip-row">' +
                   (result.locations || []).map(location => '<div class="chip success">Hospital: ' + escapeHTML(location) + '</div>').join("") +

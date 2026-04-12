@@ -9906,7 +9906,7 @@ func (a *App) searchPhysicianResultsFromLocalCache(ctx context.Context, username
 			return nil, fmt.Errorf("load cached study locations for %s: %w", studyUID, err)
 		}
 		if len(locations) == 0 {
-			locations = []string{"Cache local"}
+			locations = []string{"Local"}
 		}
 
 		results = append(results, PhysicianResult{
@@ -9917,7 +9917,7 @@ func (a *App) searchPhysicianResultsFromLocalCache(ctx context.Context, username
 			StudyDescription: dicomFirstString(item, "00081030"),
 			NumberOfImages:   dicomFirstInt(item, "00201208"),
 			Modalities:       dicomStringList(item, "00080061"),
-			Locations:        locations,
+			Locations:        a.resolveLocationLabels(locations),
 			CacheStatus:      cacheStatus,
 			RetrieveStatus:   retrieveStatus,
 			RetrievePhase:    retrievePhase,
@@ -9977,7 +9977,7 @@ func (a *App) cachedStudyLocations(ctx context.Context, studyUID string) ([]stri
 	if err := json.Unmarshal(raw, &locations); err != nil {
 		return nil, err
 	}
-	return locations, nil
+	return a.resolveLocationLabels(locations), nil
 }
 
 func (a *App) nodeDisplayName(nodeID string) string {
@@ -9991,7 +9991,40 @@ func (a *App) nodeDisplayName(nodeID string) string {
 			break
 		}
 	}
-	return nodeID
+	if nodeID == "" {
+		return ""
+	}
+	return "Nodo remoto"
+}
+
+func (a *App) resolveLocationLabel(location string) string {
+	location = strings.TrimSpace(location)
+	if location == "" {
+		return ""
+	}
+	for _, node := range a.externalConfig.PACSNodes {
+		if strings.EqualFold(strings.TrimSpace(node.ID), location) || strings.EqualFold(strings.TrimSpace(node.Name), location) {
+			name := strings.TrimSpace(node.Name)
+			if name != "" {
+				return name
+			}
+		}
+	}
+	if strings.EqualFold(location, "cache local") {
+		return "Local"
+	}
+	return location
+}
+
+func (a *App) resolveLocationLabels(locations []string) []string {
+	resolved := make([]string, 0, len(locations))
+	for _, location := range locations {
+		label := a.resolveLocationLabel(location)
+		if label != "" {
+			resolved = append(resolved, label)
+		}
+	}
+	return mergeStringSets(resolved)
 }
 
 func mergeStringSets(values ...[]string) []string {
@@ -10545,7 +10578,7 @@ func (a *App) listPatientStudies(ctx context.Context, patientID, documentNumber 
 			StudyDescription:   source.StudyDescription,
 			NumberOfImages:     source.NumberOfImages,
 			ModalitiesInStudy:  source.ModalitiesInStudy,
-			Locations:          source.Locations,
+			Locations:          a.resolveLocationLabels(source.Locations),
 			AndesPrestacionID:  source.AndesPrestacionID,
 			AndesPrestacion:    source.AndesPrestacion,
 			AndesProfessional:  source.AndesProfessional,
