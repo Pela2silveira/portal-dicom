@@ -3294,26 +3294,27 @@
               '<article class="result-item" data-physician-study="' + escapeHTML(result.study_instance_uid) + '">' +
                 '<div class="item-head">' +
                   '<div>' +
-                    '<strong>Descripción del estudio: ' + escapeHTML(result.study_description || "Estudio sin descripción") + '</strong>' +
+                    '<strong>' + escapeHTML(result.patient_id || "-") + '</strong>' +
                     '<span>' + escapeHTML(patientNameLabel) + " · " + escapeHTML(studyDateLabel) + '</span>' +
-                  '</div>' +
-                  '<div class="' + chipClassForRetrieve(result.retrieve_status) + '" data-physician-retrieve-chip="' + escapeHTML(result.study_instance_uid) + '">' +
-                    escapeHTML(labelForRetrieveStatus(result.retrieve_status, result.retrieve_phase, result.retrieve_progress)) +
                   '</div>' +
                 '</div>' +
                 '<div class="meta-grid">' +
-                  '<div><span>Paciente</span><strong>' + escapeHTML(result.patient_id) + '</strong></div>' +
+                  '<div><span>ID paciente</span><strong>' + escapeHTML(result.patient_id) + '</strong></div>' +
+                  '<div><span>ID estudio</span><strong>' + escapeHTML(result.study_instance_uid) + '</strong></div>' +
+                  '<div><span>Apellido y nombre</span><strong>' + escapeHTML(patientNameLabel) + '</strong></div>' +
+                  '<div><span>Fecha de estudio</span><strong>' + escapeHTML(studyDateLabel) + '</strong></div>' +
+                  '<div><span>Descripción del estudio</span><strong>' + escapeHTML(result.study_description || "Estudio sin descripción") + '</strong></div>' +
                   '<div><span>Modalidades</span><strong>' + escapeHTML(formatModalityList(result.modalities || [])) + '</strong></div>' +
-                  '<div><span>Hospitales</span><strong>' + escapeHTML((result.locations || []).join(", ") || "-") + '</strong></div>' +
                   '<div><span>Prestación en ANDES</span><strong>' + escapeHTML(andesMetadataLabel(result, "andes_prestacion")) + '</strong></div>' +
                   '<div><span>Profesional en ANDES</span><strong>' + escapeHTML(andesMetadataLabel(result, "andes_professional")) + '</strong></div>' +
                   '<div><span>Imágenes</span><strong>' + escapeHTML(imageCountLabel) + '</strong></div>' +
-                  '<div><span>Local</span><strong>' + escapeHTML(labelForCacheStatus(result.cache_status)) + '</strong></div>' +
                 '</div>' +
                 '<div class="chip-row">' +
+                  '<div class="' + chipClassForRetrieve(result.retrieve_status) + '" data-physician-retrieve-chip="' + escapeHTML(result.study_instance_uid) + '">' +
+                    escapeHTML(labelForRetrieveStatus(result.retrieve_status, result.retrieve_phase, result.retrieve_progress)) +
+                  '</div>' +
                   (result.locations || []).map(location => '<div class="chip success">Hospital: ' + escapeHTML(location) + '</div>').join("") +
                   modalities +
-                  '<div class="chip">ID: ' + escapeHTML(result.study_instance_uid) + '</div>' +
                 '</div>' +
                 '<div class="inline-actions">' +
                   retrieveAction +
