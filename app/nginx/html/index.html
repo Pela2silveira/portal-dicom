@@ -3292,12 +3292,6 @@
 
             return (
               '<article class="result-item" data-physician-study="' + escapeHTML(result.study_instance_uid) + '">' +
-                '<div class="item-head">' +
-                  '<div>' +
-                    '<strong>' + escapeHTML(result.patient_id || "-") + '</strong>' +
-                    '<span>' + escapeHTML(patientNameLabel) + " · " + escapeHTML(studyDateLabel) + '</span>' +
-                  '</div>' +
-                '</div>' +
                 '<div class="meta-grid">' +
                   '<div><span>ID paciente</span><strong>' + escapeHTML(result.patient_id) + '</strong></div>' +
                   '<div><span>ID estudio</span><strong>' + escapeHTML(result.study_instance_uid) + '</strong></div>' +

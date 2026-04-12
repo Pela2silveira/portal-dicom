@@ -283,8 +283,9 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - Preferred metadata source follows the existing node priority rule
 - Cache state is shown separately from descriptive study metadata
 - The professional card should present the primary reading order as: `ID paciente`, `ID estudio`, `Apellido y nombre`, `Fecha de estudio`, `Descripción del estudio`, then the remaining technical/operational fields.
+- The professional card must not repeat `ID paciente`, `Apellido y nombre`, or `Fecha de estudio` in a separate header area; those fields belong only in the metadata grid.
 - Remote source locations should be rendered once through the `Hospital:` chips and should not be duplicated as a separate `Hospitales` field in the metadata grid.
-- The professional card header already shows the human-readable patient name; the metadata grid field for the DICOM identifier must therefore be labeled `ID paciente`, not `Paciente`.
+- The metadata grid field for the DICOM identifier must be labeled `ID paciente`, not `Paciente`.
 - `ID estudio` must live in the metadata grid, not as a chip, so identifier fields stay in one consistent area.
 - The retrieve-status label (`Pendiente de recuperación`, `Recuperación completa`, etc.) should render together with the chip row, not as a detached badge in the card header.
 - The separate `Local` cache-status field should not be rendered in the professional metadata grid; retrieve state already communicates the actionable local/remote situation with less ambiguity.
