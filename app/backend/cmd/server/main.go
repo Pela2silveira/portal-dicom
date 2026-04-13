@@ -518,6 +518,7 @@ type MongoPrestacionLookupSource struct {
 	collection     *mongo.Collection
 	connectTimeout time.Duration
 	queryTimeout   time.Duration
+	batchSize      int
 }
 
 type NoopPrestacionLookupSource struct{}
@@ -811,6 +812,24 @@ func andesPrestacionSummaryFromMongo(doc MongoPrestacionLookupDocument) AndesPre
 	}
 }
 
+func chunkStrings(values []string, size int) [][]string {
+	if len(values) == 0 {
+		return nil
+	}
+	if size <= 0 {
+		size = len(values)
+	}
+	chunks := make([][]string, 0, (len(values)+size-1)/size)
+	for start := 0; start < len(values); start += size {
+		end := start + size
+		if end > len(values) {
+			end = len(values)
+		}
+		chunks = append(chunks, values[start:end])
+	}
+	return chunks
+}
+
 func (s *MongoPrestacionLookupSource) findByFilter(ctx context.Context, filter bson.M) (map[string]AndesPrestacionSummary, error) {
 	queryCtx, cancel := context.WithTimeout(ctx, s.queryTimeout)
 	defer cancel()
@@ -851,14 +870,28 @@ func (s *MongoPrestacionLookupSource) FindByStudyUIDs(ctx context.Context, study
 		return map[string]AndesPrestacionSummary{}, nil
 	}
 
-	return s.findByFilter(ctx, bson.M{
-		"metadata": bson.M{
-			"$elemMatch": bson.M{
-				"key":   "pacs-uid",
-				"valor": bson.M{"$in": studyUIDs},
+	results := make(map[string]AndesPrestacionSummary, len(studyUIDs))
+	for _, batch := range chunkStrings(studyUIDs, s.batchSize) {
+		batchResults, err := s.findByFilter(ctx, bson.M{
+			"metadata": bson.M{
+				"$elemMatch": bson.M{
+					"key":   "pacs-uid",
+					"valor": bson.M{"$in": batch},
+				},
 			},
-		},
-	})
+		})
+		if err != nil {
+			return nil, fmt.Errorf("lookup prestaciones by pacs-uid batch_size=%d: %w", len(batch), err)
+		}
+		for studyUID, summary := range batchResults {
+			if _, exists := results[studyUID]; exists {
+				continue
+			}
+			results[studyUID] = summary
+		}
+	}
+
+	return results, nil
 }
 
 func mongoPacienteToPatientIdentity(documentNumber string, doc MongoPacienteDocument) PatientIdentity {
@@ -4807,7 +4840,7 @@ func connectMongoPatientIdentitySource() (PatientIdentitySource, error) {
 	}
 
 	connectTimeout := durationFromEnv("HIS_MONGO_CONNECT_TIMEOUT_MS", 5000*time.Millisecond)
-	queryTimeout := durationFromEnv("HIS_MONGO_QUERY_TIMEOUT_MS", 3000*time.Millisecond)
+	queryTimeout := durationFromEnv("HIS_MONGO_QUERY_TIMEOUT_MS", 10000*time.Millisecond)
 
 	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
 	defer cancel()
@@ -4838,7 +4871,7 @@ func connectMongoProfessionalIdentitySource(cfg ProfessionalConfig) (Professiona
 	}
 
 	connectTimeout := durationFromEnv("HIS_MONGO_CONNECT_TIMEOUT_MS", 5000*time.Millisecond)
-	queryTimeout := durationFromEnv("HIS_MONGO_QUERY_TIMEOUT_MS", 3000*time.Millisecond)
+	queryTimeout := durationFromEnv("HIS_MONGO_QUERY_TIMEOUT_MS", 10000*time.Millisecond)
 
 	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
 	defer cancel()
@@ -4870,7 +4903,11 @@ func connectMongoPrestacionLookupSource() (PrestacionLookupSource, error) {
 	}
 
 	connectTimeout := durationFromEnv("HIS_MONGO_CONNECT_TIMEOUT_MS", 5000*time.Millisecond)
-	queryTimeout := durationFromEnv("HIS_MONGO_QUERY_TIMEOUT_MS", 3000*time.Millisecond)
+	queryTimeout := durationFromEnv("HIS_MONGO_QUERY_TIMEOUT_MS", 10000*time.Millisecond)
+	batchSize := intFromEnv("HIS_MONGO_PRESTACIONES_BATCH_SIZE", 20)
+	if batchSize <= 0 {
+		batchSize = 20
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
 	defer cancel()
@@ -4890,6 +4927,7 @@ func connectMongoPrestacionLookupSource() (PrestacionLookupSource, error) {
 		collection:     client.Database(mongoDatabase).Collection("prestaciones"),
 		connectTimeout: connectTimeout,
 		queryTimeout:   queryTimeout,
+		batchSize:      batchSize,
 	}, nil
 }
 
@@ -5921,6 +5959,18 @@ func durationFromEnv(name string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	parsed, err := time.ParseDuration(raw + "ms")
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
+}
+
+func intFromEnv(name string, fallback int) int {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(raw)
 	if err != nil || parsed <= 0 {
 		return fallback
 	}

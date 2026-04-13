@@ -107,6 +107,7 @@ Implications:
 - `tipoPrestacion` remains node metadata, not study metadata
 - `tipoPrestacion` is not copied into Postgres study rows
 - the current enrichment path is compatible with the existing `qido_study_cache` fields and does not require a new Postgres table
+- the Mongo lookup is batched by `StudyInstanceUID` so large result sets do not depend on a single oversized `$in` query
 
 ## Important Separation
 

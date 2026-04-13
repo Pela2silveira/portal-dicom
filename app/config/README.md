@@ -130,6 +130,9 @@ Fields:
 Notes:
 
 - When `provider = "his_mongo_direct"`, the backend expects Mongo env vars such as `HIS_MONGO_URI` and `HIS_MONGO_DATABASE`.
+- The Mongo-backed prestaciones lookup also accepts:
+  - `HIS_MONGO_QUERY_TIMEOUT_MS` (default `10000`)
+  - `HIS_MONGO_PRESTACIONES_BATCH_SIZE` (default `20`)
 - Professional transitional validation against Mongo `profesional` also depends on this provider mode.
 
 ## `patient`
