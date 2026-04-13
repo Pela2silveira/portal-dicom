@@ -94,8 +94,9 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - The patient surface now separates search orchestration from result reads: `POST /api/patient/search` enqueues background QIDO work, `GET /api/patient/search?request_id=...` reports worker state, and `GET /api/patient/studies` remains a read contract over cached rows plus current sync state.
 - The patient UI should not enqueue duplicate remote searches for the same `document + filters` while one request is already `queued` or `running`; it must reuse the active `request_id` and continue polling that job instead.
 - Patient search rows left in `queued` or `running` after backend restart should be reconciled to `failed` instead of restoring a phantom in-progress state in the UI.
-- The patient surface now exposes a manual `Retrieve` action backed by `POST /api/patient/retrieve`.
+- The patient surface no longer exposes a manual `Retrieve` CTA; visible non-local studies are auto-enqueued for retrieve through `POST /api/patient/retrieve`.
 - The current patient retrieve implementation enqueues a background retrieve job, then a Go worker uses Orthanc REST to `PUT /modalities/{id}` and `POST /modalities/{id}/get`, polling Orthanc until the study becomes local.
+- Patient study cards should expose one semantic availability chip (`Disponible`, `En proceso`, or `No disponible`) instead of separate local/retrieve chips that describe the same state twice.
 - The transition to local availability must be transactional: only after Orthanc confirms local presence may the backend commit `retrieve_jobs=done`, `patient_study_access.availability_status=available_local`, and `cached_studies.cache_status=local_complete`.
 - Retrieve completion feedback in the browser should follow a per-job SSE stream (`GET /api/retrieve/jobs/:id/events`) instead of unbounded full-list polling.
 - The terminal refresh after a patient retrieve must also be silent: keep the current list mounted, preserve viewport/focus, and avoid placeholder flicker when reloading the study set.

@@ -76,10 +76,10 @@ Allow a patient to see only their authorized studies and open one selected study
 - Compact patient data summary section at the top of the page
 - Simple filters in a dedicated block below the patient data section
 - Authorized study list grouped by modality in a full-width results block as the primary visual element
-- Per-study actions: `Recuperar estudio`, `Visualizar estudio`, `Compartir`, and `Descargar DICOM` when local
+- Per-study actions: `Visualizar estudio`, `Compartir`, and `Descargar DICOM` when local
 - When local viewing is available, `Visualizar estudio` is the preferred emphasized action and should appear before `Compartir`, which in turn should appear before `Descargar DICOM`
 - Empty state message when the document has no matching studies
-- Patient study cards should render their contextual chips as one grouped block before the action buttons, combining status, retrieve state when applicable, hospital chips, and modality chips.
+- Patient study cards should render their contextual chips as one grouped block before the action buttons, combining one semantic availability chip plus hospital chips and modality chips.
 
 ### Allowed Fields In The List
 
@@ -148,9 +148,7 @@ Allow a patient to see only their authorized studies and open one selected study
 
 ### Allowed Actions
 
-- `Recuperar estudio` when `availabilityStatus = pending_retrieve`
-- once a retrieve is `queued` or `running`, the patient action must render as disabled `Recuperando` and must not enqueue duplicate jobs for the same study
-- when `source_node_available = false`, the patient retrieve action must render disabled as `Origen no disponible`
+- patient retrieve is automatic for visible non-local studies and must not surface as a manual CTA
 - `Ver estudio` when `availabilityStatus = available_local`
 - `Buscar` to call `POST /api/patient/search` with the current patient filters while keeping cached results visible
 - the patient result area must differentiate QIDO search feedback from per-study retrieve state without adding parallel UI state machines
@@ -175,7 +173,7 @@ Allow a patient to see only their authorized studies and open one selected study
   - includes sync state for the current filter set (`idle|queued|running|done|failed`)
   - includes per-study `retrieve_status` resolved from `retrieve_jobs`
   - includes per-study `retrieve_phase` and `retrieve_progress` to drive lightweight retrieve progress in the row/action state
-  - includes per-study `source_node_available` so the UI can block retrieve when the origin PACS is offline
+  - includes per-study `source_node_available` so the UI can decide whether automatic retrieve is possible
 - `POST /api/patient/search`
   - receives `document_number` plus the current patient filters
   - enqueues background QIDO work and returns `request_id`
@@ -188,6 +186,7 @@ Allow a patient to see only their authorized studies and open one selected study
   - enqueues a background retrieve job that triggers PACS-to-PACS retrieve through Orthanc REST
   - must reject the request if the origin PACS is currently offline
   - returns `job_id` and the UI follows completion through `GET /api/retrieve/jobs/:id/events` (SSE)
+  - in the current patient UX this route is orchestrated automatically for visible non-local studies instead of being exposed as a manual button
   - intermediate SSE events may expose `phase` and `progress` for the active retrieve, but should stay low-frequency and change-driven
   - the patient list should refresh on retrieve terminal events (`done|failed`) without unmounting the current grid or showing an intermediate loading placeholder
   - updates local availability before the patient can open OHIF
@@ -251,6 +250,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - Search filters in a dedicated block below the professional data section
 - Search execution status
 - The PACS health summary must behave as an explicit popover, not as a hover-only tooltip: click toggles open/close, `Escape` closes it, and clicking outside closes it.
+- The PACS health popover must not be clipped by the results container when the result list is empty; it should render fully outside the card bounds if needed.
 - Federated results table as the primary visual element
 - Per-study actions
 - Optional retrieve job activity summary
