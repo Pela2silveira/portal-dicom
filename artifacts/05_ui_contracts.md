@@ -19,6 +19,7 @@ These contracts are intentionally separate from the viewers. Stone Web Viewer an
 - Real access control, when implemented, must be enforced in the backend and image proxy by active portal session and allowed `StudyInstanceUID`.
 - All portal-owned surfaces must be responsive and usable on mobile for consultation workflows.
 - Study/result cards must not introduce horizontal overflow on mobile; long identifiers, hospital names, and other DICOM-derived strings must wrap within the card instead of widening the viewport.
+- On mobile widths, study-card headers must stack vertically instead of keeping title/status areas side by side when that would risk overflow.
 - Every editable input in the portal UI must apply immediate client-side normalization/sanitization appropriate to its type before values enter local state or request payloads.
 - Frontend input protection is a UX safeguard only; every backend route must revalidate and normalize the same fields server-side before using them in queries, workflow orchestration, or downstream requests.
 
