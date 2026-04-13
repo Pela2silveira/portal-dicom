@@ -550,6 +550,8 @@
         border: 1px solid var(--line);
         background: var(--surface);
         padding: 16px;
+        min-width: 0;
+        overflow-x: hidden;
       }
 
       .item-head {
@@ -591,6 +593,11 @@
         color: var(--ink);
         font-size: 0.82rem;
         font-weight: 700;
+        max-width: 100%;
+        min-width: 0;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: break-word;
       }
 
       .chip.info {
@@ -624,11 +631,19 @@
         margin-bottom: 2px;
       }
 
+      .meta-grid strong {
+        display: block;
+        min-width: 0;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
+
       .inline-actions {
         display: flex;
         flex-wrap: wrap;
         gap: 10px;
         align-items: center;
+        min-width: 0;
       }
 
       .inline-actions.align-end {
@@ -1759,7 +1774,7 @@
           </div>
           <div class="workspace-stack">
             <section class="workspace-card workspace-card-primary">
-              <h4>Profesional</h4>
+              <h4>Datos del Profesional</h4>
               <div class="summary-grid summary-grid-compact">
                 <div class="summary-item summary-item-wide">
                   <span>Nombre y apellido</span>
@@ -1947,6 +1962,7 @@
           <div class="site-footer-links">
             <a href="https://salud.neuquen.gob.ar/" target="_blank" rel="noopener noreferrer">Salud Neuquen</a>
             <a href="https://play.google.com/store/apps/details?id=org.andes.mobile" target="_blank" rel="noopener noreferrer">App Android de Salud</a>
+            <a href="https://misalud.andes.gob.ar/login" target="_blank" rel="noopener noreferrer">Portal Mi Salud</a>
           </div>
           <div class="site-version" aria-label="Versión">v0.2.7</div>
         </div>
@@ -3216,6 +3232,12 @@
         physicianPacsHealthSummary.dataset.status = status;
       }
 
+      function closePhysicianPACSHealthSummary() {
+        if (document.activeElement === physicianPacsHealthSummary) {
+          physicianPacsHealthSummary.blur();
+        }
+      }
+
       async function fetchDetailedHealth() {
         const response = await fetch("/api/health", {
           cache: "no-store",
@@ -3278,7 +3300,7 @@
             const studyDateLabel = result.study_date ? formatDateLabel(result.study_date) : "Sin fecha";
             let retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '">Recuperar estudio</button>';
             if (result.retrieve_status === "done" && result.viewer_url) {
-              retrieveAction = '<button class="action action-secondary" type="button" disabled data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">Recuperado</button>';
+              retrieveAction = "";
             } else if (result.source_node_available === false) {
               retrieveAction = '<button class="action action-secondary" type="button" disabled>Origen no disponible</button>';
             } else if (result.retrieve_status === "running" || result.retrieve_status === "queued") {
@@ -4453,6 +4475,14 @@
         }
         if (event.key === "Escape" && patientPreviewOpen) {
           closePatientPreview();
+        }
+        if (event.key === "Escape") {
+          closePhysicianPACSHealthSummary();
+        }
+      });
+      document.addEventListener("pointerdown", event => {
+        if (!physicianPacsHealthSummary.contains(event.target)) {
+          closePhysicianPACSHealthSummary();
         }
       });
       patientPreviewCloseFooter.addEventListener("click", closePatientPreview);

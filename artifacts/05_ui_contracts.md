@@ -18,6 +18,7 @@ These contracts are intentionally separate from the viewers. Stone Web Viewer an
 - Hiding the native OHIF study list is a UX choice and is not a security control.
 - Real access control, when implemented, must be enforced in the backend and image proxy by active portal session and allowed `StudyInstanceUID`.
 - All portal-owned surfaces must be responsive and usable on mobile for consultation workflows.
+- Study/result cards must not introduce horizontal overflow on mobile; long identifiers, hospital names, and other DICOM-derived strings must wrap within the card instead of widening the viewport.
 - Every editable input in the portal UI must apply immediate client-side normalization/sanitization appropriate to its type before values enter local state or request payloads.
 - Frontend input protection is a UX safeguard only; every backend route must revalidate and normalize the same fields server-side before using them in queries, workflow orchestration, or downstream requests.
 
@@ -247,6 +248,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - Professional summary fields: `Nombre y apellido`, `DNI`, `Matrícula`
 - Search filters in a dedicated block below the professional data section
 - Search execution status
+- The PACS health summary popover must close when it loses focus, when the operator presses `Escape`, or when the operator clicks outside the control.
 - Federated results table as the primary visual element
 - Per-study actions
 - Optional retrieve job activity summary
@@ -321,6 +323,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - `Recuperar estudio`
 - `Reintentar recuperacion` when the latest retrieve status is `failed`
 - while `retrieve_status` is `queued|running`, the action must stay disabled and the backend should reuse the active job instead of enqueuing duplicates
+- once `retrieve_status = done`, the professional surface should hide the retrieve action instead of rendering a disabled `Recuperado` button
 - `Visualizar estudio` only when the study is available in local Orthanc
 - `Visualizar con OHIF Viewer` only when the study is available in local Orthanc
 - `Descargar DICOM` only when the study is available in local Orthanc
