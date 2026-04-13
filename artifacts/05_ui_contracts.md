@@ -80,6 +80,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - When local viewing is available, `Visualizar estudio` is the preferred emphasized action and should appear before `Compartir`, which in turn should appear before `Descargar DICOM`
 - Empty state message when the document has no matching studies
 - Patient study cards should render their contextual chips as one grouped block before the action buttons, combining one semantic availability chip plus hospital chips and modality chips.
+- The share QR dialog should preserve readable spacing on mobile and desktop: the footer actions must wrap without forcing narrow equal-width columns, and the dialog content must not overflow horizontally.
 
 ### Allowed Fields In The List
 

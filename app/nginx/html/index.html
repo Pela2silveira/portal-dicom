@@ -672,7 +672,7 @@
       }
 
       .share-qr-dialog {
-        width: min(100%, 420px);
+        width: min(100%, 480px);
         max-height: min(calc(100vh - 40px), 760px);
         border: 1px solid var(--line);
         background: var(--surface);
@@ -714,6 +714,7 @@
       .share-qr-close {
         min-width: 44px;
         padding: 12px 14px;
+        flex-shrink: 0;
       }
 
       .share-qr-card {
@@ -766,17 +767,33 @@
         border-radius: 0;
         padding: 12px 14px;
         font: inherit;
+        overflow-wrap: anywhere;
       }
 
       .share-qr-footer {
-        display: grid;
+        display: flex;
+        flex-wrap: wrap;
         gap: 10px;
         border-top: 1px solid var(--line);
       }
 
+      .share-qr-footer .action {
+        flex: 1 1 140px;
+      }
+
       @media (min-width: 640px) {
-        .share-qr-footer {
-          grid-template-columns: repeat(3, minmax(0, 1fr));
+        .share-qr-meta {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .share-qr-footer .action {
+          flex-basis: 0;
+        }
+      }
+
+      @media (max-width: 639px) {
+        .share-qr-footer .action {
+          width: 100%;
         }
       }
 
