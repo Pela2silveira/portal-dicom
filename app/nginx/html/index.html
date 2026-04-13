@@ -1333,7 +1333,7 @@
         color: var(--ink);
         font-size: 0.86rem;
         line-height: 1.2;
-        cursor: default;
+        cursor: pointer;
       }
 
       .pacs-health-summary::before {
@@ -1372,8 +1372,7 @@
         box-shadow: 0 14px 30px rgba(0, 0, 0, 0.14);
       }
 
-      .pacs-health-summary:hover .pacs-health-summary-tooltip,
-      .pacs-health-summary:focus-within .pacs-health-summary-tooltip {
+      .pacs-health-summary.is-open .pacs-health-summary-tooltip {
         display: grid;
       }
 
@@ -1895,7 +1894,7 @@
             <section class="workspace-card workspace-card-primary">
               <div class="section-header-inline">
                 <h4>Resultados</h4>
-                <div class="pacs-health-summary" id="physician-pacs-health-summary" data-status="unknown" tabindex="0" aria-live="polite">
+                <div class="pacs-health-summary" id="physician-pacs-health-summary" data-status="unknown" tabindex="0" aria-live="polite" aria-expanded="false" aria-controls="physician-pacs-health-tooltip">
                   <span id="physician-pacs-health-text">PACS en línea -/-</span>
                   <div class="pacs-health-summary-tooltip" id="physician-pacs-health-tooltip">
                     <div>
@@ -2715,7 +2714,7 @@
       }
 
       function labelForStatus(status) {
-        if (status === "available_local") return "Disponible en caché";
+        if (status === "available_local") return "Disponible localmente";
         if (status === "pending_retrieve") return "Recuperación pendiente";
         if (status === "remote_available") return "Disponible en remoto";
         if (status === "unavailable") return "No disponible";
@@ -3089,8 +3088,8 @@
               const imageCount = Number(study.number_of_images || 0);
               const imageCountLabel = imageCount > 0 ? String(imageCount) : "-";
 
-              const statusChips =
-                '<div class="chip-row status-chips">' +
+              const detailChips =
+                '<div class="chip-row">' +
                   '<div class="' + chipClassForStatus(study.availability_status) + '">' +
                     escapeHTML(labelForStatus(study.availability_status)) +
                   '</div>' +
@@ -3099,6 +3098,8 @@
                         escapeHTML(labelForRetrieveStatus(study.retrieve_status, study.retrieve_phase, study.retrieve_progress)) +
                       '</div>'
                     : "") +
+                  (study.locations || []).map(location => '<div class="chip success">Hospital: ' + escapeHTML(location) + '</div>').join("") +
+                  modalities +
                 '</div>';
 
               return (
@@ -3108,18 +3109,13 @@
                       '<strong>Descripción del estudio: ' + escapeHTML(study.study_description || "Estudio sin descripción") + '</strong>' +
                       '<span>' + escapeHTML(study.study_date || "Sin fecha") + '</span>' +
                     '</div>' +
-                    statusChips +
                   '</div>' +
                   '<div class="meta-grid">' +
-                  '<div><span>Hospitales</span><strong>' + escapeHTML((study.locations || []).join(", ") || "-") + '</strong></div>' +
                   '<div><span>Prestación en ANDES</span><strong>' + escapeHTML(andesMetadataLabel(study, "andes_prestacion")) + '</strong></div>' +
                   '<div><span>Profesional en ANDES</span><strong>' + escapeHTML(andesMetadataLabel(study, "andes_professional")) + '</strong></div>' +
                   '<div><span>Imágenes</span><strong>' + escapeHTML(imageCountLabel) + '</strong></div>' +
                 '</div>' +
-                  '<div class="chip-row">' +
-                    (study.locations || []).map(location => '<div class="chip success">Hospital: ' + escapeHTML(location) + '</div>').join("") +
-                    modalities +
-                  '</div>' +
+                  detailChips +
                   '<div class="inline-actions">' + previewAction + action + shareAction + downloadAction + '</div>' +
                 '</article>'
               );
@@ -3245,9 +3241,21 @@
       }
 
       function closePhysicianPACSHealthSummary() {
-        if (document.activeElement === physicianPacsHealthSummary) {
-          physicianPacsHealthSummary.blur();
+        physicianPacsHealthSummary.classList.remove("is-open");
+        physicianPacsHealthSummary.setAttribute("aria-expanded", "false");
+      }
+
+      function openPhysicianPACSHealthSummary() {
+        physicianPacsHealthSummary.classList.add("is-open");
+        physicianPacsHealthSummary.setAttribute("aria-expanded", "true");
+      }
+
+      function togglePhysicianPACSHealthSummary() {
+        if (physicianPacsHealthSummary.classList.contains("is-open")) {
+          closePhysicianPACSHealthSummary();
+          return;
         }
+        openPhysicianPACSHealthSummary();
       }
 
       async function fetchDetailedHealth() {
@@ -3284,7 +3292,7 @@
           physicianResultList.innerHTML =
             hasPhysicianQueryFilters(payload.filters)
               ? '<div class="empty-state">No hay resultados para los filtros seleccionados.</div>'
-              : '<div class="empty-state">No hay estudios locales en cache para el rango temporal configurado.</div>';
+              : '<div class="empty-state">No hay estudios locales para el rango temporal configurado.</div>';
           return;
         }
 
@@ -4481,6 +4489,21 @@
           alert("No se pudo abrir WhatsApp automáticamente.");
         }
       });
+      physicianPacsHealthSummary.addEventListener("click", event => {
+        event.stopPropagation();
+        togglePhysicianPACSHealthSummary();
+      });
+      physicianPacsHealthSummary.addEventListener("keydown", event => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          togglePhysicianPACSHealthSummary();
+          return;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closePhysicianPACSHealthSummary();
+        }
+      });
       document.addEventListener("keydown", event => {
         if (event.key === "Escape" && patientShareQROpen) {
           closePatientShareQR();
@@ -4488,9 +4511,7 @@
         if (event.key === "Escape" && patientPreviewOpen) {
           closePatientPreview();
         }
-        if (event.key === "Escape") {
-          closePhysicianPACSHealthSummary();
-        }
+        if (event.key === "Escape") closePhysicianPACSHealthSummary();
       });
       document.addEventListener("pointerdown", event => {
         if (!physicianPacsHealthSummary.contains(event.target)) {

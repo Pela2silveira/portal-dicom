@@ -79,6 +79,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - Per-study actions: `Recuperar estudio`, `Visualizar estudio`, `Compartir`, and `Descargar DICOM` when local
 - When local viewing is available, `Visualizar estudio` is the preferred emphasized action and should appear before `Compartir`, which in turn should appear before `Descargar DICOM`
 - Empty state message when the document has no matching studies
+- Patient study cards should render their contextual chips as one grouped block before the action buttons, combining status, retrieve state when applicable, hospital chips, and modality chips.
 
 ### Allowed Fields In The List
 
@@ -249,7 +250,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - Professional summary fields: `Nombre y apellido`, `DNI`, `Matrícula`
 - Search filters in a dedicated block below the professional data section
 - Search execution status
-- The PACS health summary popover must close when it loses focus, when the operator presses `Escape`, or when the operator clicks outside the control.
+- The PACS health summary must behave as an explicit popover, not as a hover-only tooltip: click toggles open/close, `Escape` closes it, and clicking outside closes it.
 - Federated results table as the primary visual element
 - Per-study actions
 - Optional retrieve job activity summary
