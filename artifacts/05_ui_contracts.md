@@ -82,6 +82,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - Patient study cards should render their contextual chips as one grouped block before the action buttons, combining one semantic availability chip plus hospital chips and modality chips.
 - The share QR dialog should preserve readable spacing on mobile and desktop: the footer actions must wrap without forcing narrow equal-width columns, and the dialog content must not overflow horizontally.
 - In the share QR dialog, `Compartir por WhatsApp` should use the same emphasized visual treatment as other preferred patient CTAs such as `Vista previa`.
+- In mobile widths, the share QR dialog header should stack vertically so the `Cerrar` action does not compress the title or body copy.
 
 ### Allowed Fields In The List
 
