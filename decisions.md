@@ -33,7 +33,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Patient DIMSE authorization currently accepts studies either by strict `PatientID` match against portal-known identifiers or by a strong demographic match combining birth date, sex, and high-confidence patient-name correspondence.
 - Background patient search workers must reload the full persisted `PatientSummary` before remote execution so DIMSE demographic probing always has access to `full_name`, `birth_date`, and `sex`.
 - Professional remote search must stop assuming a single globally configured PACS; the physician UI now selects one remote online PACS explicitly, while `local_cache` remains a first-class searchable source backed by Orthanc QIDO.
-- Each PACS node may now carry an optional `andes_organization_id` in config so the physician flow can enrich QIDO results from Mongo `prestaciones` using `solicitud.organizacion.id` plus `metadata.pacs-uid`.
+- Each PACS node may now carry an optional `andes_organization_id` in config as PACS metadata, but the current Mongo `prestaciones` enrichment resolves studies canonically through `metadata.pacs-uid = StudyInstanceUID`.
 - The ANDES `prestaciones` enrichment must be guarded by `his.prestaciones_enrichment_enabled`; the feature is opt-in and remains disabled by default so Mongo latency cannot penalize the main search flows unless explicitly enabled.
 - QIDO result persistence must be modeled as a shared cache keyed by `study_instance_uid + source_node_id`; this entity is independent of patient/professional flows and can be reused by both.
 - The same shared cache must persist resolved ANDES enrichment fields when available so future searches can reuse them without re-querying Mongo `prestaciones`.

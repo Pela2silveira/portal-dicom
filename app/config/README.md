@@ -41,7 +41,7 @@ Required fields per node:
 
 - `id`: stable internal code for the node
 - `name`: visible name
-- `andes_organization_id`: optional ANDES organization id used to enrich professional QIDO results from Mongo `prestaciones`
+- `andes_organization_id`: optional ANDES organization id kept for PACS metadata, but current Mongo `prestaciones` enrichment resolves by DICOM `StudyInstanceUID` stored as `metadata.pacs-uid`
 - `his`: optional boolean marker indicating whether the node is present in external HIS/Mongo PACS metadata
 - `tipoPrestacion`: optional list of HIS/Mongo procedure descriptors associated with the node
 - `protocol`: high-level node kind, for example `dicomweb`, `dimse`, or `hybrid`
@@ -122,7 +122,7 @@ Fields:
 
 - `provider`: integration mode, for example `his_mongo_direct` or `andes`
 - `enabled`: informational flag for the configured integration
-- `prestaciones_enrichment_enabled`: optional feature flag, disabled by default; when `true` and `provider = his_mongo_direct`, the backend connects to Mongo `prestaciones` to enrich study cards with `Prestación en ANDES` / `Profesional en ANDES`
+- `prestaciones_enrichment_enabled`: optional feature flag, disabled by default; when `true` and `provider = his_mongo_direct`, the backend connects to Mongo `prestaciones` and resolves study cards by `metadata[{ key: "pacs-uid", valor: <StudyInstanceUID> }]` to enrich `Prestación en ANDES` / `Profesional en ANDES`
 - `base_url`: upstream HIS base URL when applicable
 - `auth_type`: auth mode label for the upstream system
 - `document_lookup_path`: patient lookup template path

@@ -87,6 +87,27 @@ For studies/results coming from `his: true` nodes:
 
 - the backend may attempt ANDES/HIS enrichment according to the current implementation and feature scope
 
+### Current Prestaciones Resolution
+
+The current Mongo `prestaciones` integration resolves study metadata through the DICOM study identifier, not through patient/date narrowing.
+
+Current rule:
+
+- `metadata.key = "pacs-uid"`
+- `metadata.valor = StudyInstanceUID`
+
+Current persisted study-level outputs:
+
+- `andes_prestacion_id`
+- `andes_prestacion`
+- `andes_professional`
+
+Implications:
+
+- `tipoPrestacion` remains node metadata, not study metadata
+- `tipoPrestacion` is not copied into Postgres study rows
+- the current enrichment path is compatible with the existing `qido_study_cache` fields and does not require a new Postgres table
+
 ## Important Separation
 
 Patient identity resolution is independent from the PACS node.

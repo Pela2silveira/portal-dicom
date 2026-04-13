@@ -161,8 +161,7 @@ type ProfessionalIdentitySource interface {
 
 type PrestacionLookupSource interface {
 	ProviderName() string
-	FindByPatientAndStudyUIDs(ctx context.Context, patientMongoID string, studyUIDs []string) (map[string]AndesPrestacionSummary, error)
-	FindByOrganizationAndStudyUIDs(ctx context.Context, organizationID, studyDate string, studyUIDs []string) (map[string]AndesPrestacionSummary, error)
+	FindByStudyUIDs(ctx context.Context, studyUIDs []string) (map[string]AndesPrestacionSummary, error)
 }
 
 type patientIdentitySourceCloser interface {
@@ -786,11 +785,7 @@ func (s *NoopPrestacionLookupSource) ProviderName() string {
 	return "noop"
 }
 
-func (s *NoopPrestacionLookupSource) FindByPatientAndStudyUIDs(_ context.Context, _ string, _ []string) (map[string]AndesPrestacionSummary, error) {
-	return map[string]AndesPrestacionSummary{}, nil
-}
-
-func (s *NoopPrestacionLookupSource) FindByOrganizationAndStudyUIDs(_ context.Context, _ string, _ string, _ []string) (map[string]AndesPrestacionSummary, error) {
+func (s *NoopPrestacionLookupSource) FindByStudyUIDs(_ context.Context, _ []string) (map[string]AndesPrestacionSummary, error) {
 	return map[string]AndesPrestacionSummary{}, nil
 }
 
@@ -851,46 +846,12 @@ func (s *MongoPrestacionLookupSource) findByFilter(ctx context.Context, filter b
 	return results, nil
 }
 
-func (s *MongoPrestacionLookupSource) FindByPatientAndStudyUIDs(ctx context.Context, patientMongoID string, studyUIDs []string) (map[string]AndesPrestacionSummary, error) {
-	patientObjectID, err := primitive.ObjectIDFromHex(strings.TrimSpace(patientMongoID))
-	if err != nil {
-		return map[string]AndesPrestacionSummary{}, nil
-	}
+func (s *MongoPrestacionLookupSource) FindByStudyUIDs(ctx context.Context, studyUIDs []string) (map[string]AndesPrestacionSummary, error) {
 	if len(studyUIDs) == 0 {
 		return map[string]AndesPrestacionSummary{}, nil
 	}
 
 	return s.findByFilter(ctx, bson.M{
-		"paciente.id": patientObjectID,
-		"metadata": bson.M{
-			"$elemMatch": bson.M{
-				"key":   "pacs-uid",
-				"valor": bson.M{"$in": studyUIDs},
-			},
-		},
-	})
-}
-
-func (s *MongoPrestacionLookupSource) FindByOrganizationAndStudyUIDs(ctx context.Context, organizationID, studyDate string, studyUIDs []string) (map[string]AndesPrestacionSummary, error) {
-	orgObjectID, err := primitive.ObjectIDFromHex(strings.TrimSpace(organizationID))
-	if err != nil {
-		return map[string]AndesPrestacionSummary{}, nil
-	}
-	if len(studyUIDs) == 0 {
-		return map[string]AndesPrestacionSummary{}, nil
-	}
-	start, err := time.Parse("2006-01-02", strings.TrimSpace(studyDate))
-	if err != nil {
-		return map[string]AndesPrestacionSummary{}, nil
-	}
-	end := start.AddDate(0, 0, 1)
-
-	return s.findByFilter(ctx, bson.M{
-		"solicitud.fecha": bson.M{
-			"$gte": start.UTC(),
-			"$lt":  end.UTC(),
-		},
-		"solicitud.organizacion.id": orgObjectID,
 		"metadata": bson.M{
 			"$elemMatch": bson.M{
 				"key":   "pacs-uid",
@@ -10121,16 +10082,7 @@ func (a *App) enrichPatientStudiesWithAndes(ctx context.Context, patientID strin
 	if len(missingStudyUIDs) == 0 {
 		return nil
 	}
-
-	patientMongoID, err := a.loadPatientMongoObjectID(ctx, patientID)
-	if err != nil {
-		return err
-	}
-	if patientMongoID == "" {
-		return nil
-	}
-
-	summaries, err := a.prestacionLookup.FindByPatientAndStudyUIDs(ctx, patientMongoID, missingStudyUIDs)
+	summaries, err := a.prestacionLookup.FindByStudyUIDs(ctx, missingStudyUIDs)
 	if err != nil {
 		return err
 	}
@@ -10166,51 +10118,30 @@ func (a *App) enrichPhysicianResultsWithAndes(ctx context.Context, results []Phy
 		return err
 	}
 
-	type groupKey struct {
-		organizationID string
-		studyDate      string
-	}
-	groupedUIDs := make(map[groupKey][]string)
-	indexByUID := make(map[string]int)
-
+	missingStudyUIDs := make([]string, 0, len(results))
 	for i := range results {
 		if strings.TrimSpace(results[i].AndesPrestacionID) != "" || strings.TrimSpace(results[i].AndesPrestacion) != "" || strings.TrimSpace(results[i].AndesProfessional) != "" {
-			continue
-		}
-		indexByUID[results[i].StudyInstanceUID] = i
-		nodeID := a.resolveConfiguredNodeIDForStudy(results[i].SourceNodeID, results[i].Locations)
-		if nodeID == "" {
-			continue
-		}
-		node, ok := a.configuredPACSNodeByID(nodeID)
-		if !ok {
 			continue
 		}
 		if !a.andesMetadataAvailableForPhysicianResult(results[i]) {
 			continue
 		}
-		orgID := strings.TrimSpace(node.AndesOrganizationID)
-		studyDate := strings.TrimSpace(results[i].StudyDate)
-		if orgID == "" || studyDate == "" {
-			continue
-		}
-		key := groupKey{organizationID: orgID, studyDate: studyDate}
-		groupedUIDs[key] = append(groupedUIDs[key], results[i].StudyInstanceUID)
+		missingStudyUIDs = append(missingStudyUIDs, results[i].StudyInstanceUID)
 	}
 
-	for key, studyUIDs := range groupedUIDs {
-		summaries, err := a.prestacionLookup.FindByOrganizationAndStudyUIDs(ctx, key.organizationID, key.studyDate, studyUIDs)
-		if err != nil {
-			return err
-		}
-		for studyUID, summary := range summaries {
-			index, ok := indexByUID[studyUID]
-			if !ok {
-				continue
-			}
-			results[index].AndesPrestacionID = summary.PrestacionID
-			results[index].AndesPrestacion = summary.PrestacionFSN
-			results[index].AndesProfessional = summary.Professional
+	if len(missingStudyUIDs) == 0 {
+		return nil
+	}
+
+	summaries, err := a.prestacionLookup.FindByStudyUIDs(ctx, missingStudyUIDs)
+	if err != nil {
+		return err
+	}
+	for i := range results {
+		if summary, ok := summaries[results[i].StudyInstanceUID]; ok {
+			results[i].AndesPrestacionID = summary.PrestacionID
+			results[i].AndesPrestacion = summary.PrestacionFSN
+			results[i].AndesProfessional = summary.Professional
 		}
 	}
 
