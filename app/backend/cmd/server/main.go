@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"crypto/tls"
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
@@ -17,6 +18,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"net/smtp"
 	"os"
 	"path/filepath"
 	"sort"
@@ -1381,6 +1383,15 @@ type PatientLoginResponse struct {
 	SessionToken string         `json:"session_token,omitempty"`
 }
 
+type smtpConfig struct {
+	Host     string
+	Port     string
+	Secure   bool
+	AuthUser string
+	AuthPass string
+	From     string
+}
+
 type qidoResponseItem map[string]dicomJSONAttribute
 
 type dicomJSONAttribute struct {
@@ -1756,7 +1767,6 @@ func (c HISConfig) ResolvedAndesRESTRequestTimeout() time.Duration {
 type PatientConfig struct {
 	AuthMode        string   `json:"auth_mode"`
 	FakeAuth        bool     `json:"fake_auth,omitempty"`
-	MasterKey       string   `json:"master_key,omitempty"`
 	MatchDebugNodes []string `json:"match_debug_nodes,omitempty"`
 }
 
@@ -1929,6 +1939,7 @@ type HISConfigResponse struct {
 type PortalConfig struct {
 	SessionTimeoutMinutes           int  `json:"session_timeout_minutes"`
 	ShowDemoRibbon                  bool `json:"show_demo_ribbon"`
+	PreviewImageLimit               int  `json:"preview_image_limit"`
 	RetrieveProgressPollSeconds     int  `json:"retrieve_progress_poll_seconds"`
 	RetrieveWorkerConcurrency       int  `json:"retrieve_worker_concurrency"`
 	ScheduledRetrieveEnabled        bool `json:"scheduled_retrieve_enabled"`
@@ -2669,6 +2680,15 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if patientAuthMode == PatientAuthModeMasterKey {
+		if strings.TrimSpace(patientMasterKey()) == "" {
+			a.log("error", "patient_send_code_master_key_not_configured", map[string]any{
+				"document_number": reqBody.DocumentNumber,
+				"patient_id":      patient.ID,
+				"provider":        a.identitySource.ProviderName(),
+			})
+			http.Error(w, "patient master key auth is not configured", http.StatusServiceUnavailable)
+			return
+		}
 		a.log("info", "patient_send_code_ready_master_key", map[string]any{
 			"document_number": reqBody.DocumentNumber,
 			"patient_id":      patient.ID,
@@ -2691,6 +2711,38 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 			Status:  "missing_active_email",
 			Message: "El paciente no tiene mail asociado. Concurra a su centro de salud más cercano para la actualización de sus datos de contacto.",
 		})
+		return
+	}
+
+	code, err := generateNumericCode(6)
+	if err != nil {
+		a.log("error", "patient_send_code_generation_failed", map[string]any{
+			"document_number": reqBody.DocumentNumber,
+			"patient_id":      patient.ID,
+			"provider":        a.identitySource.ProviderName(),
+			"error":           err.Error(),
+		})
+		http.Error(w, "failed to generate patient mail code", http.StatusInternalServerError)
+		return
+	}
+	if err := a.storePatientMailCode(ctx, patient.ID, code, 10*time.Minute); err != nil {
+		a.log("error", "patient_send_code_store_failed", map[string]any{
+			"document_number": reqBody.DocumentNumber,
+			"patient_id":      patient.ID,
+			"provider":        a.identitySource.ProviderName(),
+			"error":           err.Error(),
+		})
+		http.Error(w, "failed to store patient mail code", http.StatusInternalServerError)
+		return
+	}
+	if err := sendPatientAccessCodeMail(ctx, identity.Email, code); err != nil {
+		a.log("error", "patient_send_code_mail_delivery_failed", map[string]any{
+			"document_number": reqBody.DocumentNumber,
+			"patient_id":      patient.ID,
+			"provider":        a.identitySource.ProviderName(),
+			"error":           err.Error(),
+		})
+		http.Error(w, "failed to deliver patient mail code", http.StatusBadGateway)
 		return
 	}
 
@@ -2757,8 +2809,26 @@ func (a *App) handlePatientLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if patientAuthMode == PatientAuthModeMasterKey {
-		expected := strings.TrimSpace(a.externalConfig.Patient.MasterKey)
+		expected := strings.TrimSpace(patientMasterKey())
+		if expected == "" {
+			http.Error(w, "patient master key auth is not configured", http.StatusServiceUnavailable)
+			return
+		}
 		if subtle.ConstantTimeCompare([]byte(reqBody.Code), []byte(expected)) != 1 {
+			writeJSON(w, http.StatusUnauthorized, PatientLoginResponse{
+				Status:  "invalid_code",
+				Message: "El código ingresado no es válido.",
+			})
+			return
+		}
+	}
+	if patientAuthMode == PatientAuthModeMail {
+		valid, err := a.consumePatientMailCode(ctx, patient.ID, reqBody.Code)
+		if err != nil {
+			http.Error(w, "failed to validate patient mail code", http.StatusInternalServerError)
+			return
+		}
+		if !valid {
 			writeJSON(w, http.StatusUnauthorized, PatientLoginResponse{
 				Status:  "invalid_code",
 				Message: "El código ingresado no es válido.",
@@ -2779,6 +2849,10 @@ func (a *App) handlePatientLogin(w http.ResponseWriter, r *http.Request) {
 		Message: "Acceso validado.",
 		Patient: patient,
 	})
+}
+
+func patientMasterKey() string {
+	return strings.TrimSpace(os.Getenv("PATIENT_MASTER_KEY"))
 }
 
 func (a *App) handlePatientLogout(w http.ResponseWriter, r *http.Request) {
@@ -3484,7 +3558,7 @@ func (a *App) handlePatientStudyPreview(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	const previewLimit = 5
+	previewLimit := a.previewImageLimit()
 	items, totalAvailable, err := a.listStudyPreviewItems(ctx, studyUID, previewLimit)
 	if err != nil {
 		http.Error(w, "failed to load study preview", http.StatusBadGateway)
@@ -3536,7 +3610,7 @@ func (a *App) handlePhysicianStudyPreview(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	const previewLimit = 5
+	previewLimit := a.previewImageLimit()
 	items, totalAvailable, err := a.listStudyPreviewItems(ctx, studyUID, previewLimit)
 	if err != nil {
 		http.Error(w, "failed to load study preview", http.StatusBadGateway)
@@ -5375,6 +5449,7 @@ func loadExternalConfig(path string) (*ExternalConfig, error) {
 		Portal: PortalConfig{
 			SessionTimeoutMinutes:           10,
 			ShowDemoRibbon:                  false,
+			PreviewImageLimit:               5,
 			RetrieveProgressPollSeconds:     5,
 			RetrieveWorkerConcurrency:       2,
 			ScheduledRetrieveEnabled:        false,
@@ -6222,6 +6297,137 @@ func patientSendCodeReadyMessage(maskedEmail string, demo bool) string {
 	return "Se ha enviado el código a " + maskedEmail + "."
 }
 
+func generateNumericCode(length int) (string, error) {
+	if length <= 0 {
+		return "", errors.New("invalid code length")
+	}
+	digits := make([]byte, length)
+	for i := 0; i < length; i++ {
+		var b [1]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			return "", err
+		}
+		digits[i] = '0' + (b[0] % 10)
+	}
+	return string(digits), nil
+}
+
+func smtpConfigFromEnv() (smtpConfig, error) {
+	cfg := smtpConfig{
+		Host:     strings.TrimSpace(os.Getenv("SMTP_HOST")),
+		Port:     strings.TrimSpace(envOrDefault("SMTP_PORT", "587")),
+		Secure:   strings.EqualFold(strings.TrimSpace(os.Getenv("SMTP_SECURE")), "true"),
+		AuthUser: strings.TrimSpace(os.Getenv("SMTP_AUTH_USER")),
+		AuthPass: strings.TrimSpace(os.Getenv("SMTP_AUTH_PASS")),
+		From:     strings.TrimSpace(os.Getenv("SMTP_FROM")),
+	}
+	if cfg.Host == "" {
+		return smtpConfig{}, errors.New("missing SMTP_HOST")
+	}
+	if cfg.Port == "" {
+		cfg.Port = "587"
+	}
+	if cfg.From == "" {
+		if cfg.AuthUser != "" {
+			cfg.From = cfg.AuthUser
+		} else {
+			cfg.From = "no-reply@" + cfg.Host
+		}
+	}
+	return cfg, nil
+}
+
+func sendPatientAccessCodeMail(ctx context.Context, recipient, code string) error {
+	recipient = strings.TrimSpace(recipient)
+	code = strings.TrimSpace(code)
+	if recipient == "" {
+		return errors.New("missing recipient email")
+	}
+	if code == "" {
+		return errors.New("missing code")
+	}
+	cfg, err := smtpConfigFromEnv()
+	if err != nil {
+		return err
+	}
+
+	subject := "Codigo de acceso - Portal de Imagenes"
+	body := "Su codigo de acceso es: " + code + "\n\nSi usted no solicito este codigo, ignore este mensaje."
+	return sendSMTPPlainMail(ctx, cfg, recipient, subject, body)
+}
+
+func sendSMTPPlainMail(ctx context.Context, cfg smtpConfig, recipient, subject, body string) error {
+	addr := net.JoinHostPort(cfg.Host, cfg.Port)
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	var (
+		conn net.Conn
+		err  error
+	)
+	if cfg.Secure {
+		conn, err = tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{ServerName: cfg.Host})
+	} else {
+		conn, err = dialer.DialContext(ctx, "tcp", addr)
+	}
+	if err != nil {
+		return fmt.Errorf("smtp dial: %w", err)
+	}
+	defer conn.Close()
+
+	client, err := smtp.NewClient(conn, cfg.Host)
+	if err != nil {
+		return fmt.Errorf("smtp client: %w", err)
+	}
+	defer client.Close()
+
+	if !cfg.Secure {
+		if ok, _ := client.Extension("STARTTLS"); ok {
+			if err := client.StartTLS(&tls.Config{ServerName: cfg.Host}); err != nil {
+				return fmt.Errorf("smtp starttls: %w", err)
+			}
+		}
+	}
+
+	if cfg.AuthUser != "" {
+		auth := smtp.PlainAuth("", cfg.AuthUser, cfg.AuthPass, cfg.Host)
+		if err := client.Auth(auth); err != nil {
+			return fmt.Errorf("smtp auth: %w", err)
+		}
+	}
+
+	if err := client.Mail(cfg.From); err != nil {
+		return fmt.Errorf("smtp mail from: %w", err)
+	}
+	if err := client.Rcpt(recipient); err != nil {
+		return fmt.Errorf("smtp rcpt to: %w", err)
+	}
+
+	writer, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("smtp data: %w", err)
+	}
+	message := strings.Join([]string{
+		"From: " + cfg.From,
+		"To: " + recipient,
+		"Subject: " + subject,
+		"MIME-Version: 1.0",
+		"Content-Type: text/plain; charset=UTF-8",
+		"",
+		body,
+		"",
+	}, "\r\n")
+	if _, err := writer.Write([]byte(message)); err != nil {
+		_ = writer.Close()
+		return fmt.Errorf("smtp write: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("smtp close writer: %w", err)
+	}
+	if err := client.Quit(); err != nil {
+		return fmt.Errorf("smtp quit: %w", err)
+	}
+	return nil
+}
+
 func decodeBase64IfPrintable(value string) (string, bool) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
@@ -6697,6 +6903,56 @@ func (a *App) createPatientSession(ctx context.Context, patientID string, r *htt
 		return "", "", time.Time{}, err
 	}
 	return sessionID, rawToken, expiresAt, nil
+}
+
+func (a *App) storePatientMailCode(ctx context.Context, patientID, code string, ttl time.Duration) error {
+	patientID = strings.TrimSpace(patientID)
+	code = strings.TrimSpace(code)
+	if patientID == "" || code == "" {
+		return errors.New("missing patient id or code")
+	}
+	if ttl <= 0 {
+		ttl = 10 * time.Minute
+	}
+	expiresAt := time.Now().UTC().Add(ttl)
+	_, err := a.db.ExecContext(ctx, `
+		INSERT INTO patient_mail_codes (patient_id, code_hash, expires_at, created_at)
+		VALUES ($1::uuid, $2, $3, now())
+	`, patientID, tokenHash(code), expiresAt)
+	return err
+}
+
+func (a *App) consumePatientMailCode(ctx context.Context, patientID, code string) (bool, error) {
+	patientID = strings.TrimSpace(patientID)
+	code = strings.TrimSpace(code)
+	if patientID == "" || code == "" {
+		return false, nil
+	}
+
+	var consumedID string
+	err := a.db.QueryRowContext(ctx, `
+		WITH candidate AS (
+			SELECT id
+			FROM patient_mail_codes
+			WHERE patient_id = $1::uuid
+			  AND code_hash = $2
+			  AND consumed_at IS NULL
+			  AND expires_at > now()
+			ORDER BY created_at DESC
+			LIMIT 1
+		)
+		UPDATE patient_mail_codes
+		SET consumed_at = now()
+		WHERE id IN (SELECT id FROM candidate)
+		RETURNING id::text
+	`, patientID, tokenHash(code)).Scan(&consumedID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(consumedID) != "", nil
 }
 
 func (a *App) createPhysicianSession(ctx context.Context, physicianID string, r *http.Request) (string, string, time.Time, error) {
@@ -9221,6 +9477,13 @@ func (a *App) retrieveProgressPollInterval() time.Duration {
 		return 5 * time.Second
 	}
 	return time.Duration(a.externalConfig.Portal.RetrieveProgressPollSeconds) * time.Second
+}
+
+func (a *App) previewImageLimit() int {
+	if a.externalConfig == nil || a.externalConfig.Portal.PreviewImageLimit <= 0 {
+		return 5
+	}
+	return a.externalConfig.Portal.PreviewImageLimit
 }
 
 func (a *App) retrieveWorkerConcurrency() int {
@@ -11957,8 +12220,8 @@ func validateExternalConfig(cfg ExternalConfig) error {
 	switch cfg.Patient.ResolvedAuthMode() {
 	case PatientAuthModeMail, PatientAuthModeFakeAuth:
 	case PatientAuthModeMasterKey:
-		if strings.TrimSpace(cfg.Patient.MasterKey) == "" {
-			return errors.New(`patient.master_key is required when patient.auth_mode = "master_key"`)
+		if strings.TrimSpace(patientMasterKey()) == "" {
+			return errors.New(`PATIENT_MASTER_KEY env var is required when patient.auth_mode = "master_key"`)
 		}
 	default:
 		return fmt.Errorf("invalid patient auth mode %q", cfg.Patient.AuthMode)

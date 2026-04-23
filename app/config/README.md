@@ -145,12 +145,13 @@ Fields:
   - `mail`: final production flow, requires an active patient email and preserves the `Documento + código por mail` UX; current code already prevalidates contact and creates a real backend session, but the final mail delivery / one-time-code verification is still pending
   - `fake_auth`: demo flow, validates patient existence but skips real mail-code delivery
   - `master_key`: transitional operational bypass, validates patient existence and uses one shared configured key for patient access while the real `mail` delivery/verification integration is incomplete
-- `master_key`: required when `auth_mode` is `master_key`
+- `PATIENT_MASTER_KEY` (env var): required when `auth_mode` is `master_key`
 - `match_debug_nodes`: optional list of PACS node ids for which the backend should log identity-comparison probes between the HIS patient dataset and the remote patient dataset returned by search
 
 Operational note:
 
 - `mail` is the intended steady-state patient authentication mode for production.
+- SMTP delivery for `auth_mode = "mail"` uses env vars `SMTP_HOST`, `SMTP_PORT` (default `587`), `SMTP_SECURE` (`true|false`), `SMTP_AUTH_USER`, and `SMTP_AUTH_PASS`.
 - `master_key` is not the target product design; keep it only as a temporary fallback for controlled environments.
 - `match_debug_nodes` is intended only as a temporary diagnostic aid while defining patient matching rules for non-homogeneous remote datasets such as DIMSE-only PACS nodes.
 
@@ -166,6 +167,7 @@ Fields:
 
 - `session_timeout_minutes`: common session timeout for patient and professional surfaces
 - `show_demo_ribbon`: when `true`, the diagonal `Demo` ribbon is shown on the landing auth card and on both patient/professional workspaces
+- `preview_image_limit`: maximum number of JPG preview images returned per study in patient/professional preview dialogs
 - `retrieve_progress_poll_seconds`: polling interval, in seconds, used by the backend to query Orthanc job progress for active retrieve jobs
 - `retrieve_worker_concurrency`: number of backend goroutines allowed to monitor/complete Orthanc-backed retrieve jobs concurrently
 - `scheduled_retrieve_enabled`: when `true`, a background scheduler periodically enqueues automatic retrieves for recent non-local studies already present in the portal lists/cache
@@ -222,8 +224,7 @@ Patient example:
 
 ```json
 {
-  "auth_mode": "mail",
-  "master_key": ""
+  "auth_mode": "mail"
 }
 ```
 

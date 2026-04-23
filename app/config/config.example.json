@@ -54,6 +54,7 @@
   "portal": {
     "session_timeout_minutes": 10,
     "show_demo_ribbon": true,
+    "preview_image_limit": 15,
     "retrieve_progress_poll_seconds": 5,
     "retrieve_worker_concurrency": 2,
     "scheduled_retrieve_enabled": false,
@@ -63,7 +64,6 @@
   },
   "patient": {
     "auth_mode": "mail",
-    "master_key": "",
     "match_debug_nodes": []
   },
   "professional": {
