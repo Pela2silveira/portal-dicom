@@ -45,7 +45,11 @@
     "base_url": "https://pending-andes-host/api",
     "auth_type": "pending",
     "document_lookup_path": "/core-v2/mpi/pacientes?documento={dni}",
-    "prestaciones_enrichment_enabled": false
+    "prestaciones_enrichment_enabled": false,
+    "prestaciones_provider": "rest",
+    "andes_uid_prefixes": ["2.16.840.1.113883.2.10.35.1.200."],
+    "andes_rest_concurrency": 2,
+    "andes_rest_request_timeout_ms": 3000
   },
   "portal": {
     "session_timeout_minutes": 10,

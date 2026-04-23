@@ -305,17 +305,20 @@ Proveer un portal operativo mínimo capaz de:
 15. Cuando un retrieve profesional cierre en `done` o `failed`, la UI debe rehidratar la grilla sin desmontarla ni mostrar un estado vacío transitorio; debe preservar scroll y foco sobre el estudio involucrado.
 16. El filtro `patient_name` del profesional debe resolverse como búsqueda fuzzy por términos normalizados; no debe requerir coincidencia literal exacta.
 17. `GET /api/physician/results` debe incluir `source_node_available` por resultado remoto; si el nodo origen está offline, el botón de retrieve queda deshabilitado como `Origen no disponible` y `POST /api/physician/retrieve` debe responder rechazo sin crear job.
-18. El enriquecimiento ANDES de resultados debe quedar detrás de la feature flag `his.prestaciones_enrichment_enabled`, deshabilitada por defecto; con la flag en `false`, la búsqueda no debe conectarse a Mongo `prestaciones`.
+18. El enriquecimiento ANDES de resultados debe quedar detrás de la feature flag `his.prestaciones_enrichment_enabled`; con la flag en `false`, la búsqueda no debe intentar enriquecimiento de prestaciones.
 19. Tanto la tarjeta de paciente como la de profesional deben exponer, cuando la flag esté activa y exista match en Mongo `prestaciones`, los campos `Prestación en ANDES` y `Profesional en ANDES`.
 20. Para paciente, el enriquecimiento ANDES debe resolver por `metadata.pacs-uid == StudyInstanceUID` y por el identificador ANDES/Mongo del paciente persistido en `patient_identifiers` como `mongo_object_id`.
-21. Para profesional, el enriquecimiento ANDES debe resolver por `metadata.pacs-uid == StudyInstanceUID`, por rango diario de `StudyDate` y por `solicitud.organizacion.id == pacs_nodes[].andes_organization_id`.
-22. Cuando exista match en Mongo `prestaciones`, el portal también debe persistir el `_id` de la prestación ANDES como `andes_prestacion_id` dentro de los payloads persistidos de estudios/resultados para reutilización posterior.
-23. Los resultados QIDO remotos deben persistirse en PostgreSQL en una cache compartida `qido_study_cache`, clave primaria `study_instance_uid + source_node_id`, con metadatos reutilizables del estudio y timestamps `first_seen_at/last_seen_at`.
-24. Paciente y profesional deben reutilizar esa cache compartida antes de volver a consultar datos ya resueltos de enriquecimiento ANDES para el mismo `StudyInstanceUID + nodo`.
-25. TO-DO: investigar si el enriquecimiento ANDES debe además recuperar PDFs de prestaciones por API, definiendo endpoint, autenticación, contrato de descarga y reglas de visibilidad por actor.
-26. La invalidación o purga de entradas de `qido_study_cache` cuando un estudio deje de existir en un PACS, o cuando el enriquecimiento ANDES deba refrescarse, queda explícitamente fuera de alcance en esta iteración y documentada como TO-DO.
-27. TO-DO: cuando el panel profesional habilite multiselect de orígenes, el contrato de resultados debe agregar un array `source_node_ids[]` por `StudyInstanceUID`; `source_node_id` podrá mantenerse solo como hint de retrieve prioritario o compatibilidad transitoria.
-28. TO-DO: confirmar primero si el viewer actual usa solo integración estándar `dicom-web` contra Orthanc local o si participa algún plugin específico; a partir de esa respuesta, evaluar si existe una estrategia de carga más lazy/on-demand de metadata que mejore la primera apertura sin introducir complejidad o costo extra injustificado.
+21. Para profesional, el enriquecimiento ANDES REST debe agrupar resultados por paciente y ejecutar una sola llamada por `idPaciente` (Mongo `_id`), mapeando luego por `metadata.pacs-uid == StudyInstanceUID`.
+22. Las búsquedas profesionales no deben bloquearse por enriquecimiento ANDES: el backend debe encolar el trabajo y responder la lista base aunque fallen o venzan llamadas REST.
+23. Cuando exista match en `prestaciones`, el portal también debe persistir el `_id` de la prestación ANDES como `andes_prestacion_id` dentro de los payloads persistidos de estudios/resultados para reutilización posterior.
+24. El timeout de lookup REST debe ser configurable (`his.andes_rest_request_timeout_ms`); valor operativo actual en entorno local: `3000ms`.
+25. En profesional, el lookup REST debe enviar `tipoPrestaciones=<conceptId>` (tomados de `pacs_nodes[].tipoPrestacion` del nodo origen) para acotar payload y mejorar tiempos de respuesta.
+26. Los resultados QIDO remotos deben persistirse en PostgreSQL en una cache compartida `qido_study_cache`, clave primaria `study_instance_uid + source_node_id`, con metadatos reutilizables del estudio y timestamps `first_seen_at/last_seen_at`.
+27. Paciente y profesional deben reutilizar esa cache compartida antes de volver a consultar datos ya resueltos de enriquecimiento ANDES para el mismo `StudyInstanceUID + nodo`.
+28. TO-DO: investigar si el enriquecimiento ANDES debe además recuperar PDFs de prestaciones por API, definiendo endpoint, autenticación, contrato de descarga y reglas de visibilidad por actor.
+29. La invalidación o purga de entradas de `qido_study_cache` cuando un estudio deje de existir en un PACS, o cuando el enriquecimiento ANDES deba refrescarse, queda explícitamente fuera de alcance en esta iteración y documentada como TO-DO.
+30. TO-DO: cuando el panel profesional habilite multiselect de orígenes, el contrato de resultados debe agregar un array `source_node_ids[]` por `StudyInstanceUID`; `source_node_id` podrá mantenerse solo como hint de retrieve prioritario o compatibilidad transitoria.
+31. TO-DO: confirmar primero si el viewer actual usa solo integración estándar `dicom-web` contra Orthanc local o si participa algún plugin específico; a partir de esa respuesta, evaluar si existe una estrategia de carga más lazy/on-demand de metadata que mejore la primera apertura sin introducir complejidad o costo extra injustificado.
 
 ### 5.4 Landing pública y acceso futuro
 1. El usuario accede a `/` y visualiza la landing institucional.

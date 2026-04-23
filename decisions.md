@@ -185,6 +185,12 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - OHIF study list must remain disabled in portal operation so cached local studies are never exposed as a general list through the viewer shell.
 - If a technical operator surface ever needs the native OHIF study list, it must use a separate, explicitly scoped entrypoint rather than the patient/professional viewer path.
 
+- The ANDES `prestaciones` enrichment provider is selectable through `his.prestaciones_provider = mongo|rest|auto`; default is `rest` because the REST endpoint `https://app.andes.gob.ar/api/modules/rup/prestaciones` is operationally available and is the target long-term integration. Mongo remains supported as a transitional adapter until REST covers all required lookup methods.
+- The REST ANDES integration uses `Authorization: JWT <token>` (NOT `Bearer`); credentials live in env vars `HIS_TOKEN` (JWT app-token) and `HIS_BASE_URL` (default `https://app.andes.gob.ar/api`). Tokens must never be committed.
+- Studies whose `StudyInstanceUID` does not match any prefix in `his.andes_uid_prefixes` (default `["2.16.840.1.113883.2.10.35.1.200."]`) are treated as not ANDES-issued and are excluded from prestaciones enrichment to avoid useless requests; this list is extensible per integrated PACS.
+- ANDES prestaciones enrichment must run encolado/non-blocking (own worker queue with `his.andes_rest_concurrency`, default `2`); search responses must not block on REST/Mongo enrichment latency, and successful enrichment is persisted into `qido_study_cache.andes_*` plus `last_andes_enriched_at`.
+- In the professional flow, prestaciones enrichment must collapse to one REST call per resolved `idPaciente` (Mongo `_id`), never one per study; if `idPaciente` is unknown for a DNI it is resolved once via `patient_alternate_identifiers` (or the Mongo identity source as fallback) and the result is persisted for reuse.
+
 ## Open Inputs From User
 - HIS base URL, authentication method, API key format, and required query parameters.
 - Remote dcm4chee nodes: hostnames, DICOMweb base URLs, REST credentials, and Keycloak host details.

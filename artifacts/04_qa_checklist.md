@@ -29,6 +29,11 @@
 - [Ready] **ANDES prestación id persistence**: when Mongo `prestaciones` returns a match, the portal persists the prestación `_id` as `andes_prestacion_id` in the stored study/result payloads, even if the UI does not render that identifier.
 - [Ready] **Shared QIDO cache**: remote QIDO results are persisted in PostgreSQL by `study_instance_uid + source_node_id`, so patient and professional flows can reuse the same canonical study metadata cache.
 - [Ready] **Shared ANDES reuse**: when ANDES enrichment has already been resolved for a cached `study_instance_uid + source_node_id`, subsequent patient/professional searches reuse the persisted values instead of requiring a fresh Mongo lookup.
+- [Ready] **Professional non-blocking ANDES enrichment queue**: remote professional searches enqueue enrichment/persistence in background workers and return base QIDO results without waiting for REST lookups.
+- [Ready] **Professional one-call-per-patient strategy**: enrichment groups candidate studies by resolved `mongo_object_id` and executes one REST call per grouped patient, not one per study.
+- [Ready] **Professional enrichment parallelism telemetry**: enrichment logs include `attempted_calls`, `successful_calls`, and `failed_calls` to validate worker behavior under real load.
+- [Ready] **REST payload narrowing by node concepts**: professional REST enrichment now sends `tipoPrestaciones` from `pacs_nodes[].tipoPrestacion` concept IDs for each grouped patient request, reducing response payload scope.
+- [Open] **REST timeout tuning vs hit-rate**: with `his.andes_rest_request_timeout_ms = 3000`, latency is protected but enrichment success can drop in slow windows; environment-specific tuning remains pending.
 - [Open] **ANDES PDF recovery by API**: investigate whether prestaciones-related PDFs should be retrievable through an ANDES API as part of the enrichment layer, including endpoint/auth details and actor-visible UX rules.
 - [Open] **Cache invalidation policy**: the product still needs a defined mechanism to purge cached studies that disappear from a PACS and to refresh stale ANDES enrichment.
 - [Open] **Multiorigin result contract**: before enabling professional multiselect PACS, the API contract still needs to evolve from single `source_node_id` to aggregated `source_node_ids[]` by `StudyInstanceUID`.

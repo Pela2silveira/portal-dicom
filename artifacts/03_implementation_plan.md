@@ -225,6 +225,10 @@
   - `GET /api/physician/results?username=<dni>` contra Orthanc local cuando no hay filtros
   - búsqueda remota real por QIDO cuando el profesional aplica filtros
   - `POST /api/physician/retrieve` con actualización de estado local contra DB/Orthanc
+  - enriquecimiento ANDES encolado/no bloqueante para búsquedas remotas (`physician_andes_enrichment_queued`)
+  - worker de enriquecimiento profesional separado del request HTTP (la respuesta de búsqueda no espera llamadas REST ANDES)
+  - agrupación por paciente (`mongo_object_id`) para cumplir una llamada REST por paciente
+  - ejecución paralela por paciente dentro del worker, con métricas operativas (`attempted_calls`, `successful_calls`, `failed_calls`)
 
 **Remaining work**
 - Búsqueda federada real multi-nodo para profesional
@@ -232,6 +236,8 @@
 - Contrato definitivo de campos y estados en la grilla profesional
 - Definir si existirá o no una superficie `/portal/operator` separada
 - Resolver el riesgo de `PatientID == DNI` como contrato demasiado rígido para paciente
+- Ajustar estrategia de timeout/estado del provider REST para mejorar tasa de enriquecimiento sin degradar latencia
+- Validar en QA el impacto de `tipoPrestaciones` en lookup REST (payload acotado) y decidir ajuste final de timeout por entorno
 
 **Exit criteria (testable)**
 - El paciente navega solo estudios del portal y no ve la study list nativa de OHIF.

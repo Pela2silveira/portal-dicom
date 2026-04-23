@@ -87,6 +87,34 @@ For studies/results coming from `his: true` nodes:
 
 - the backend may attempt ANDES/HIS enrichment according to the current implementation and feature scope
 
+### Current REST Provider Behavior (Operational)
+
+When `his.prestaciones_provider = "rest"` and `his.prestaciones_enrichment_enabled = true`:
+
+- REST endpoint used: `GET /modules/rup/prestaciones`
+- auth header: `Authorization: JWT <token>`
+- base URL source: `HIS_BASE_URL` env var (default `https://app.andes.gob.ar/api`)
+- request timeout source: `his.andes_rest_request_timeout_ms` (current local default `3000`)
+
+Current request strategy:
+
+- patient flow:
+  - resolve one patient `mongo_object_id`
+  - perform one REST call for that patient
+  - map returned `metadata.pacs-uid` to `StudyInstanceUID`
+- professional flow:
+  - group candidate studies by patient (`mongo_object_id`)
+  - perform one REST call per grouped patient
+  - process grouped patients in parallel worker-style (bounded by `his.andes_rest_concurrency`)
+  - never block HTTP search response; enrichment/persistence runs in background queue
+  - local cache searches now follow the same pattern: first overlay persisted `qido_study_cache` metadata, then enqueue background enrichment for studies still missing `andes_*`
+
+Current known operational caveats:
+
+- if REST is slow and timeout is too aggressive, enrichment success rate drops (no UI block, but fewer persisted `andes_*` fields)
+- some studies exist in ANDES but not in `estado=validada`; those are currently excluded from match
+- for professional flow, some DICOM `PatientID` values cannot be resolved to a Mongo `_id` and are skipped
+
 ### Current Prestaciones Resolution
 
 The current Mongo `prestaciones` integration resolves study metadata through the DICOM study identifier, not through patient/date narrowing.
@@ -101,6 +129,7 @@ Current persisted study-level outputs:
 - `andes_prestacion_id`
 - `andes_prestacion`
 - `andes_professional`
+- `andes_prestacion_id` is also used to enable report download in both flows (patient/professional) (`POST /modules/descargas` -> Base64 PDF)
 
 Implications:
 
@@ -159,3 +188,5 @@ Good examples:
 - define whether `tipoPrestacion` will participate in UI filters or visual badges
 - define feature-specific HIS providers if identity and prestaciones diverge by transport
 - when prestaciones move to REST, keep the same `his` semantics and replace only the underlying implementation
+- decide final `estado` strategy for REST lookup (`validada` only vs multiple states)
+- tune timeout/concurrency per environment to balance latency and enrichment hit-rate

@@ -2145,6 +2145,8 @@
       let patientAutoRetrieveActiveStudyUID = "";
       let patientAutoRetrieveQueue = [];
       let physicianRetrieveEventSource = null;
+      let physicianAndesRefreshTimer = null;
+      let physicianAndesRefreshRemaining = 0;
       let systemHealthEventSource = null;
       let portalSessionExpiresAt = "";
       let portalSessionTimeoutHandle = null;
@@ -2227,6 +2229,7 @@
         patientAutoRetrieveActiveStudyUID = "";
         patientAutoRetrieveQueue = [];
         clearPhysicianRetrievePoll();
+        clearPhysicianAndesRefresh();
         closePatientShareQR();
         closePatientPreview();
         clearPortalSession();
@@ -2758,6 +2761,44 @@
         }
       }
 
+      function clearPhysicianAndesRefresh() {
+        physicianAndesRefreshRemaining = 0;
+        if (physicianAndesRefreshTimer) {
+          window.clearTimeout(physicianAndesRefreshTimer);
+          physicianAndesRefreshTimer = null;
+        }
+      }
+
+      function schedulePhysicianAndesRefresh() {
+        clearPhysicianAndesRefresh();
+        if (!activePhysicianUsername) {
+          return;
+        }
+
+        // Enrichment runs async in backend workers; perform short silent refreshes.
+        physicianAndesRefreshRemaining = 2;
+        const run = async () => {
+          if (!activePhysicianUsername || activeWorkspaceKind !== "physician") {
+            clearPhysicianAndesRefresh();
+            return;
+          }
+          try {
+            await loadPhysicianResults(activePhysicianUsername, {
+              silentRefresh: true,
+              fromAndesAutoRefresh: true
+            });
+          } catch (_error) {
+          }
+          physicianAndesRefreshRemaining -= 1;
+          if (physicianAndesRefreshRemaining <= 0) {
+            physicianAndesRefreshTimer = null;
+            return;
+          }
+          physicianAndesRefreshTimer = window.setTimeout(run, 7000);
+        };
+        physicianAndesRefreshTimer = window.setTimeout(run, 7000);
+      }
+
       function renderPatientSyncStatus(sync) {
         const status = sync?.status || "idle";
         if (sync?.request_id) {
@@ -3190,6 +3231,9 @@
               const downloadAction = study.download_url
                 ? '<a class="action action-primary" href="' + escapeHTML(study.download_url) + '" rel="noopener noreferrer">Descargar DICOM</a>'
                 : "";
+              const andesReportAction = study.andes_prestacion_id
+                ? '<a class="action action-primary" href="/api/patient/report?study_instance_uid=' + encodeURIComponent(study.study_instance_uid || "") + '" rel="noopener noreferrer">Descargar informe</a>'
+                : "";
               const shareAction = study.viewer_url
                 ? '<button class="action action-primary" type="button" data-patient-share="' + escapeHTML(study.study_instance_uid) + '" data-viewer-kind="stone">Compartir</button>'
                 : "";
@@ -3219,7 +3263,7 @@
                   '<div><span>Imágenes</span><strong>' + escapeHTML(imageCountLabel) + '</strong></div>' +
                 '</div>' +
                   detailChips +
-                  '<div class="inline-actions">' + previewAction + action + shareAction + downloadAction + '</div>' +
+                  '<div class="inline-actions">' + previewAction + action + shareAction + andesReportAction + downloadAction + '</div>' +
                 '</article>'
               );
             })
@@ -3417,6 +3461,9 @@
             const downloadAction = result.download_url
               ? '<a class="action action-primary" href="' + escapeHTML(result.download_url) + '" rel="noopener noreferrer">Descargar DICOM</a>'
               : "";
+            const andesReportAction = result.andes_prestacion_id
+              ? '<a class="action action-primary" href="/api/physician/report?study_instance_uid=' + encodeURIComponent(result.study_instance_uid || "") + '" rel="noopener noreferrer">Descargar informe</a>'
+              : "";
             const imageCount = Number(result.number_of_images || 0);
             const imageCountLabel = imageCount > 0 ? String(imageCount) : "-";
             const patientNameLabel = formatDICOMPersonName(result.patient_name);
@@ -3460,6 +3507,7 @@
                   action +
                   previewAction +
                   ohifAction +
+                  andesReportAction +
                   downloadAction +
                 '</div>' +
               '</article>'
@@ -3647,6 +3695,7 @@
       async function loadPhysicianResults(username, options = {}) {
         activePhysicianUsername = username;
         const silentRefresh = Boolean(options.silentRefresh);
+        const fromAndesAutoRefresh = Boolean(options.fromAndesAutoRefresh);
         const restoreStudyUID = options.restoreStudyUID || "";
         const useInitialCachePeriod = Boolean(options.useInitialCachePeriod);
         const previousScrollX = window.scrollX;
@@ -3698,6 +3747,9 @@
           restorePhysicianResultFocus(restoreStudyUID);
         }
         savePortalWorkspaceState("physician");
+        if (!fromAndesAutoRefresh) {
+          schedulePhysicianAndesRefresh();
+        }
       }
 
       async function triggerPatientRetrieve(studyInstanceUID) {
