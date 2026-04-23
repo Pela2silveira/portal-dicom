@@ -4794,7 +4794,7 @@ func (a *App) checkOrthanc(ctx context.Context) bool {
 	}
 	a.applyOrthancInternalRequestAuth(req)
 
-	res, err := a.orthancSearchClient.Do(req)
+	res, err := a.httpClient.Do(req)
 	if err != nil {
 		a.log("error", "orthanc_ping_failed", map[string]any{"error": err.Error()})
 		return false
@@ -5042,7 +5042,7 @@ func (a *App) checkRemotePACSWithAuthQIDO(parent context.Context, node PACSNodeC
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	res, err := a.httpClient.Do(req)
+	res, err := a.orthancSearchClient.Do(req)
 	if err != nil {
 		a.log("error", "remote_pacs_unreachable", map[string]any{
 			"node_id": resolved.ID,
@@ -9758,6 +9758,21 @@ func (a *App) fetchOrthancQueryAnswerContent(ctx context.Context, queryID, answe
 	return item, nil
 }
 
+func isTimeoutLikeError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	// Some wrapped errors preserve timeout only as text.
+	return strings.Contains(strings.ToLower(err.Error()), "context deadline exceeded")
+}
+
 func decodeOrthancQueryAnswerItem(body []byte) (qidoResponseItem, error) {
 	var item qidoResponseItem
 	if err := json.Unmarshal(body, &item); err == nil {
@@ -10199,7 +10214,21 @@ func (a *App) searchPhysicianResultsFromNode(ctx context.Context, physician Phys
 	case "qido_rs":
 		return a.searchPhysicianResultsFromQIDONode(ctx, physician, node, filters)
 	case "c_find":
-		return a.searchPhysicianResultsFromDIMSENode(ctx, physician, node, filters)
+		results, err := a.searchPhysicianResultsFromDIMSENode(ctx, physician, node, filters)
+		if err == nil {
+			return results, nil
+		}
+		if isTimeoutLikeError(err) {
+			a.log("warn", "physician_cfind_timeout_degraded", map[string]any{
+				"physician_id": physician.ID,
+				"username":     physician.Username,
+				"node_id":      resolved.ID,
+				"error":        err.Error(),
+			})
+			// Keep the physician search responsive when a DIMSE node is slow/unreachable.
+			return []PhysicianResult{}, nil
+		}
+		return nil, err
 	default:
 		return nil, fmt.Errorf("unsupported physician search mode %s", resolved.SearchMode)
 	}

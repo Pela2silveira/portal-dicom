@@ -114,6 +114,7 @@ Current known operational caveats:
 - if REST is slow and timeout is too aggressive, enrichment success rate drops (no UI block, but fewer persisted `andes_*` fields)
 - some studies exist in ANDES but not in `estado=validada`; those are currently excluded from match
 - for professional flow, some DICOM `PatientID` values cannot be resolved to a Mongo `_id` and are skipped
+- for professional DIMSE (`c_find`) sources, node-level timeouts are treated as degraded node responses (empty results) instead of failing the whole HTTP request
 
 ### Current Prestaciones Resolution
 
