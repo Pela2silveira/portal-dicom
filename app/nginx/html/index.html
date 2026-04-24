@@ -1571,6 +1571,7 @@
           --footer-sub-gap: 10px;
           --footer-redtics-width: min(150px, 42vw);
           --footer-ing-width: 62px;
+          --footer-andes-visual-offset: 22px;
           width: 100%;
           flex-wrap: wrap;
           row-gap: 8px;
@@ -1582,7 +1583,8 @@
           width: calc(
             var(--footer-redtics-width) +
             (2 * var(--footer-ing-width)) +
-            (2 * var(--footer-sub-gap))
+            (2 * var(--footer-sub-gap)) -
+            var(--footer-andes-visual-offset)
           );
           max-width: 100%;
         }
