@@ -2617,17 +2617,17 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 
 	var reqBody PatientSendCodeRequest
 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-		http.Error(w, "invalid json body", http.StatusBadRequest)
+		writePatientSendCodeResponse(w, http.StatusBadRequest, "invalid_request", "JSON inválido.")
 		return
 	}
 
 	reqBody.DocumentNumber = strings.TrimSpace(reqBody.DocumentNumber)
 	if reqBody.DocumentNumber == "" {
-		http.Error(w, "document_number is required", http.StatusBadRequest)
+		writePatientSendCodeResponse(w, http.StatusBadRequest, "invalid_request", "document_number es requerido.")
 		return
 	}
 	if err := validateDocumentNumber(reqBody.DocumentNumber); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writePatientSendCodeResponse(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
 	if !a.enforceLoginRateLimit(w, r, patientLoginRateLimitPolicy("patient_send_code"), reqBody.DocumentNumber) {
@@ -2644,10 +2644,7 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 				"document_number": reqBody.DocumentNumber,
 				"provider":        a.identitySource.ProviderName(),
 			})
-			writeJSON(w, http.StatusNotFound, PatientSendCodeResponse{
-				Status:  "patient_not_found",
-				Message: "El paciente no cuenta con registros.",
-			})
+			writePatientSendCodeResponse(w, http.StatusNotFound, "patient_not_found", "El paciente no cuenta con registros.")
 			return
 		}
 
@@ -2656,14 +2653,11 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 			"provider":        a.identitySource.ProviderName(),
 			"error":           err.Error(),
 		})
-		http.Error(w, "failed to validate patient contact", http.StatusBadGateway)
+		writePatientSendCodeResponse(w, http.StatusBadGateway, "provider_unavailable", "No se pudo validar el contacto del paciente.")
 		return
 	}
 
-	patientAuthMode := PatientAuthModeFakeAuth
-	if a.externalConfig != nil {
-		patientAuthMode = a.externalConfig.Patient.ResolvedAuthMode()
-	}
+	patientAuthMode := a.resolvedPatientAuthMode()
 
 	if patientAuthMode == PatientAuthModeFakeAuth {
 		maskedEmail := maskPatientEmail(identity.Email)
@@ -2672,10 +2666,7 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 			"patient_id":      patient.ID,
 			"provider":        a.identitySource.ProviderName(),
 		})
-		writeJSON(w, http.StatusOK, PatientSendCodeResponse{
-			Status:  "ready_to_send",
-			Message: patientSendCodeReadyMessage(maskedEmail, true),
-		})
+		writePatientSendCodeResponse(w, http.StatusOK, "ready_to_send", patientSendCodeReadyMessage(maskedEmail, true))
 		return
 	}
 
@@ -2686,7 +2677,7 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 				"patient_id":      patient.ID,
 				"provider":        a.identitySource.ProviderName(),
 			})
-			http.Error(w, "patient master key auth is not configured", http.StatusServiceUnavailable)
+			writePatientSendCodeResponse(w, http.StatusServiceUnavailable, "provider_unavailable", "La autenticación por llave maestra no está configurada.")
 			return
 		}
 		a.log("info", "patient_send_code_ready_master_key", map[string]any{
@@ -2694,10 +2685,7 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 			"patient_id":      patient.ID,
 			"provider":        a.identitySource.ProviderName(),
 		})
-		writeJSON(w, http.StatusOK, PatientSendCodeResponse{
-			Status:  "ready_to_send",
-			Message: patientSendCodeReadyMessage("", true),
-		})
+		writePatientSendCodeResponse(w, http.StatusOK, "ready_to_send", patientSendCodeReadyMessage("", true))
 		return
 	}
 
@@ -2707,10 +2695,7 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 			"patient_id":      patient.ID,
 			"provider":        a.identitySource.ProviderName(),
 		})
-		writeJSON(w, http.StatusConflict, PatientSendCodeResponse{
-			Status:  "missing_active_email",
-			Message: "El paciente no tiene mail asociado. Concurra a su centro de salud más cercano para la actualización de sus datos de contacto.",
-		})
+		writePatientSendCodeResponse(w, http.StatusConflict, "missing_active_email", "El paciente no tiene mail asociado. Concurra a su centro de salud más cercano para la actualización de sus datos de contacto.")
 		return
 	}
 
@@ -2722,7 +2707,7 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 			"provider":        a.identitySource.ProviderName(),
 			"error":           err.Error(),
 		})
-		http.Error(w, "failed to generate patient mail code", http.StatusInternalServerError)
+		writePatientSendCodeResponse(w, http.StatusInternalServerError, "internal_error", "No se pudo generar el código de acceso.")
 		return
 	}
 	if err := a.storePatientMailCode(ctx, patient.ID, code, 10*time.Minute); err != nil {
@@ -2732,7 +2717,7 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 			"provider":        a.identitySource.ProviderName(),
 			"error":           err.Error(),
 		})
-		http.Error(w, "failed to store patient mail code", http.StatusInternalServerError)
+		writePatientSendCodeResponse(w, http.StatusInternalServerError, "internal_error", "No se pudo registrar el código de acceso.")
 		return
 	}
 	if err := sendPatientAccessCodeMail(ctx, identity.Email, code); err != nil {
@@ -2742,7 +2727,7 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 			"provider":        a.identitySource.ProviderName(),
 			"error":           err.Error(),
 		})
-		http.Error(w, "failed to deliver patient mail code", http.StatusBadGateway)
+		writePatientSendCodeResponse(w, http.StatusBadGateway, "delivery_failed", "No se pudo enviar el código por mail.")
 		return
 	}
 
@@ -2751,10 +2736,7 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 		"patient_id":      patient.ID,
 		"provider":        a.identitySource.ProviderName(),
 	})
-	writeJSON(w, http.StatusOK, PatientSendCodeResponse{
-		Status:  "ready_to_send",
-		Message: patientSendCodeReadyMessage(maskPatientEmail(identity.Email), false),
-	})
+	writePatientSendCodeResponse(w, http.StatusOK, "ready_to_send", patientSendCodeReadyMessage(maskPatientEmail(identity.Email), false))
 }
 
 func (a *App) handlePatientLogin(w http.ResponseWriter, r *http.Request) {
@@ -2765,22 +2747,22 @@ func (a *App) handlePatientLogin(w http.ResponseWriter, r *http.Request) {
 
 	var reqBody PatientLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-		http.Error(w, "invalid json body", http.StatusBadRequest)
+		writePatientLoginResponse(w, http.StatusBadRequest, "invalid_request", "JSON inválido.", PatientSummary{})
 		return
 	}
 
 	reqBody.DocumentNumber = strings.TrimSpace(reqBody.DocumentNumber)
 	reqBody.Code = strings.TrimSpace(reqBody.Code)
 	if reqBody.DocumentNumber == "" {
-		http.Error(w, "document_number is required", http.StatusBadRequest)
+		writePatientLoginResponse(w, http.StatusBadRequest, "invalid_request", "document_number es requerido.", PatientSummary{})
 		return
 	}
 	if reqBody.Code == "" {
-		http.Error(w, "code is required", http.StatusBadRequest)
+		writePatientLoginResponse(w, http.StatusBadRequest, "invalid_request", "code es requerido.", PatientSummary{})
 		return
 	}
 	if err := validateDocumentNumber(reqBody.DocumentNumber); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writePatientLoginResponse(w, http.StatusBadRequest, "invalid_request", err.Error(), PatientSummary{})
 		return
 	}
 	if !a.enforceLoginRateLimit(w, r, patientLoginRateLimitPolicy("patient_login"), reqBody.DocumentNumber) {
@@ -2793,66 +2775,86 @@ func (a *App) handlePatientLogin(w http.ResponseWriter, r *http.Request) {
 	patient, _, err := a.ensurePatientRecordWithIdentity(ctx, reqBody.DocumentNumber)
 	if err != nil {
 		if errors.Is(err, ErrPatientIdentityNotFound) {
-			writeJSON(w, http.StatusNotFound, PatientLoginResponse{
-				Status:  "patient_not_found",
-				Message: "El paciente no cuenta con registros.",
-			})
+			writePatientLoginResponse(w, http.StatusNotFound, "patient_not_found", "El paciente no cuenta con registros.", PatientSummary{})
 			return
 		}
-		http.Error(w, "failed to validate patient", http.StatusBadGateway)
+		writePatientLoginResponse(w, http.StatusBadGateway, "provider_unavailable", "No se pudo validar el paciente.", PatientSummary{})
 		return
 	}
 
-	patientAuthMode := PatientAuthModeFakeAuth
-	if a.externalConfig != nil {
-		patientAuthMode = a.externalConfig.Patient.ResolvedAuthMode()
-	}
+	patientAuthMode := a.resolvedPatientAuthMode()
 
 	if patientAuthMode == PatientAuthModeMasterKey {
 		expected := strings.TrimSpace(patientMasterKey())
 		if expected == "" {
-			http.Error(w, "patient master key auth is not configured", http.StatusServiceUnavailable)
+			writePatientLoginResponse(w, http.StatusServiceUnavailable, "provider_unavailable", "La autenticación por llave maestra no está configurada.", PatientSummary{})
 			return
 		}
 		if subtle.ConstantTimeCompare([]byte(reqBody.Code), []byte(expected)) != 1 {
-			writeJSON(w, http.StatusUnauthorized, PatientLoginResponse{
-				Status:  "invalid_code",
-				Message: "El código ingresado no es válido.",
-			})
+			writePatientLoginResponse(w, http.StatusUnauthorized, "invalid_code", "El código ingresado no es válido.", PatientSummary{})
 			return
 		}
 	}
 	if patientAuthMode == PatientAuthModeMail {
 		valid, err := a.consumePatientMailCode(ctx, patient.ID, reqBody.Code)
 		if err != nil {
-			http.Error(w, "failed to validate patient mail code", http.StatusInternalServerError)
+			writePatientLoginResponse(w, http.StatusInternalServerError, "internal_error", "No se pudo validar el código de acceso.", PatientSummary{})
 			return
 		}
 		if !valid {
-			writeJSON(w, http.StatusUnauthorized, PatientLoginResponse{
-				Status:  "invalid_code",
-				Message: "El código ingresado no es válido.",
-			})
+			writePatientLoginResponse(w, http.StatusUnauthorized, "invalid_code", "El código ingresado no es válido.", PatientSummary{})
 			return
 		}
 	}
 
 	_, rawSessionToken, expiresAt, err := a.createPatientSession(ctx, patient.ID, r)
 	if err != nil {
-		http.Error(w, "failed to create patient session", http.StatusInternalServerError)
+		writePatientLoginResponse(w, http.StatusInternalServerError, "internal_error", "No se pudo crear la sesión del paciente.", PatientSummary{})
 		return
 	}
 	setPortalSessionCookie(w, r, patientSessionCookieName, rawSessionToken, expiresAt)
 
-	writeJSON(w, http.StatusOK, PatientLoginResponse{
-		Status:  "ok",
-		Message: "Acceso validado.",
-		Patient: patient,
-	})
+	writePatientLoginResponse(w, http.StatusOK, "ok", "Acceso validado.", patient)
 }
 
 func patientMasterKey() string {
 	return strings.TrimSpace(os.Getenv("PATIENT_MASTER_KEY"))
+}
+
+func (a *App) resolvedPatientAuthMode() string {
+	if a != nil && a.externalConfig != nil {
+		return a.externalConfig.Patient.ResolvedAuthMode()
+	}
+	return PatientAuthModeFakeAuth
+}
+
+func writePatientSendCodeResponse(w http.ResponseWriter, statusCode int, status, message string) {
+	writeJSON(w, statusCode, PatientSendCodeResponse{
+		Status:  strings.TrimSpace(status),
+		Message: strings.TrimSpace(message),
+	})
+}
+
+func writePatientLoginResponse(w http.ResponseWriter, statusCode int, status, message string, patient PatientSummary) {
+	payload := PatientLoginResponse{
+		Status:  strings.TrimSpace(status),
+		Message: strings.TrimSpace(message),
+	}
+	if strings.TrimSpace(patient.ID) != "" {
+		payload.Patient = patient
+	}
+	writeJSON(w, statusCode, payload)
+}
+
+func writePhysicianLoginResponse(w http.ResponseWriter, statusCode int, status, message string, physician PhysicianSummary) {
+	payload := PhysicianLoginResponse{
+		Status:  strings.TrimSpace(status),
+		Message: strings.TrimSpace(message),
+	}
+	if strings.TrimSpace(physician.ID) != "" {
+		payload.Physician = physician
+	}
+	writeJSON(w, statusCode, payload)
 }
 
 func (a *App) handlePatientLogout(w http.ResponseWriter, r *http.Request) {
@@ -4679,13 +4681,13 @@ func (a *App) handlePhysicianLogin(w http.ResponseWriter, r *http.Request) {
 
 	var reqBody PhysicianLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-		http.Error(w, "invalid json body", http.StatusBadRequest)
+		writePhysicianLoginResponse(w, http.StatusBadRequest, "invalid_request", "JSON inválido.", PhysicianSummary{})
 		return
 	}
 
 	reqBody.Username = normalizeProfessionalDocumentInput(reqBody.Username)
 	if reqBody.Username == "" {
-		http.Error(w, "username is required", http.StatusBadRequest)
+		writePhysicianLoginResponse(w, http.StatusBadRequest, "invalid_request", "username es requerido.", PhysicianSummary{})
 		return
 	}
 	if !a.enforceLoginRateLimit(w, r, physicianLoginRateLimitPolicy(), reqBody.Username) {
@@ -4698,20 +4700,14 @@ func (a *App) handlePhysicianLogin(w http.ResponseWriter, r *http.Request) {
 	if a.externalConfig != nil && !a.externalConfig.Professional.FakeAuth {
 		if err := authenticateProfessionalLDAP(ctx, reqBody.Username, reqBody.Password); err != nil {
 			if errors.Is(err, ErrProfessionalInvalidCredentials) {
-				writeJSON(w, http.StatusUnauthorized, PhysicianLoginResponse{
-					Status:  "invalid_credentials",
-					Message: "Usuario o contraseña inválidos.",
-				})
+				writePhysicianLoginResponse(w, http.StatusUnauthorized, "invalid_credentials", "Usuario o contraseña inválidos.", PhysicianSummary{})
 				return
 			}
 			a.log("error", "physician_ldap_auth_failed", map[string]any{
 				"username": reqBody.Username,
 				"error":    err.Error(),
 			})
-			writeJSON(w, http.StatusBadGateway, PhysicianLoginResponse{
-				Status:  "provider_unavailable",
-				Message: "No se pudo validar la autenticación institucional.",
-			})
+			writePhysicianLoginResponse(w, http.StatusBadGateway, "provider_unavailable", "No se pudo validar la autenticación institucional.", PhysicianSummary{})
 			return
 		}
 	}
@@ -4719,35 +4715,25 @@ func (a *App) handlePhysicianLogin(w http.ResponseWriter, r *http.Request) {
 	physician, err := a.ensurePhysicianRecord(ctx, reqBody.Username)
 		if err != nil {
 			if errors.Is(err, ErrProfessionalIdentityNotFound) {
-				writeJSON(w, http.StatusNotFound, PhysicianLoginResponse{
-					Status:  "professional_not_found",
-					Message: "Profesional no registrado.",
-				})
+				writePhysicianLoginResponse(w, http.StatusNotFound, "professional_not_found", "Profesional no registrado.", PhysicianSummary{})
 				return
 			}
 		if errors.Is(err, ErrProfessionalNotLicensed) {
-			writeJSON(w, http.StatusForbidden, PhysicianLoginResponse{
-				Status:  "professional_not_licensed",
-				Message: "El profesional no se encuentra matriculado.",
-			})
+			writePhysicianLoginResponse(w, http.StatusForbidden, "professional_not_licensed", "El profesional no se encuentra matriculado.", PhysicianSummary{})
 			return
 		}
-		http.Error(w, "failed to validate professional access", http.StatusBadGateway)
+		writePhysicianLoginResponse(w, http.StatusBadGateway, "provider_unavailable", "No se pudo validar el acceso profesional.", PhysicianSummary{})
 		return
 	}
 
 	_, rawSessionToken, expiresAt, err := a.createPhysicianSession(ctx, physician.ID, r)
 	if err != nil {
-		http.Error(w, "failed to create physician session", http.StatusInternalServerError)
+		writePhysicianLoginResponse(w, http.StatusInternalServerError, "internal_error", "No se pudo crear la sesión profesional.", PhysicianSummary{})
 		return
 	}
 	setPortalSessionCookie(w, r, physicianSessionCookieName, rawSessionToken, expiresAt)
 
-	writeJSON(w, http.StatusOK, PhysicianLoginResponse{
-		Status:    "ready",
-		Message:   "Ingreso profesional validado.",
-		Physician: physician,
-	})
+	writePhysicianLoginResponse(w, http.StatusOK, "ready", "Ingreso profesional validado.", physician)
 }
 
 func (a *App) handlePhysicianLogout(w http.ResponseWriter, r *http.Request) {

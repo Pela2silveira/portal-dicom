@@ -65,7 +65,7 @@ services:
       timeout: 5s
       retries: 10
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - ./volumes/postgres-data:/var/lib/postgresql/data
     networks:
       - backend_net
 
@@ -85,8 +85,8 @@ services:
       - "${ORTHANC_DICOM_BIND:-127.0.0.1:4242}:4242"
     volumes:
       - ./orthanc/orthanc.json:/etc/orthanc/orthanc.json:ro
-      - orthanc-db:/var/lib/orthanc/db
-      - orthanc-storage:/var/lib/orthanc/storage
+      - ./volumes/orthanc-db:/var/lib/orthanc/db
+      - ./volumes/orthanc-storage:/var/lib/orthanc/storage
     networks:
       - backend_net
     healthcheck:
@@ -108,8 +108,3 @@ services:
 networks:
   frontend_net:
   backend_net:
-
-volumes:
-  postgres-data:
-  orthanc-db:
-  orthanc-storage:
