@@ -220,7 +220,7 @@
         display: flex;
         align-items: center;
         gap: 12px;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
       }
 
       .footer-logo {
@@ -239,6 +239,20 @@
         display: block;
         width: min(170px, 36vw);
         height: auto;
+      }
+
+      .footer-logo-tertiary {
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
+      }
+
+      .footer-logo-tertiary img {
+        display: block;
+        height: min(72px, 16vw);
+        width: auto;
+        object-fit: contain;
+        opacity: 0.78;
       }
 
       .role-switch {
@@ -1542,6 +1556,10 @@
           flex-direction: column;
           align-items: flex-start;
         }
+
+        .footer-brand-row {
+          flex-wrap: wrap;
+        }
       }
 
       @media (max-width: 639px) {
@@ -2021,6 +2039,12 @@
           </div>
           <div class="footer-logo-secondary" aria-label="RedTICS">
             <img src="/portal-assets/redtics-white.svg" alt="RedTICS">
+          </div>
+          <div class="footer-logo-tertiary" aria-label="Ingenieria">
+            <img src="/portal-assets/ing-wob.png" alt="Ingenieria">
+          </div>
+          <div class="footer-logo-tertiary" aria-label="Ingenieria 2">
+            <img src="/portal-assets/ing2-wob.png" alt="Ingenieria 2">
           </div>
         </div>
       </footer>
