@@ -26,7 +26,7 @@ services:
       - .env
     environment:
       APP_ENV: ${APP_ENV:-dev}
-      LISTEN_ADDR: ${BACKEND_LISTEN_ADDR:-:8081}
+      LISTEN_ADDR: ${BACKEND_LISTEN_ADDR:-:8082}
       POSTGRES_DSN: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       ORTHANC_URL: ${ORTHANC_URL:-http://orthanc:8042}
       ORTHANC_INTERNAL_TOKEN: ${ORTHANC_INTERNAL_TOKEN:-portal-dev-orthanc-internal}
@@ -42,7 +42,7 @@ services:
     networks:
       - backend_net
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8081/api/livez"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:8082/api/livez"]
       interval: 10s
       timeout: 5s
       retries: 10
