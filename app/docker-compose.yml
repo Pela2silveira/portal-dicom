@@ -57,6 +57,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Use a subdirectory inside the bind mount so dotfiles
+      # in the mount root (for example .gitkeep) don't break initdb.
+      PGDATA: /var/lib/postgresql/data/pgdata
     ports:
       - "${POSTGRES_BIND:-127.0.0.1:5432}:5432"
     healthcheck:
