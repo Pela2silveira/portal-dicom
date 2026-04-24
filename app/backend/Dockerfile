@@ -21,6 +21,6 @@ COPY --from=build /src/migrations /app/migrations
 
 USER appuser
 
-EXPOSE 8081
+EXPOSE 8082
 
 ENTRYPOINT ["/app/backend"]

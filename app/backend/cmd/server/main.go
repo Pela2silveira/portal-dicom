@@ -1952,7 +1952,7 @@ type PortalConfig struct {
 func main() {
 	cfg := Config{
 		AppEnv:        envOrDefault("APP_ENV", "dev"),
-		ListenAddr:    envOrDefault("LISTEN_ADDR", ":8081"),
+		ListenAddr:    envOrDefault("LISTEN_ADDR", ":8082"),
 		PostgresDSN:   strings.TrimSpace(os.Getenv("POSTGRES_DSN")),
 		OrthancURL:    strings.TrimRight(strings.TrimSpace(os.Getenv("ORTHANC_URL")), "/"),
 		OrthancUser:   envOrDefault("ORTHANC_USERNAME", ""),
