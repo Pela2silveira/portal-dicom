@@ -244,15 +244,24 @@
       .footer-logo-tertiary {
         display: flex;
         align-items: center;
+        justify-content: center;
         flex-shrink: 0;
+        width: min(82px, 18vw);
+        height: min(72px, 16vw);
+        padding: 6px;
+        border: 1px solid rgba(0, 39, 56, 0.14);
+        background: rgba(255, 255, 255, 0.74);
       }
 
       .footer-logo-tertiary img {
         display: block;
-        height: min(72px, 16vw);
+        max-width: 100%;
+        max-height: 100%;
         width: auto;
+        height: auto;
         object-fit: contain;
-        opacity: 0.78;
+        opacity: 0.72;
+        filter: grayscale(0.18);
       }
 
       .role-switch {
@@ -1560,6 +1569,12 @@
         .footer-brand-row {
           flex-wrap: wrap;
         }
+
+        .footer-logo-tertiary {
+          width: 74px;
+          height: 62px;
+          padding: 5px;
+        }
       }
 
       @media (max-width: 639px) {
@@ -1639,7 +1654,7 @@
 
       <main class="hero">
         <section class="panel panel-with-ribbon auth">
-          <div class="demo-ribbon" data-demo-ribbon aria-hidden="true">Demo</div>
+          <div class="demo-ribbon" data-demo-ribbon aria-hidden="true" hidden>Demo</div>
           <div class="auth-top">
             <h3>Acceso al portal</h3>
             <p>Seleccione su perfil para continuar.</p>
@@ -1685,10 +1700,10 @@
 
               <button class="action action-secondary" id="patient-continue" type="button" disabled>Continuar</button>
 
-              <div class="note note-accent" id="mail-code-feedback"></div>
+              <div class="note note-accent" id="mail-code-feedback" hidden></div>
             </section>
 
-            <section class="flow" data-flow="physician">
+            <section class="flow" data-flow="physician" hidden>
               <div class="field-group">
                 <label for="physician-dni">DNI</label>
                 <input id="physician-dni" name="physician-dni" type="text" inputmode="numeric" maxlength="11" autocomplete="off" spellcheck="false" placeholder="Ingrese su DNI">
@@ -1711,9 +1726,9 @@
         </section>
       </main>
 
-      <main class="workspace" id="patient-workspace">
+      <main class="workspace" id="patient-workspace" hidden>
         <section class="panel panel-with-ribbon">
-          <div class="demo-ribbon" data-demo-ribbon aria-hidden="true">Demo</div>
+          <div class="demo-ribbon" data-demo-ribbon aria-hidden="true" hidden>Demo</div>
           <div class="workspace-header">
             <div>
               <p class="eyebrow">Paciente</p>
@@ -1829,9 +1844,9 @@
         </section>
       </main>
 
-      <main class="workspace" id="physician-workspace">
+      <main class="workspace" id="physician-workspace" hidden>
         <section class="panel panel-with-ribbon">
-          <div class="demo-ribbon" data-demo-ribbon aria-hidden="true">Demo</div>
+          <div class="demo-ribbon" data-demo-ribbon aria-hidden="true" hidden>Demo</div>
           <div class="workspace-header">
             <div>
               <p class="eyebrow">Profesional</p>
@@ -1972,7 +1987,7 @@
         </section>
       </main>
 
-      <section class="share-qr-overlay" id="patient-share-qr-overlay" role="dialog" aria-modal="true" aria-labelledby="patient-share-qr-title">
+      <section class="share-qr-overlay" id="patient-share-qr-overlay" role="dialog" aria-modal="true" aria-labelledby="patient-share-qr-title" hidden>
         <div class="share-qr-dialog">
           <div class="share-qr-header">
             <div>
@@ -2004,7 +2019,7 @@
         </div>
       </section>
 
-      <section class="preview-overlay" id="patient-preview-overlay" role="dialog" aria-modal="true" aria-labelledby="patient-preview-title">
+      <section class="preview-overlay" id="patient-preview-overlay" role="dialog" aria-modal="true" aria-labelledby="patient-preview-title" hidden>
         <div class="preview-dialog">
           <div class="preview-header">
             <div>
@@ -2201,6 +2216,8 @@
 
       function setActiveRoleFlow(role) {
         activeRole = role === "physician" ? "physician" : "patient";
+        patientFlow.hidden = activeRole === "physician";
+        physicianFlow.hidden = activeRole !== "physician";
         detachNode(patientFlow);
         detachNode(physicianFlow);
         mountNodeAfter(flowAnchor, activeRole === "physician" ? physicianFlow : patientFlow);
@@ -2214,10 +2231,15 @@
       }
 
       function showWorkspace(kind) {
+        const workspace = kind === "patient" ? patientWorkspace : physicianWorkspace;
+        patientWorkspace.hidden = kind !== "patient";
+        physicianWorkspace.hidden = kind !== "physician";
+        hero.hidden = true;
+        workspace.hidden = false;
         detachNode(hero);
         detachNode(patientWorkspace);
         detachNode(physicianWorkspace);
-        mountNodeAfter(screenAnchor, kind === "patient" ? patientWorkspace : physicianWorkspace);
+        mountNodeAfter(screenAnchor, workspace);
         activeScreen = "workspace";
         activeWorkspaceKind = kind === "physician" ? "physician" : "patient";
         if (kind === "physician") {
@@ -2259,6 +2281,7 @@
         clearPortalSession();
         detachNode(patientWorkspace);
         detachNode(physicianWorkspace);
+        hero.hidden = false;
         mountNodeAfter(screenAnchor, hero);
         activeScreen = "hero";
         activeWorkspaceKind = "";
@@ -2326,12 +2349,14 @@
         patientShareQRMaxUses.textContent = String(payload.max_uses || "-");
         patientShareQRCopy.dataset.shareUrl = payload.share_url || "";
         patientShareQRWhatsApp.dataset.shareUrl = payload.whatsapp_url || "";
+        patientShareQROverlay.hidden = false;
         mountNodeAfter(patientShareQROverlayAnchor, patientShareQROverlay);
         patientShareQROpen = true;
         patientShareQRClose.focus({ preventScroll: true });
       }
 
       function closePatientShareQR() {
+        patientShareQROverlay.hidden = true;
         detachNode(patientShareQROverlay);
         patientShareQROpen = false;
       }
@@ -2353,12 +2378,14 @@
         renderPatientPreview(payload);
         patientPreviewShareStudyUID = options.shareEnabled ? String(payload.study_instance_uid || "") : "";
         patientPreviewShare.hidden = !patientPreviewShareStudyUID;
+        patientPreviewOverlay.hidden = false;
         mountNodeAfter(patientPreviewOverlayAnchor, patientPreviewOverlay);
         patientPreviewOpen = true;
         patientPreviewCloseFooter.focus({ preventScroll: true });
       }
 
       function closePatientPreview() {
+        patientPreviewOverlay.hidden = true;
         detachNode(patientPreviewOverlay);
         patientPreviewOpen = false;
         patientPreviewShareStudyUID = "";
@@ -2423,8 +2450,10 @@
       function applyDemoRibbonVisibility() {
         demoRibbonStates.forEach(({ ribbon, placeholder }) => {
           if (portalShowDemoRibbon) {
+            ribbon.hidden = false;
             mountNodeAfter(placeholder, ribbon);
           } else {
+            ribbon.hidden = true;
             detachNode(ribbon);
           }
         });
@@ -2681,6 +2710,7 @@
       }
 
       function clearMailCodeFeedback() {
+        mailCodeFeedback.hidden = true;
         mailCodeFeedback.classList.remove("warning");
         mailCodeFeedback.textContent = "";
         mailCodeFeedback.innerHTML = "";
@@ -2688,6 +2718,7 @@
       }
 
       function setMailCodeFeedback(message, isWarning = false) {
+        mailCodeFeedback.hidden = false;
         mountNodeAfter(mailCodeFeedbackAnchor, mailCodeFeedback);
         mailCodeFeedback.classList.remove("warning");
         mailCodeFeedback.textContent = "";
