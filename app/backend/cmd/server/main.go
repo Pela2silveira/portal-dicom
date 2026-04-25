@@ -2524,6 +2524,13 @@ func (a *App) processPhysicianAndesEnrichJob(job physicianAndesEnrichJob) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
+	// #region agent log
+	go func() {
+		body := fmt.Sprintf(`{"sessionId":"2fcf92","hypothesisId":"A","location":"main.go:processPhysicianAndesEnrichJob","message":"enrich_job_started","data":{"physician_id":%q,"result_count":%d},"timestamp":%d}`, job.PhysicianID, len(job.Results), time.Now().UnixMilli())
+		http.Post("http://host.docker.internal:7253/ingest/3d555b6b-c53c-489c-9b2b-5e3682ccb13d", "application/json", strings.NewReader(body)) //nolint
+	}()
+	// #endregion
+
 	if err := a.enrichPhysicianResultsWithAndes(ctx, job.Results); err != nil {
 		a.log("error", "physician_andes_enrichment_failed", map[string]any{
 			"physician_id": job.PhysicianID,
@@ -2538,6 +2545,14 @@ func (a *App) processPhysicianAndesEnrichJob(job physicianAndesEnrichJob) {
 			"error":        err.Error(),
 		})
 	}
+
+	// #region agent log
+	go func() {
+		body := fmt.Sprintf(`{"sessionId":"2fcf92","hypothesisId":"A","location":"main.go:processPhysicianAndesEnrichJob","message":"about_to_persist_recent_query","data":{"physician_id":%q},"timestamp":%d}`, job.PhysicianID, time.Now().UnixMilli())
+		http.Post("http://host.docker.internal:7253/ingest/3d555b6b-c53c-489c-9b2b-5e3682ccb13d", "application/json", strings.NewReader(body)) //nolint
+	}()
+	// #endregion
+
 	if err := a.persistPhysicianRecentQuery(ctx, job.PhysicianID, job.Filters, job.Results); err != nil {
 		a.log("error", "physician_recent_query_persist_failed", map[string]any{
 			"physician_id": job.PhysicianID,
@@ -9248,6 +9263,12 @@ func (a *App) getPhysicianSourceNodeFromRecentQueries(ctx context.Context, physi
 	`, physicianID, studyInstanceUID).Scan(&resultSourceNodeID, &querySource)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			// #region agent log
+			go func() {
+				body := fmt.Sprintf(`{"sessionId":"2fcf92","hypothesisId":"A","location":"main.go:getPhysicianSourceNodeFromRecentQueries","message":"no_row_in_recent_queries","data":{"physician_id":%q,"study_uid":%q},"timestamp":%d}`, physicianID, studyInstanceUID, time.Now().UnixMilli())
+				http.Post("http://host.docker.internal:7253/ingest/3d555b6b-c53c-489c-9b2b-5e3682ccb13d", "application/json", strings.NewReader(body)) //nolint
+			}()
+			// #endregion
 			return PACSNodeConfig{}, "", sql.ErrNoRows
 		}
 		return PACSNodeConfig{}, "", fmt.Errorf("resolve physician source from recent queries: %w", err)

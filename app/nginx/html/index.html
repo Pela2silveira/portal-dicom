@@ -3571,6 +3571,9 @@
               retrieveAction = '<button class="action action-secondary" type="button" disabled>Origen no disponible</button>';
             } else if (result.retrieve_status === "running" || result.retrieve_status === "queued") {
               retrieveAction = '<button class="action action-secondary" type="button" disabled data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">' + escapeHTML(retrieveActionLabel(result.retrieve_status, result.retrieve_phase, result.retrieve_progress)) + '</button>';
+              // #region agent log
+              fetch('http://127.0.0.1:7253/ingest/3d555b6b-c53c-489c-9b2b-5e3682ccb13d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2fcf92'},body:JSON.stringify({sessionId:'2fcf92',hypothesisId:'C',location:'index.html:renderPhysicianResults',message:'running_retrieve_rendered',data:{study_uid:result.study_instance_uid,retrieve_status:result.retrieve_status,retrieve_job_id:result.retrieve_job_id||null,has_active_sse:!!physicianRetrieveEventSource},timestamp:Date.now()})}).catch(()=>{});
+              // #endregion
             } else if (result.retrieve_status === "failed") {
               retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '" data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">Reintentar recuperación</button>';
             }
@@ -4086,6 +4089,9 @@
         physicianRetrieveEventSource = new EventSource("/api/retrieve/jobs/" + encodeURIComponent(jobID) + "/events");
         physicianRetrieveEventSource.addEventListener("status", async event => {
           const payload = JSON.parse(event.data);
+          // #region agent log
+          fetch('http://127.0.0.1:7253/ingest/3d555b6b-c53c-489c-9b2b-5e3682ccb13d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2fcf92'},body:JSON.stringify({sessionId:'2fcf92',hypothesisId:'B',location:'index.html:watchPhysicianRetrieveJob:status',message:'sse_status_event',data:{jobID,status:payload.status,progress:payload.progress,phase:payload.phase},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
           updatePhysicianRetrieveVisual(payload);
           if (payload.status === "done" || payload.status === "failed") {
             clearPhysicianRetrievePoll();
@@ -4098,6 +4104,9 @@
           }
         });
         physicianRetrieveEventSource.onerror = async () => {
+          // #region agent log
+          fetch('http://127.0.0.1:7253/ingest/3d555b6b-c53c-489c-9b2b-5e3682ccb13d',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'2fcf92'},body:JSON.stringify({sessionId:'2fcf92',hypothesisId:'B',location:'index.html:watchPhysicianRetrieveJob:onerror',message:'sse_onerror_fired',data:{jobID,studyInstanceUID,readyState:physicianRetrieveEventSource?.readyState},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
           clearPhysicianRetrievePoll();
           if (activePhysicianUsername) {
             await loadPhysicianResults(activePhysicianUsername, {
