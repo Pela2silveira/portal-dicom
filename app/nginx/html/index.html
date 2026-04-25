@@ -2689,6 +2689,39 @@
           .replaceAll("'", "&#39;");
       }
 
+      // #region agent log
+      try {
+        const __dbgPayload = {
+          marker: "[DEBUG-2fcf92]",
+          sessionId: "2fcf92",
+          runId: "css-escape-probe",
+          hypothesisId: "H1,H2,H3,H4",
+          location: "index.html:after-escapeHTML",
+          message: "cssEscape availability probe",
+          data: {
+            typeof_cssEscape: typeof cssEscape,
+            typeof_CSS: typeof CSS,
+            typeof_CSS_escape: typeof CSS !== "undefined" ? typeof CSS.escape : "n/a",
+            userAgent: typeof navigator !== "undefined" ? navigator.userAgent : "n/a",
+            url: typeof location !== "undefined" ? location.href : "n/a",
+          },
+          timestamp: Date.now(),
+        };
+        console.log("[DEBUG-2fcf92]", JSON.stringify(__dbgPayload));
+        if (typeof fetch === "function") {
+          fetch("http://127.0.0.1:7253/ingest/3d555b6b-c53c-489c-9b2b-5e3682ccb13d", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "2fcf92" },
+            body: JSON.stringify(__dbgPayload),
+            mode: "no-cors",
+            keepalive: true,
+          }).catch(() => {});
+        }
+      } catch (__dbgErr) {
+        console.log("[DEBUG-2fcf92]", "probe failed:", String(__dbgErr));
+      }
+      // #endregion
+
       function normalizePatientDocumentInput(value) {
         return String(value || "").replace(/\D+/g, "").slice(0, 11);
       }
