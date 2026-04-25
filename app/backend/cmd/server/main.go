@@ -2901,6 +2901,19 @@ func (a *App) handleOrthancTokenValidation(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "orthanc token validation failed", http.StatusInternalServerError)
 		return
 	}
+	// #region agent log
+	writeAgentDebugLog("orthanc-token-validation", "H3", "main.go:handleOrthancTokenValidation", "Orthanc authorization validation result", map[string]any{
+		"method":          strings.ToLower(strings.TrimSpace(payload.Method)),
+		"level":           strings.ToLower(strings.TrimSpace(payload.Level)),
+		"uri":             strings.TrimSpace(payload.URI),
+		"token_key":       strings.TrimSpace(payload.TokenKey),
+		"has_token_value": strings.TrimSpace(payload.TokenValue) != "",
+		"dicom_uid_hash":  debugHash(payload.DICOMUID),
+		"orthanc_id":      strings.TrimSpace(payload.OrthancID),
+		"granted":         response.Granted,
+		"reason":          reason,
+	})
+	// #endregion
 	if !response.Granted {
 		a.log("warn", "orthanc_token_validation_denied", map[string]any{
 			"reason":     reason,
@@ -2957,6 +2970,14 @@ func (a *App) handleOrthancUserProfile(w http.ResponseWriter, r *http.Request) {
 					Permissions:      []string{"viewer-tools-find"},
 					Validity:         60,
 				})
+				// #region agent log
+				writeAgentDebugLog("orthanc-user-profile", "H3", "main.go:handleOrthancUserProfile", "Orthanc viewer profile granted from cookie", map[string]any{
+					"token_key":      strings.TrimSpace(payload.TokenKey),
+					"grant_id":       grant.GrantID,
+					"viewer_kind":    grant.ViewerKind,
+					"study_uid_hash": debugHash(grant.StudyInstanceUID),
+				})
+				// #endregion
 				return
 			}
 		}
@@ -4201,6 +4222,15 @@ func (a *App) handleViewerAccess(w http.ResponseWriter, r *http.Request) {
 	if grant.ViewerKind == "ohif" {
 		redirectURL = buildOHIFViewerURL(grant.StudyInstanceUID)
 	}
+	// #region agent log
+	writeAgentDebugLog("viewer-grant-consumed", "H1,H2,H3,H4", "main.go:handleViewerAccess", "Viewer grant consumed before redirect", map[string]any{
+		"grant_id":       grant.GrantID,
+		"subject_type":   grant.SubjectType,
+		"viewer_kind":    grant.ViewerKind,
+		"study_uid_hash": debugHash(grant.StudyInstanceUID),
+		"redirect_url":   redirectURL,
+	})
+	// #endregion
 	a.log("info", "viewer_access_grant_consumed", map[string]any{
 		"grant_id":           grant.GrantID,
 		"subject_type":       grant.SubjectType,
@@ -12444,6 +12474,40 @@ func (a *App) log(level, msg string, fields map[string]any) {
 	}
 
 	a.logger.Println(string(encoded))
+}
+
+func writeAgentDebugLog(runID, hypothesisID, location, message string, data map[string]any) {
+	payload := map[string]any{
+		"sessionId":    "2fcf92",
+		"runId":        runID,
+		"hypothesisId": hypothesisID,
+		"location":     location,
+		"message":      message,
+		"data":         data,
+		"timestamp":    time.Now().UnixMilli(),
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	f, err := os.OpenFile("/Users/psilveira/src/.cursor/debug-2fcf92.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.Write(append(encoded, '\n'))
+}
+
+func debugHash(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	hash := tokenHash(trimmed)
+	if len(hash) > 16 {
+		return hash[:16]
+	}
+	return hash
 }
 
 func envOrDefault(key, fallback string) string {
