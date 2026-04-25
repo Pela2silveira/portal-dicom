@@ -73,7 +73,11 @@ services:
       - backend_net
 
   orthanc:
-    image: jodogne/orthanc-plugins:latest
+    # Pinned to known-good build (2025-11-26) after the mainline :latest of
+    # 2026-04-14 broke /rendered (DICOMweb) systemically and the Stone Web
+    # Viewer stopped showing any image. Do NOT replace with :latest until
+    # we confirm a newer mainline restores rendering.
+    image: jodogne/orthanc-plugins@sha256:fbd5e3747430fa478d5e1d68969017f75cabab76731d98e9e46f8f8e755c7d5c
     container_name: app-orthanc
     restart: unless-stopped
     env_file:
