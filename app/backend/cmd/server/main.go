@@ -9833,7 +9833,7 @@ func (a *App) runOrthancStudyCFindWithRefresh(ctx context.Context, node PACSNode
 	if strings.TrimSpace(filters.PatientNameRaw) != "" {
 		queryTags["PatientName"] = strings.TrimSpace(filters.PatientNameRaw)
 	} else if strings.TrimSpace(filters.PatientName) != "" {
-		queryTags["PatientName"] = buildPatientNameFuzzyQuery(filters.PatientName)
+		queryTags["PatientName"] = buildPatientSurnameCFindQuery(filters.PatientName)
 	}
 	if birthDate := formatDICOMDate(filters.BirthDate); birthDate != "" {
 		queryTags["PatientBirthDate"] = birthDate
