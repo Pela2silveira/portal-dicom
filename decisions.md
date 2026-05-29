@@ -191,6 +191,10 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - ANDES prestaciones enrichment must run encolado/non-blocking (own worker queue with `his.andes_rest_concurrency`, default `2`); search responses must not block on REST/Mongo enrichment latency, and successful enrichment is persisted into `qido_study_cache.andes_*` plus `last_andes_enriched_at`.
 - In the professional flow, prestaciones enrichment must collapse to one REST call per resolved `idPaciente` (Mongo `_id`), never one per study; if `idPaciente` is unknown for a DNI it is resolved once via `patient_alternate_identifiers` (or the Mongo identity source as fallback) and the result is persisted for reuse.
 
+- (2026-05-29) The portal frontend is split into three static files instead of a single monolithic `index.html`: markup stays in `app/nginx/html/index.html`, styles move to `app/nginx/html/assets/portal.css`, and the application script moves to `app/nginx/html/assets/portal.js`. This is a pure file-organization refactor to make the ~4.8k-line frontend maintainable; no behavior, markup, CSS, or JS logic changed (the split was verified to reconstruct the original byte-for-byte). The no-build-step constraint is preserved: nginx keeps serving plain static files, and the assets are referenced as `/portal-assets/portal.css` and `/portal-assets/portal.js`, served by the existing `location ^~ /portal-assets/` alias (which, via the `^~` modifier, takes precedence over the regex location that proxies `*.css`/`*.js` to OHIF). The script is loaded with `defer` and remains last in `<body>`, preserving original execution timing.
+
+- (2026-05-29) The backend (`app/backend/cmd/server/`) is split from a single ~12.5k-line `main.go` into multiple files within the **same `package main`**, grouped by domain (`server.go`, `app.go`, `config.go`, `patient.go`, `physician.go`, `search.go`, `retrieve.go`, `orthanc.go`, `andes.go`, `identity.go`, `health.go`, `share.go`, `email.go`, `migrations.go`, `util.go`). This is Phase 1 of the maintainability refactor and is purely organizational: no signatures, types, or behavior changed. Because Go does not distinguish files within a package, the split needed no import rewiring at call sites; per-file imports were recomputed automatically. Equivalence was verified by `go build ./...`, `go vet ./...`, a successful binary build, `gofmt` clean, and identical top-level declaration counts (418 funcs, 135 types) before and after. Phase 2 (extracting real packages under `internal/`, starting with `internal/identity`) and adding tests are deliberately deferred — see "Pending: Backend modularization (Phase 2) + tests".
+
 ## Open Inputs From User
 - HIS base URL, authentication method, API key format, and required query parameters.
 - Remote dcm4chee nodes: hostnames, DICOMweb base URLs, REST credentials, and Keycloak host details.
@@ -229,6 +233,12 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - This section exists to capture design understanding before implementation begins.
 - Implementation must not start until the open questions above about HPN PatientID semantics are resolved by the operator.
 
+
+## Pending: Backend modularization (Phase 2) + tests
+- **TBD (not started).** Phase 1 (2026-05-29) only split `cmd/server/main.go` into multiple files inside `package main`. The following remain open:
+  - **Tests (prerequisite for Phase 2).** There are currently zero `*_test.go` files. Before any package-level refactor, add characterization tests for the highest-risk logic: identity sources (`PatientIdentitySource`/`ProfessionalIdentitySource`/`PrestacionLookupSource`), patient/physician search fan-out, retrieve queue + SSE events, and ANDES enrichment. These act as the safety net that the compiler alone cannot provide for behavior.
+  - **Phase 2 — real packages under `internal/`.** Extract domains into importable packages (suggested first target: `internal/identity`, since the identity sources already sit behind interfaces). This requires breaking up the `App` god-object (~197 methods, 23 fields), exporting identifiers, and injecting dependencies across package boundaries. Higher effort/risk than Phase 1; only undertake once tests exist and if the backend keeps growing.
+  - **Acceptance for Phase 2.** `go build ./...` and `go vet ./...` stay green, new tests pass, and no behavior change in patient/physician search, retrieve, viewer access, download, or health/SSE flows.
 
 ## Notes For Agents
 - Prefer pragmatic, secure defaults.

@@ -112,6 +112,7 @@
 - [Missing] **Operational limits**: explicit concurrency limits and per-job deadlines for retrieve (`max_concurrent_retrieves_global`, per-node limits, retryability states).
 - [Missing] **Runbook + troubleshooting**: documented procedures for adding nodes, validating QIDO/auth, retrieve debugging, common Orthanc issues, and expected log/audit entries.
 - [Needs Decision] **CI test strategy**: whether integration tests run with a simulated remote Orthanc in compose vs mock handlers only (affects repeatability and scope).
+- [TBD] **Backend unit/characterization tests**: there are currently zero `*_test.go` files. After the 2026-05-29 Phase 1 file split, the backend still has no automated safety net. Add tests covering identity sources, patient/physician search fan-out, retrieve queue + SSE, and ANDES enrichment **before** attempting the Phase 2 package extraction (`internal/`). See `decisions.md` → "Pending: Backend modularization (Phase 2) + tests".
 
 ---
 

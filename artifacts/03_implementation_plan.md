@@ -360,3 +360,11 @@ El próximo slice de mayor valor es:
 3. **Límites operativos de retrieve**
 4. **Definir estrategia configurable del identificador paciente**
 5. **Agregar entorno remoto simulado para CI/dev si sigue haciendo falta repetibilidad**
+
+---
+
+# Mantenibilidad del código (refactor)
+- **[Done] Frontend split (2026-05-29)**: `index.html` separado en `index.html` + `assets/portal.css` + `assets/portal.js`, sin build step ni cambio de comportamiento.
+- **[Done] Backend split Fase 1 (2026-05-29)**: `cmd/server/main.go` (~12.5k líneas) dividido en múltiples archivos del mismo `package main` por dominio. Verificado con `go build`/`go vet`, binario OK y conteos de declaraciones idénticos.
+- **[TBD] Tests del backend**: no existe ningún `*_test.go`. Agregar tests de caracterización (identity sources, búsqueda paciente/profesional, retrieve+SSE, enriquecimiento ANDES) como prerrequisito del refactor Fase 2.
+- **[TBD] Backend split Fase 2**: extraer packages reales bajo `internal/` (primer objetivo sugerido `internal/identity`), lo que implica desarmar el god-object `App`. Hacerlo sólo después de tener tests. Ver `decisions.md` → "Pending: Backend modularization (Phase 2) + tests".

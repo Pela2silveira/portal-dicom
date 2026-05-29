@@ -194,6 +194,24 @@ Proveer un portal operativo mínimo capaz de:
 - `orthanc`:
   - Cliente REST a Orthanc para verificar presencia local, obtener Study/Series/Instances, mapear IDs.
 
+#### 4.1.1 Organización física del código (estado real del repo)
+- El backend es un único `package main` en `app/backend/cmd/server/`. Hasta 2026-05-29 vivía en un solo `main.go` (~12.5k líneas); fue dividido en varios archivos del **mismo package** por dominio, sin cambiar comportamiento ni firmas (split puramente organizativo, verificado con `go build`/`go vet`):
+  - `server.go` — `main()`, setup y registro de rutas (mux), import side-effect del driver pgx.
+  - `app.go` — struct `App` (estado compartido) y su construcción.
+  - `config.go` — `Config`/`ExternalConfig` y carga de configuración.
+  - `patient.go` / `physician.go` — handlers y lógica de cada flujo.
+  - `search.go` — QIDO/C-FIND, fan-out y caché de estudios.
+  - `retrieve.go` — colas de retrieve y SSE de jobs.
+  - `orthanc.go` — cliente Orthanc, tokens y viewer-access.
+  - `andes.go` — enriquecimiento de prestaciones (REST/Mongo).
+  - `identity.go` — `PatientIdentitySource`/`ProfessionalIdentitySource`/`PrestacionLookupSource` y sus implementaciones (Mongo/LDAP/LocalSeed/Composite/Retrying/Unavailable).
+  - `health.go` — health y system events (SSE).
+  - `share.go` — share links + QR.
+  - `email.go` — SMTP + códigos.
+  - `migrations.go` — migraciones SQL.
+  - `util.go` — helpers de formato/normalización compartidos.
+- La modularización en packages reales bajo `internal/` y la introducción de tests quedan como trabajo pendiente (ver `03_implementation_plan.md` y `04_qa_checklist.md`).
+
 ### 4.2 Protocolos
 - **Búsqueda remota**:
   - Preferente: **QIDO-RS** (HTTP).
@@ -581,6 +599,11 @@ Problema: Orthanc puede recibir instancias progresivamente.
     - `/ohif` → ohif
     - `/dicomweb` o `/dicom-web` → orthanc HTTP (limitado a DICOMweb paths)
     - `/` → UI estática
+  - UI estática servida sin build step, separada en tres archivos para mantenibilidad:
+    - `app/nginx/html/index.html` → markup.
+    - `app/nginx/html/assets/portal.css` → estilos (referenciado como `/portal-assets/portal.css`).
+    - `app/nginx/html/assets/portal.js` → lógica de la app (referenciado como `/portal-assets/portal.js`, cargado con `defer` al final de `<body>`).
+    - Los assets se sirven por `location ^~ /portal-assets/` (alias a `assets/`); el modificador `^~` tiene prioridad sobre el regex que proxyea `*.css`/`*.js` a OHIF, por lo que los archivos del portal se sirven localmente.
 
 ### 11.2 Redes
 - `frontend_net`: nginx + ohif
