@@ -13,7 +13,21 @@ This includes, when applicable:
 - `artifacts/03_implementation_plan.md`
 - `artifacts/04_qa_checklist.md`
 
+## Project Rule: Tests For New Functionality
+
+Every new feature or behavior change must ship with tests in the same iteration. Code and its tests are a single unit of work, not optional follow-up.
+
+This includes, when applicable:
+
+- Add/extend automated tests covering the new behavior (happy path plus the relevant error/denial/edge cases).
+- For backend Go changes, tests run in Docker via `make test-backend` (Go is not installed on the dev machine). They must pass, together with `go vet` and `gofmt`, before closing the task.
+- Prefer the existing layered approach: pure functions (Tier 1), interface fakes/seams (Tier 2), and `httptest` adapters/handlers (Tier 3). DB-backed integration (`go-sqlmock`/ephemeral Postgres, Tier 4) is currently deferred by decision — note explicitly when a behavior is only reachable through that tier.
+- The `.githooks/pre-commit` hook runs `make test-backend` when backend Go changes; do not bypass it.
+- If a change is genuinely untestable or testing is intentionally deferred, say so explicitly and record the rationale in `decisions.md` and/or `artifacts/04_qa_checklist.md`.
+
 ## Expected Behavior For Agents
+
+- Do not close a task that adds or changes behavior without adding/extending the corresponding tests (see "Tests For New Functionality").
 
 - Do not treat specs as optional follow-up work.
 - If UI, workflow, architecture, security posture, deployment behavior, branding, routes, auth roadmap, or integration behavior changes, update the corresponding spec files before closing the task.

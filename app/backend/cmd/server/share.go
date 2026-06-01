@@ -197,6 +197,9 @@ func (a *App) handleShareLanding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	setActionDim(r.Context(), "study_uid", link.StudyInstanceUID)
+	setActionDim(r.Context(), "viewer_kind", link.ViewerKind)
+	setActionDim(r.Context(), "channel", link.Channel)
 	setShareLinkCookie(w, r, append(shareLinkTokensFromRequest(r), rawToken), link.ExpiresAt)
 	http.Redirect(w, r, studyShareTokenRedirectURL(rawToken, link), http.StatusFound)
 }

@@ -1,0 +1,36 @@
+#!/bin/sh
+# Pre-commit hook: run the backend Go tests when staged changes touch backend
+# Go code. Installed via `make install-hooks` (sets core.hooksPath=.githooks).
+#
+# Notes:
+#  - Skips silently when no backend *.go files are staged (e.g. docs/config only).
+#  - Tests run inside Docker (see `make test-backend`), since Go is not installed
+#    locally. If Docker is unavailable it WARNS and lets the commit through, so
+#    you are never hard-blocked; run `make test-backend` manually before pushing.
+#  - Bypass in an emergency with `git commit --no-verify`.
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+
+# Only the backend Go files that are actually staged for this commit.
+staged_go=$(git diff --cached --name-only --diff-filter=ACMR -- app/backend | grep '\.go$' || true)
+if [ -z "$staged_go" ]; then
+	exit 0
+fi
+
+echo "[pre-commit] cambios en Go del backend detectados; corriendo tests..."
+
+if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+	echo "[pre-commit] AVISO: Docker no disponible; salteo los tests del backend."
+	echo "[pre-commit] Corré 'make test-backend' antes de pushear."
+	exit 0
+fi
+
+if make -C "$repo_root" test-backend; then
+	echo "[pre-commit] tests OK"
+	exit 0
+fi
+
+echo "[pre-commit] los tests del backend FALLARON; commit abortado."
+echo "[pre-commit] corregí los tests o usá 'git commit --no-verify' para saltarlos."
+exit 1

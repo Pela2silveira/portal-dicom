@@ -406,7 +406,7 @@ func (a *App) studyShareLinkByToken(ctx context.Context, rawToken string) (study
 	var snapshot studyShareLinkSnapshot
 	err := a.db.QueryRowContext(ctx, `
 		SELECT id::text,
-		       patient_id::text,
+		       COALESCE(patient_id::text, ''),
 		       study_instance_uid,
 		       viewer_kind,
 		       COALESCE(channel, ''),

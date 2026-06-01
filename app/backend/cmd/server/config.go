@@ -49,12 +49,35 @@ type RuntimePortalConfigResponse struct {
 }
 
 type ExternalConfig struct {
-	PACSNodes    []PACSNodeConfig   `json:"pacs_nodes"`
-	HIS          HISConfig          `json:"his"`
-	Portal       PortalConfig       `json:"portal"`
-	Patient      PatientConfig      `json:"patient"`
-	Professional ProfessionalConfig `json:"professional"`
-	Cache        CacheConfig        `json:"cache"`
+	PACSNodes     []PACSNodeConfig    `json:"pacs_nodes"`
+	HIS           HISConfig           `json:"his"`
+	Portal        PortalConfig        `json:"portal"`
+	Patient       PatientConfig       `json:"patient"`
+	Professional  ProfessionalConfig  `json:"professional"`
+	Cache         CacheConfig         `json:"cache"`
+	RBAC          RBACConfig          `json:"rbac"`
+	Observability ObservabilityConfig `json:"observability"`
+}
+
+// RBACConfig holds the (optional) role-based access control policy. Roles are
+// assigned via simple config lists (no IdP/LDAP role integration): the only
+// supported elevation today is granting the share permission to specific
+// physicians via physician_sharers. Anything omitted falls back to the in-code
+// defaults declared in rbac.go.
+type RBACConfig struct {
+	Roles                map[string][]string `json:"roles"`
+	PhysicianSharers     []string            `json:"physician_sharers"`
+	PhysicianDefaultRole string              `json:"physician_default_role"`
+}
+
+// ObservabilityConfig toggles audit logging and usage metrics. When *Enabled is
+// nil the action catalog defaults apply; an explicit allowlist (AuditActions /
+// MeteredActions) overrides the per-action defaults entirely.
+type ObservabilityConfig struct {
+	AuditEnabled   *bool    `json:"audit_enabled"`
+	MetricsEnabled *bool    `json:"metrics_enabled"`
+	AuditActions   []string `json:"audit_actions"`
+	MeteredActions []string `json:"metered_actions"`
 }
 
 type PACSNodeConfig struct {

@@ -137,6 +137,11 @@ func main() {
 		physicianAndesEnrichQueue:  make(chan physicianAndesEnrichJob, 64),
 		retrieveEventSubscribers:   make(map[string]map[chan RetrieveJobEvent]struct{}),
 		systemEventSubscribers:     make(map[chan SystemHealthEvent]struct{}),
+		rbac:                       buildRBACPolicy(externalConfig),
+	}
+
+	if db != nil {
+		app.usageRecorder = &PostgresUsageRecorder{db: db}
 	}
 
 	app.log("info", "prestacion_lookup_source_ready", map[string]any{
@@ -171,27 +176,27 @@ func main() {
 	mux.HandleFunc("/api/config", app.handleConfig(appliedMigrations))
 	mux.HandleFunc("/api/runtime-config", app.handleRuntimeConfig)
 	mux.HandleFunc("/api/patient/send-code", app.withBrowserOriginCheck(app.handlePatientSendCode))
-	mux.HandleFunc("/api/patient/login", app.withBrowserOriginCheck(app.handlePatientLogin))
+	mux.HandleFunc("/api/patient/login", app.action(ActionPatientLogin, app.handlePatientLogin))
 	mux.HandleFunc("/api/patient/logout", app.withBrowserOriginCheck(app.handlePatientLogout))
 	mux.HandleFunc("/api/patient/search", app.withBrowserOriginCheck(app.handlePatientSearch))
 	mux.HandleFunc("/api/patient/studies", app.handlePatientStudies)
 	mux.HandleFunc("/api/patient/studies/", app.withBrowserOriginCheck(app.handlePatientStudyRoute))
-	mux.HandleFunc("/api/patient/download", app.handlePatientDownload)
+	mux.HandleFunc("/api/patient/download", app.action(ActionStudyDownload, app.handlePatientDownload))
 	mux.HandleFunc("/api/patient/report", app.handlePatientAndesReportDownload)
-	mux.HandleFunc("/api/patient/retrieve", app.withBrowserOriginCheck(app.handlePatientRetrieve))
-	mux.HandleFunc("/api/physician/login", app.withBrowserOriginCheck(app.handlePhysicianLogin))
+	mux.HandleFunc("/api/patient/retrieve", app.action(ActionStudyRetrieve, app.handlePatientRetrieve))
+	mux.HandleFunc("/api/physician/login", app.action(ActionPhysicianLogin, app.handlePhysicianLogin))
 	mux.HandleFunc("/api/physician/logout", app.withBrowserOriginCheck(app.handlePhysicianLogout))
 	mux.HandleFunc("/api/retrieve/jobs/", app.handleRetrieveJobEvents)
 	mux.HandleFunc("/api/physician/results", app.handlePhysicianResults)
 	mux.HandleFunc("/api/physician/studies/", app.withBrowserOriginCheck(app.handlePhysicianStudyRoute))
-	mux.HandleFunc("/api/physician/download", app.handlePhysicianDownload)
+	mux.HandleFunc("/api/physician/download", app.action(ActionStudyDownload, app.handlePhysicianDownload))
 	mux.HandleFunc("/api/physician/report", app.handlePhysicianAndesReportDownload)
-	mux.HandleFunc("/api/physician/retrieve", app.withBrowserOriginCheck(app.handlePhysicianRetrieve))
+	mux.HandleFunc("/api/physician/retrieve", app.action(ActionStudyRetrieve, app.handlePhysicianRetrieve))
 	mux.HandleFunc("/api/orthanc-auth/tokens/", app.handleOrthancTokenCreate)
 	mux.HandleFunc("/api/orthanc-auth/tokens/decode", app.handleOrthancTokenDecode)
 	mux.HandleFunc("/api/orthanc-auth/tokens/validate", app.handleOrthancTokenValidation)
 	mux.HandleFunc("/api/orthanc-auth/user/get-profile", app.handleOrthancUserProfile)
-	mux.HandleFunc("/share", app.handleShareLanding)
+	mux.HandleFunc("/share", app.action(ActionShareLinkConsume, app.handleShareLanding))
 	mux.HandleFunc("/viewer-access/", app.handleViewerAccess)
 
 	if closer, ok := app.identitySource.(patientIdentitySourceCloser); ok {

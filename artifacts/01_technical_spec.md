@@ -376,6 +376,13 @@ Proveer un portal operativo mínimo capaz de:
   - requests, errores de integración, latencias, estado de jobs.
 - Minimizar PHI en la auditoría técnica; si la UI requiere ver datos clínicos/demográficos, eso no obliga a persistirlos sistemáticamente en `integration_audit`.
 
+### 6.5 RBAC + auditoría de acciones + métricas de uso (2026-05-31)
+- **Acción como unidad transversal.** Catálogo declarativo en código (`app/backend/cmd/server/rbac.go`) y decorador `App.action(id, next)` que centraliza, por acción: same-origin (mutantes), resolución de actor, RBAC, evento de auditoría y métrica de uso.
+- **RBAC simple por config.** Roles/permisos con defaults en código, sobrescribibles desde `config.json` (`rbac.roles`); elevación de profesionales puntuales vía `rbac.physician_sharers` (rol `physician_sharer`). Sin integración de roles con LDAP/IdP.
+- **Auditoría** = JSON a stdout con `"channel":"audit"` (ruteado a `audit.log`), esquema who/when/what/subject/result + dimensiones por acción. Los rechazos también se auditan. PHI: minimización diferida (hoy se loguea todo; hook `PHIFields` por acción para el futuro).
+- **Métricas de uso (Opción B)** en PostgreSQL: tabla append-only `usage_events` (no se derivan de logs), detrás de la interfaz `UsageRecorder`. Toggles en `observability` (`audit_enabled`/`metrics_enabled` + allowlists).
+- Estado: en producción, enganchado en logins (paciente/profesional), `viewer_access.grant`, `study.retrieve`, `study.download`, `share_link.create` y `share_link.consume`. `share_link.revoke` declarada (sin endpoint aún). Ver `decisions.md`.
+
 ---
 
 ## 7) Ciclo de vida del caché (Orthanc) y retención
@@ -617,6 +624,7 @@ Problema: Orthanc puede recibir instancias progresivamente.
 - El mismo flujo de deploy remoto debe verificar inmediatamente después del `scp` que `app/config/config.json` en el host remoto coincide byte a byte con el archivo local seleccionado (`LOCAL_CONFIG_FILE`), por ejemplo comparando checksums SHA-256, y abortar si la sustitución no quedó efectiva.
 - `remote-up` debe aceptar una flag explícita (`WIPE_VOLUMES=1`) para ejecutar `docker compose down -v` antes del nuevo `up`, reutilizando el mismo archivo de log remoto para dejar trazabilidad del borrado de volúmenes.
 - El mismo `Makefile.deploy.local` debe ofrecer `remote-tail-deploy` para seguir el último log remoto de deploy y `remote-logs` para ejecutar `docker compose logs -f` remoto, con filtro opcional por servicio.
+- **Captura persistente de logs (Opción A).** Los servicios siguen logueando a stdout; en el remoto, dos units systemd (`portal-logs.service`, `portal-logs-audit.service`) hacen streaming de `docker compose logs` del proyecto hacia archivos planos en `app/logs/` (`portal.log` firehose completo, `audit.log` solo líneas `"channel":"audit"`), con retención por `logrotate` (~3 meses, `copytruncate`). Provisión y reenganche (en cada deploy/update, porque `logs -f` no sigue contenedores recreados) desde `Makefile.deploy.local`: `logging-install` / `logging-restart` / `logging-status` / `logging-uninstall`. Las métricas de uso se persistirán en PostgreSQL como feature del producto, no se derivan de logs. Ver `decisions.md` (2026-05-31).
 
 ---
 

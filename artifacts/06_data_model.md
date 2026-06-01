@@ -368,6 +368,22 @@ Key fields:
 - `data_json`
 - `created_at`
 
+## Usage metrics
+
+### `usage_events` (migration `010_add_usage_events.sql`, 2026-05-31)
+
+Append-only usage/analytics table (Option B). One row per metered Action emitted by the `App.action(...)` decorator. Decoupled from operational tables; never derived from logs. Action-level audit trails still flow to stdout (`"channel":"audit"` → `audit.log`).
+
+Key fields:
+
+- `action` (catalog ID, e.g. `share_link.create`)
+- `actor_kind` (`patient`/`physician`/`operator`/`public`), `actor_id`, `actor_role`
+- `outcome` (`success`/`denied`/`failure`), `status_code`, `latency_ms`
+- `dims` (jsonb; action-specific dimensions such as `study_uid`, `channel`)
+- `occurred_at`
+
+Indexes: `(action, occurred_at desc)`, `(actor_kind, actor_id)`, `(occurred_at desc)`.
+
 ## Design Notes
 
 - Orthanc remains the source of truth for the local image cache.

@@ -137,9 +137,10 @@
       })();
       const physicianDateFilter = (() => {
         const now = new Date();
+        const defaultRange = patientDateRangeForPeriod("today");
         return {
-          from: "",
-          to: "",
+          from: defaultRange.date_from || "",
+          to: defaultRange.date_to || "",
           awaitingRangeEnd: false,
           viewYear: now.getFullYear(),
           viewMonth: now.getMonth()
@@ -1195,6 +1196,28 @@
         renderPhysicianCalendar();
       }
 
+      function previewCalendarRange(filter, grid, summaryEl, attr, hoverISO) {
+        if (!filter.awaitingRangeEnd || !filter.from || !hoverISO) {
+          return;
+        }
+        const start = filter.from < hoverISO ? filter.from : hoverISO;
+        const end = filter.from < hoverISO ? hoverISO : filter.from;
+        grid.querySelectorAll("[" + attr + "]").forEach(button => {
+          const iso = button.getAttribute(attr);
+          const inPreview = iso >= start && iso <= end && !button.classList.contains("is-selected");
+          button.classList.toggle("is-preview", inPreview);
+        });
+        summaryEl.textContent =
+          "Desde " + formatDateLabel(start) + " hasta " + formatDateLabel(end) + ".";
+      }
+
+      function clearCalendarPreview(grid, attr, syncSummary) {
+        grid.querySelectorAll("[" + attr + "].is-preview").forEach(button => {
+          button.classList.remove("is-preview");
+        });
+        syncSummary();
+      }
+
       function renderPatientStudies(payload) {
         renderPatientSyncStatus(payload.sync);
         patientFullNameValue.textContent = payload.patient.full_name || "-";
@@ -1434,6 +1457,7 @@
         physicianFullNameValue.textContent = payload.physician.full_name || "-";
         physicianDniValue.textContent = payload.physician.dni || "-";
         physicianLicenseValue.textContent = payload.physician.license_number || "-";
+        const canShare = Boolean(payload.can_share);
 
         if (!payload.results.length) {
           physicianResultList.innerHTML =
@@ -1458,6 +1482,9 @@
             const previewAction = result.viewer_url
               ? '<button class="action action-primary" type="button" data-physician-preview="' + escapeHTML(result.study_instance_uid) + '">Vista previa</button>'
               : "";
+            const shareAction = canShare && result.viewer_url
+              ? '<button class="action action-primary" type="button" data-physician-share="' + escapeHTML(result.study_instance_uid) + '" data-viewer-kind="stone">Compartir</button>'
+              : "";
             const downloadAction = result.download_url
               ? '<a class="action action-primary" href="' + escapeHTML(result.download_url) + '" rel="noopener noreferrer">Descargar DICOM</a>'
               : "";
@@ -1468,7 +1495,14 @@
             const imageCountLabel = imageCount > 0 ? String(imageCount) : "-";
             const patientNameLabel = formatDICOMPersonName(result.patient_name);
             const studyDateLabel = result.study_date ? formatDateLabel(result.study_date) : "Sin fecha";
-            let retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '">Recuperar estudio</button>';
+            const retrieveSourceNode = result.source_node_id ||
+              (physicianSearchSource.value && physicianSearchSource.value !== physicianLocalCacheSourceValue
+                ? physicianSearchSource.value
+                : "");
+            const sourceNodeAttr = retrieveSourceNode
+              ? ' data-physician-source-node="' + escapeHTML(retrieveSourceNode) + '"'
+              : "";
+            let retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '"' + sourceNodeAttr + '>Recuperar estudio</button>';
             if (result.retrieve_status === "done" && result.viewer_url) {
               retrieveAction = "";
             } else if (result.source_node_available === false) {
@@ -1476,10 +1510,10 @@
             } else if (result.retrieve_status === "running" || result.retrieve_status === "queued") {
               retrieveAction = '<button class="action action-secondary" type="button" disabled data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">' + escapeHTML(retrieveActionLabel(result.retrieve_status, result.retrieve_phase, result.retrieve_progress)) + '</button>';
             } else if (result.retrieve_status === "failed") {
-              retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '" data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">Reintentar recuperación</button>';
+              retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '"' + sourceNodeAttr + ' data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">Reintentar recuperación</button>';
             }
             if (result.retrieve_status !== "done" && result.retrieve_status !== "running" && result.retrieve_status !== "queued" && result.retrieve_status !== "failed") {
-              retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '" data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">Recuperar estudio</button>';
+              retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '"' + sourceNodeAttr + ' data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">Recuperar estudio</button>';
             }
 
             return (
@@ -1506,6 +1540,7 @@
                   retrieveAction +
                   action +
                   previewAction +
+                  shareAction +
                   ohifAction +
                   andesReportAction +
                   downloadAction +
@@ -1793,6 +1828,28 @@
         return response.json();
       }
 
+      async function createPhysicianStudyShare(studyInstanceUID, viewerKind = "stone", channel = "share") {
+        const response = await fetch("/api/physician/studies/" + encodeURIComponent(studyInstanceUID) + "/share", {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            viewer: viewerKind,
+            channel
+          })
+        });
+
+        if (!response.ok) {
+          const error = new Error("physician share request failed");
+          error.payload = await response.json().catch(() => ({}));
+          throw error;
+        }
+
+        return response.json();
+      }
+
       async function loadPatientStudyPreview(studyInstanceUID) {
         const response = await fetch("/api/patient/studies/" + encodeURIComponent(studyInstanceUID) + "/preview", {
           headers: {
@@ -1911,16 +1968,18 @@
         }
       }
 
-      async function triggerPhysicianRetrieve(studyInstanceUID) {
+      async function triggerPhysicianRetrieve(studyInstanceUID, sourceNodeId) {
+        const body = { study_instance_uid: studyInstanceUID };
+        if (sourceNodeId) {
+          body.source_node_id = sourceNodeId;
+        }
         const response = await fetch("/api/physician/retrieve", {
           method: "POST",
           headers: {
             Accept: "application/json",
             "Content-Type": "application/json"
           },
-          body: JSON.stringify({
-            study_instance_uid: studyInstanceUID
-          })
+          body: JSON.stringify(body)
         });
 
         if (!response.ok) {
@@ -2105,6 +2164,19 @@
         savePortalWorkspaceState();
       });
 
+      patientCalendarGrid.addEventListener("mouseover", event => {
+        const button = event.target.closest("[data-patient-calendar-day]");
+        if (!button) {
+          return;
+        }
+
+        previewCalendarRange(patientDateFilter, patientCalendarGrid, patientDateSummary, "data-patient-calendar-day", button.getAttribute("data-patient-calendar-day"));
+      });
+
+      patientCalendarGrid.addEventListener("mouseleave", () => {
+        clearCalendarPreview(patientCalendarGrid, "data-patient-calendar-day", syncPatientDateSummary);
+      });
+
       physicianCalendarGrid.addEventListener("click", event => {
         const button = event.target.closest("[data-physician-calendar-day]");
         if (!button) {
@@ -2113,6 +2185,19 @@
 
         selectPhysicianCalendarDate(button.getAttribute("data-physician-calendar-day"));
         savePortalWorkspaceState();
+      });
+
+      physicianCalendarGrid.addEventListener("mouseover", event => {
+        const button = event.target.closest("[data-physician-calendar-day]");
+        if (!button) {
+          return;
+        }
+
+        previewCalendarRange(physicianDateFilter, physicianCalendarGrid, physicianDateSummary, "data-physician-calendar-day", button.getAttribute("data-physician-calendar-day"));
+      });
+
+      physicianCalendarGrid.addEventListener("mouseleave", () => {
+        clearCalendarPreview(physicianCalendarGrid, "data-physician-calendar-day", syncPhysicianDateSummary);
       });
 
       physicianCalendarPrev.addEventListener("click", () => {
@@ -2305,6 +2390,31 @@
           return;
         }
 
+        const shareButton = event.target.closest("[data-physician-share]");
+        if (shareButton) {
+          const studyInstanceUID = shareButton.getAttribute("data-physician-share");
+          const viewerKind = shareButton.getAttribute("data-viewer-kind") || "stone";
+          if (!studyInstanceUID) {
+            return;
+          }
+          shareButton.disabled = true;
+          const originalLabel = shareButton.textContent;
+          shareButton.textContent = "Preparando...";
+          try {
+            const payload = await createPhysicianStudyShare(studyInstanceUID, viewerKind, "share");
+            if (!payload.qr_code_data_url || !payload.share_url) {
+              throw new Error("physician share payload incomplete");
+            }
+            openPatientShareQR(payload);
+          } catch (error) {
+            alert(error?.payload?.message || "No se pudo crear el enlace para compartir este estudio.");
+          } finally {
+            shareButton.disabled = false;
+            shareButton.textContent = originalLabel;
+          }
+          return;
+        }
+
         const button = event.target.closest("[data-physician-retrieve]");
         if (!button) {
           return;
@@ -2314,12 +2424,13 @@
         if (!studyInstanceUID || !activePhysicianUsername) {
           return;
         }
+        const sourceNodeId = button.getAttribute("data-physician-source-node") || "";
 
         button.disabled = true;
         button.textContent = "Recuperando...";
 
         try {
-          const payload = await triggerPhysicianRetrieve(studyInstanceUID);
+          const payload = await triggerPhysicianRetrieve(studyInstanceUID, sourceNodeId);
           if (payload?.job_id) {
             watchPhysicianRetrieveJob(payload.job_id, studyInstanceUID);
           }

@@ -413,6 +413,7 @@ func (a *App) handlePatientLogin(w http.ResponseWriter, r *http.Request) {
 		writePatientLoginResponse(w, http.StatusBadRequest, "invalid_request", err.Error(), PatientSummary{})
 		return
 	}
+	setActionDim(r.Context(), "identifier", reqBody.DocumentNumber)
 	if !a.enforceLoginRateLimit(w, r, patientLoginRateLimitPolicy("patient_login"), reqBody.DocumentNumber) {
 		return
 	}
@@ -462,6 +463,8 @@ func (a *App) handlePatientLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	setPortalSessionCookie(w, r, patientSessionCookieName, rawSessionToken, expiresAt)
 
+	setActionDim(r.Context(), "patient_id", patient.ID)
+	setActionDim(r.Context(), "auth_mode", patientAuthMode)
 	writePatientLoginResponse(w, http.StatusOK, "ok", "Acceso validado.", patient)
 }
 
@@ -690,6 +693,7 @@ func (a *App) handlePatientDownload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing required query params", http.StatusBadRequest)
 		return
 	}
+	setActionDim(r.Context(), "study_uid", studyInstanceUID)
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
@@ -732,11 +736,11 @@ func (a *App) handlePatientDownload(w http.ResponseWriter, r *http.Request) {
 func (a *App) handlePatientStudyRoute(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.HasSuffix(r.URL.Path, "/access"):
-		a.handlePatientStudyAccess(w, r)
+		a.action(ActionViewerAccessGrant, a.handlePatientStudyAccess)(w, r)
 	case strings.HasSuffix(r.URL.Path, "/preview"):
 		a.handlePatientStudyPreview(w, r)
 	case strings.HasSuffix(r.URL.Path, "/share"):
-		a.handlePatientStudyShare(w, r)
+		a.action(ActionShareLinkCreate, a.handlePatientStudyShare)(w, r)
 	default:
 		http.NotFound(w, r)
 	}
@@ -758,6 +762,8 @@ func (a *App) handlePatientStudyAccess(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid viewer", http.StatusBadRequest)
 		return
 	}
+	setActionDim(r.Context(), "study_uid", studyUID)
+	setActionDim(r.Context(), "viewer_kind", viewerKind)
 	rawSessionToken := sessionCookieToken(r, patientSessionCookieName)
 	if rawSessionToken == "" {
 		http.Error(w, "missing session token", http.StatusUnauthorized)
@@ -882,13 +888,26 @@ func (a *App) handlePatientStudyShare(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 
-	_, patient, err := a.requirePatientSessionSummary(ctx, r)
-	if err != nil {
-		http.Error(w, "invalid session", http.StatusUnauthorized)
-		return
+	// The action() decorator already resolved + authorized the patient actor;
+	// reuse it to avoid a second session lookup. Fall back to resolving the
+	// session directly if the handler is ever called outside the decorator.
+	patientID := ""
+	if actor, ok := actorFromContext(ctx); ok && actor.Kind == SubjectPatient {
+		patientID = actor.ID
+	} else {
+		_, patient, err := a.requirePatientSessionSummary(ctx, r)
+		if err != nil {
+			http.Error(w, "invalid session", http.StatusUnauthorized)
+			return
+		}
+		patientID = patient.ID
 	}
 
-	authorized, err := a.patientStudyAvailableLocal(ctx, patient.ID, studyUID)
+	setActionDim(ctx, "study_uid", studyUID)
+	setActionDim(ctx, "channel", channel)
+	setActionDim(ctx, "viewer_kind", viewerKind)
+
+	authorized, err := a.patientStudyAvailableLocal(ctx, patientID, studyUID)
 	if err != nil {
 		http.Error(w, "failed to validate patient study access", http.StatusInternalServerError)
 		return
@@ -900,7 +919,7 @@ func (a *App) handlePatientStudyShare(w http.ResponseWriter, r *http.Request) {
 
 	shareURL, rawToken, expiresAt, maxUses, err := a.createStudyShareLink(
 		ctx,
-		patient.ID,
+		patientID,
 		studyUID,
 		viewerKind,
 		channel,
@@ -925,7 +944,7 @@ func (a *App) handlePatientStudyShare(w http.ResponseWriter, r *http.Request) {
 	mailToURL := "mailto:?subject=" + url.QueryEscape(mailSubject) + "&body=" + url.QueryEscape(mailBody)
 
 	a.log("info", "patient_study_share_created", map[string]any{
-		"patient_id":         patient.ID,
+		"patient_id":         patientID,
 		"study_instance_uid": studyUID,
 		"viewer_kind":        viewerKind,
 		"channel":            channel,
@@ -1098,6 +1117,7 @@ func (a *App) handlePatientRetrieve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "study_instance_uid is required", http.StatusBadRequest)
 		return
 	}
+	setActionDim(r.Context(), "study_uid", reqBody.StudyInstanceUID)
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()

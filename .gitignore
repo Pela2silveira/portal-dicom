@@ -12,3 +12,8 @@ __pycache__/
 Makefile.deploy.local
 volumes*
 app/backend/server
+# Runtime logs (Opción A): streamed on the remote into app/logs; local bundles in /logs
+app/logs/*
+!app/logs/.gitkeep
+/logs/
+.tmp-remote-logs/

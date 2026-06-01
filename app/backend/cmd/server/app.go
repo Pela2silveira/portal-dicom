@@ -28,6 +28,8 @@ type App struct {
 	orthancModalities          map[string]string
 	externalConfig             *ExternalConfig
 	configLoadedAt             time.Time
+	rbac                       *RBACPolicy
+	usageRecorder              UsageRecorder
 	identitySource             PatientIdentitySource
 	professionalIdentitySource ProfessionalIdentitySource
 	prestacionLookup           PrestacionLookupSource

@@ -1185,6 +1185,12 @@
         border-color: rgba(0, 168, 224, 0.28);
       }
 
+      .calendar-day.is-preview {
+        background: rgba(0, 168, 224, 0.1);
+        border-color: rgba(0, 168, 224, 0.22);
+        border-style: dashed;
+      }
+
       .calendar-day.is-selected {
         background: var(--accent);
         border-color: var(--accent);

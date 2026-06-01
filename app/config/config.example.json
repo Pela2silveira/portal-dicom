@@ -77,5 +77,21 @@
   "cache": {
     "orthanc_base_url": "http://orthanc:8042",
     "retention_days": 7
+  },
+  "rbac": {
+    "physician_sharers": [],
+    "physician_default_role": "physician",
+    "roles": {
+      "patient": ["share_link:create", "share_link:revoke", "study:retrieve"],
+      "physician": ["study:retrieve"],
+      "physician_sharer": ["share_link:create", "share_link:revoke", "study:retrieve"],
+      "operator": ["*"]
+    }
+  },
+  "observability": {
+    "audit_enabled": true,
+    "metrics_enabled": true,
+    "audit_actions": [],
+    "metered_actions": []
   }
 }

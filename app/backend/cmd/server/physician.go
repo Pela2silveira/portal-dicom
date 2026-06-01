@@ -19,6 +19,7 @@ type PhysicianResultsResponse struct {
 	Physician PhysicianSummary       `json:"physician"`
 	Filters   PhysicianSearchFilters `json:"filters"`
 	Results   []PhysicianResult      `json:"results"`
+	CanShare  bool                   `json:"can_share"`
 }
 
 type PhysicianLoginRequest struct {
@@ -40,6 +41,11 @@ type PhysicianResultsErrorResponse struct {
 type PhysicianRetrieveRequest struct {
 	Username         string `json:"username"`
 	StudyInstanceUID string `json:"study_instance_uid"`
+	// SourceNodeID is the PACS node the study was found on. The UI already knows
+	// the active search source, so it sends it here as the authoritative origin.
+	// When empty/invalid the backend falls back to inferring it from the
+	// physician's recent queries / cached studies.
+	SourceNodeID string `json:"source_node_id,omitempty"`
 }
 
 type PhysicianRetrieveResponse struct {
@@ -127,12 +133,136 @@ func writePhysicianLoginResponse(w http.ResponseWriter, statusCode int, status, 
 func (a *App) handlePhysicianStudyRoute(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.HasSuffix(r.URL.Path, "/access"):
-		a.handlePhysicianStudyAccess(w, r)
+		a.action(ActionViewerAccessGrant, a.handlePhysicianStudyAccess)(w, r)
 	case strings.HasSuffix(r.URL.Path, "/preview"):
 		a.handlePhysicianStudyPreview(w, r)
+	case strings.HasSuffix(r.URL.Path, "/share"):
+		a.action(ActionShareLinkCreate, a.handlePhysicianStudyShare)(w, r)
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// physicianCanShare reports whether the physician's resolved RBAC role grants
+// the share_link:create permission (e.g. listed in rbac.physician_sharers).
+func (a *App) physicianCanShare(summary PhysicianSummary) bool {
+	if a.rbac == nil {
+		return false
+	}
+	return a.rbac.hasPermission(a.rbac.roleForPhysician(summary), actionCatalog[ActionShareLinkCreate].Permission)
+}
+
+func (a *App) handlePhysicianStudyShare(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	studyUID := studyUIDFromActionPath(r.URL.Path, "/api/physician/studies/", "/share")
+	if studyUID == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	var reqBody PatientStudyShareRequest
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil && !errors.Is(err, io.EOF) {
+		http.Error(w, "invalid json body", http.StatusBadRequest)
+		return
+	}
+
+	viewerKind := normalizeViewerKind(reqBody.ViewerKind)
+	if viewerKind == "" {
+		viewerKind = "stone"
+	}
+	channel := normalizeStudyShareChannel(reqBody.Channel)
+	if channel == "" {
+		http.Error(w, "invalid share channel", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	// The action() decorator already resolved + authorized the physician actor
+	// (share_link:create). Fall back to resolving the session directly if the
+	// handler is ever called outside the decorator.
+	physicianID := ""
+	if actor, ok := actorFromContext(ctx); ok && actor.Kind == SubjectPhysician {
+		physicianID = actor.ID
+	} else {
+		_, physician, err := a.requirePhysicianSessionSummary(ctx, r)
+		if err != nil {
+			http.Error(w, "invalid session", http.StatusUnauthorized)
+			return
+		}
+		physicianID = physician.ID
+	}
+
+	setActionDim(ctx, "study_uid", studyUID)
+	setActionDim(ctx, "channel", channel)
+	setActionDim(ctx, "viewer_kind", viewerKind)
+
+	// Physician share links can only point at studies already cached locally
+	// (i.e. previously retrieved), mirroring the physician viewer access rule.
+	isLocal, _, err := a.findOrthancStudy(ctx, studyUID)
+	if err != nil {
+		http.Error(w, "failed to validate physician study access", http.StatusInternalServerError)
+		return
+	}
+	if !isLocal {
+		http.Error(w, "study not available for physician share", http.StatusNotFound)
+		return
+	}
+
+	// Physician shares are not owned by a patient row; persist with a NULL owner.
+	shareURL, rawToken, expiresAt, maxUses, err := a.createStudyShareLink(
+		ctx,
+		"",
+		studyUID,
+		viewerKind,
+		channel,
+		reqBody,
+		r,
+		time.Time{},
+	)
+	if err != nil {
+		http.Error(w, "failed to create share link", http.StatusInternalServerError)
+		return
+	}
+
+	shareMessage := fmt.Sprintf("Te comparto un estudio de diagnóstico por imágenes. Está disponible hasta el %s.", expiresAt.In(time.UTC).Format("2006-01-02 15:04 UTC"))
+	qrCodeDataURL, err := buildStudyShareQRCodeDataURL(shareURL)
+	if err != nil {
+		http.Error(w, "failed to build share qr", http.StatusInternalServerError)
+		return
+	}
+	whatsAppURL := "https://wa.me/?text=" + url.QueryEscape(shareMessage+" "+shareURL)
+	mailSubject := "Estudio por imágenes compartido | Salud Pública Neuquén"
+	mailBody := shareMessage + "\n\n" + shareURL
+	mailToURL := "mailto:?subject=" + url.QueryEscape(mailSubject) + "&body=" + url.QueryEscape(mailBody)
+
+	a.log("info", "physician_study_share_created", map[string]any{
+		"physician_id":       physicianID,
+		"study_instance_uid": studyUID,
+		"viewer_kind":        viewerKind,
+		"channel":            channel,
+		"expires_at":         expiresAt.UTC().Format(time.RFC3339),
+		"max_uses":           maxUses,
+		"client_ip":          clientIPForRateLimit(r),
+	})
+
+	_ = rawToken
+	writeJSON(w, http.StatusOK, PatientStudyShareResponse{
+		Status:           "ok",
+		StudyInstanceUID: studyUID,
+		ViewerKind:       viewerKind,
+		ShareURL:         shareURL,
+		QRCodeDataURL:    qrCodeDataURL,
+		WhatsAppURL:      whatsAppURL,
+		MailToURL:        mailToURL,
+		ExpiresAt:        expiresAt.UTC().Format(time.RFC3339),
+		MaxUses:          maxUses,
+	})
 }
 
 func (a *App) handlePhysicianStudyPreview(w http.ResponseWriter, r *http.Request) {
@@ -203,6 +333,8 @@ func (a *App) handlePhysicianStudyAccess(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "invalid viewer", http.StatusBadRequest)
 		return
 	}
+	setActionDim(r.Context(), "study_uid", studyUID)
+	setActionDim(r.Context(), "viewer_kind", viewerKind)
 	rawSessionToken := sessionCookieToken(r, physicianSessionCookieName)
 	if rawSessionToken == "" {
 		http.Error(w, "missing session token", http.StatusUnauthorized)
@@ -292,6 +424,7 @@ func (a *App) handlePhysicianResults(w http.ResponseWriter, r *http.Request) {
 		Physician: physician,
 		Filters:   filters,
 		Results:   results,
+		CanShare:  a.physicianCanShare(physician),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -310,6 +443,7 @@ func (a *App) handlePhysicianDownload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing required query params", http.StatusBadRequest)
 		return
 	}
+	setActionDim(r.Context(), "study_uid", studyInstanceUID)
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
@@ -389,6 +523,7 @@ func (a *App) handlePhysicianLogin(w http.ResponseWriter, r *http.Request) {
 		writePhysicianLoginResponse(w, http.StatusBadRequest, "invalid_request", "username es requerido.", PhysicianSummary{})
 		return
 	}
+	setActionDim(r.Context(), "identifier", reqBody.Username)
 	if !a.enforceLoginRateLimit(w, r, physicianLoginRateLimitPolicy(), reqBody.Username) {
 		return
 	}
@@ -495,6 +630,7 @@ func (a *App) handlePhysicianRetrieve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "study_instance_uid is required", http.StatusBadRequest)
 		return
 	}
+	setActionDim(r.Context(), "study_uid", reqBody.StudyInstanceUID)
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
@@ -509,7 +645,7 @@ func (a *App) handlePhysicianRetrieve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := a.queuePhysicianRetrieve(ctx, physician, reqBody.StudyInstanceUID)
+	resp, err := a.queuePhysicianRetrieve(ctx, physician, reqBody.StudyInstanceUID, reqBody.SourceNodeID)
 	if err != nil {
 		statusCode := http.StatusBadGateway
 		if errors.Is(err, ErrSourceNodeUnavailable) {
@@ -622,7 +758,7 @@ func (a *App) requirePhysicianSessionSummary(ctx context.Context, r *http.Reques
 	return session, physician, nil
 }
 
-func (a *App) queuePhysicianRetrieve(ctx context.Context, physician PhysicianSummary, studyInstanceUID string) (PhysicianRetrieveResponse, error) {
+func (a *App) queuePhysicianRetrieve(ctx context.Context, physician PhysicianSummary, studyInstanceUID, preferredSourceNodeID string) (PhysicianRetrieveResponse, error) {
 	activeJob, err := a.findActiveRetrieveJobByStudy(ctx, studyInstanceUID)
 	if err != nil {
 		return PhysicianRetrieveResponse{}, err
@@ -635,7 +771,7 @@ func (a *App) queuePhysicianRetrieve(ctx context.Context, physician PhysicianSum
 		}, nil
 	}
 
-	_, sourceNodeID, err := a.getPhysicianSourceNode(ctx, physician.ID, studyInstanceUID)
+	sourceNodeID, err := a.resolvePhysicianRetrieveSourceNode(ctx, physician.ID, studyInstanceUID, preferredSourceNodeID)
 	if err != nil {
 		return PhysicianRetrieveResponse{}, err
 	}
@@ -785,6 +921,43 @@ func (a *App) getPhysicianSourceNodeFromRecentQueries(ctx context.Context, physi
 		return PACSNodeConfig{}, "", err
 	}
 	return node, sourceNodeID, nil
+}
+
+// resolvePhysicianRetrieveSourceNode picks the PACS node to retrieve from. A
+// caller-provided node id (sent by the UI from the active search source) is
+// authoritative as long as it matches a configured node; otherwise it falls
+// back to inferring it from the physician's recent queries / cached studies.
+func (a *App) resolvePhysicianRetrieveSourceNode(ctx context.Context, physicianID, studyInstanceUID, preferredSourceNodeID string) (string, error) {
+	if node := a.preferredConfiguredNodeID(preferredSourceNodeID); node != "" {
+		return node, nil
+	}
+	if strings.TrimSpace(preferredSourceNodeID) != "" {
+		a.log("warn", "physician_retrieve_source_node_invalid", map[string]any{
+			"physician_id":       physicianID,
+			"study_instance_uid": studyInstanceUID,
+			"requested_node_id":  strings.TrimSpace(preferredSourceNodeID),
+		})
+	}
+
+	_, sourceNodeID, err := a.getPhysicianSourceNode(ctx, physicianID, studyInstanceUID)
+	if err != nil {
+		return "", err
+	}
+	return sourceNodeID, nil
+}
+
+// preferredConfiguredNodeID returns the trimmed node id when it matches a
+// configured PACS node, otherwise "". This keeps the caller-provided origin
+// authoritative only when it is a real node.
+func (a *App) preferredConfiguredNodeID(nodeID string) string {
+	trimmed := strings.TrimSpace(nodeID)
+	if trimmed == "" {
+		return ""
+	}
+	if _, err := a.getConfiguredNode(trimmed); err == nil {
+		return trimmed
+	}
+	return ""
 }
 
 func (a *App) getPhysicianSourceNode(ctx context.Context, physicianID, studyInstanceUID string) (PACSNodeConfig, string, error) {
