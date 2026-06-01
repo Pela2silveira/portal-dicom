@@ -86,6 +86,9 @@ type PatientStudy struct {
 type PatientRetrieveRequest struct {
 	DocumentNumber   string `json:"document_number"`
 	StudyInstanceUID string `json:"study_instance_uid"`
+	// Modality as known by the UI search results (study not local yet at
+	// retrieve time); used for the usage "retrieves by modality" breakdown.
+	Modality string `json:"modality,omitempty"`
 }
 
 type PatientRetrieveResponse struct {
@@ -723,6 +726,10 @@ func (a *App) handlePatientDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if mods, mErr := a.patientStudyModalities(ctx, patient.ID, studyInstanceUID); mErr == nil {
+		setActionDim(r.Context(), "modality", usageModalityDim(mods))
+	}
+
 	if err := a.streamStudyArchiveByUID(ctx, w, studyInstanceUID); err != nil {
 		a.log("error", "patient_download_failed", map[string]any{
 			"patient_id":         patient.ID,
@@ -1118,6 +1125,7 @@ func (a *App) handlePatientRetrieve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setActionDim(r.Context(), "study_uid", reqBody.StudyInstanceUID)
+	setActionDim(r.Context(), "modality", usageModalityDim(strings.Split(reqBody.Modality, "/")))
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()

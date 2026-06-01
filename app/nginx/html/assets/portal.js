@@ -74,6 +74,24 @@
       const physicianSearchSource = document.getElementById("physician-search-source");
       const physicianApplyFiltersButton = document.getElementById("physician-apply-filters");
       const physicianResultList = document.getElementById("physician-result-list");
+      const operatorPanelToggle = document.getElementById("operator-panel-toggle");
+      const operatorPanel = document.getElementById("operator-panel");
+      const operatorWindowSelect = document.getElementById("operator-window-select");
+      const operatorRefreshButton = document.getElementById("operator-refresh");
+      const operatorSummaryCards = document.getElementById("operator-summary-cards");
+      const operatorBreakdowns = document.getElementById("operator-breakdowns");
+      const operatorEventsAction = document.getElementById("operator-events-action");
+      const operatorEventsOutcome = document.getElementById("operator-events-outcome");
+      const operatorEventsSearch = document.getElementById("operator-events-search");
+      const operatorEventsTable = document.getElementById("operator-events-table");
+      const operatorCommentsList = document.getElementById("operator-comments-list");
+      const operatorCommentsRefresh = document.getElementById("operator-comments-refresh");
+      const feedbackOpenButton = document.getElementById("feedback-open");
+      const feedbackDialog = document.getElementById("feedback-dialog");
+      const feedbackCloseButton = document.getElementById("feedback-close");
+      const feedbackMessage = document.getElementById("feedback-message");
+      const feedbackSendButton = document.getElementById("feedback-send");
+      const feedbackStatus = document.getElementById("feedback-status");
       const physicianFullNameValue = document.getElementById("physician-full-name-value");
       const physicianDniValue = document.getElementById("physician-dni-value");
       const physicianLicenseValue = document.getElementById("physician-license-value");
@@ -115,6 +133,7 @@
       let patientRetrieveEventSource = null;
       let patientAutoRetrieveActiveStudyUID = "";
       let patientAutoRetrieveQueue = [];
+      const patientStudyModalityByUID = new Map();
       let physicianRetrieveEventSource = null;
       let physicianAndesRefreshTimer = null;
       let physicianAndesRefreshRemaining = 0;
@@ -209,6 +228,7 @@
         patientAutoRetrieveQueue = [];
         clearPhysicianRetrievePoll();
         clearPhysicianAndesRefresh();
+        setOperatorAccess(false);
         closePatientShareQR();
         closePatientPreview();
         clearPortalSession();
@@ -224,6 +244,7 @@
         activePatientSearchKey = "";
         activePatientDocument = "";
         activePhysicianUsername = "";
+        updateFeedbackAccess();
         clearLoginForms();
         clearPortalWorkspaceState();
         activateRole("patient");
@@ -730,6 +751,7 @@
           }
           patientAutoRetrieveQueue.push(studyUID);
           known.add(studyUID);
+          patientStudyModalityByUID.set(studyUID, (study.modalities || []).filter(Boolean).join("/"));
         });
       }
 
@@ -745,7 +767,7 @@
 
         patientAutoRetrieveActiveStudyUID = nextStudyUID;
         try {
-          const payload = await triggerPatientRetrieve(nextStudyUID);
+          const payload = await triggerPatientRetrieve(nextStudyUID, patientStudyModalityByUID.get(nextStudyUID) || "");
           if (payload?.job_id) {
             watchPatientRetrieveJob(payload.job_id, nextStudyUID);
             return;
@@ -1218,6 +1240,304 @@
         syncSummary();
       }
 
+      function setOperatorAccess(canView) {
+        if (!operatorPanelToggle) {
+          return;
+        }
+        if (canView) {
+          operatorPanelToggle.hidden = false;
+          return;
+        }
+        operatorPanelToggle.hidden = true;
+        operatorPanelToggle.setAttribute("aria-pressed", "false");
+        operatorPanelToggle.textContent = "Métricas y auditoría";
+        if (operatorPanel) {
+          operatorPanel.hidden = true;
+          if (operatorPanel.parentElement) {
+            operatorPanel.parentElement.classList.remove("operator-open");
+          }
+        }
+      }
+
+      function updateFeedbackAccess() {
+        if (!feedbackOpenButton) {
+          return;
+        }
+        const loggedIn = Boolean(activePatientDocument || activePhysicianUsername);
+        feedbackOpenButton.hidden = !loggedIn;
+        if (!loggedIn && feedbackDialog && !feedbackDialog.hidden) {
+          feedbackDialog.hidden = true;
+        }
+      }
+
+      function operatorWindow() {
+        return operatorWindowSelect ? operatorWindowSelect.value : "7d";
+      }
+
+      async function fetchOperatorJSON(path) {
+        const response = await fetch(path, { headers: { Accept: "application/json" } });
+        if (!response.ok) {
+          const err = new Error("operator_request_failed");
+          err.status = response.status;
+          throw err;
+        }
+        return response.json();
+      }
+
+      function operatorOutcomeBadge(outcome) {
+        const safe = String(outcome || "").toLowerCase();
+        const known = safe === "success" || safe === "denied" || safe === "failure";
+        const cls = known ? " outcome-" + safe : "";
+        return '<span class="outcome-badge' + cls + '">' + escapeHTML(outcome || "-") + "</span>";
+      }
+
+      function operatorTimestamp(iso) {
+        if (!iso) {
+          return "-";
+        }
+        const date = new Date(iso);
+        if (Number.isNaN(date.getTime())) {
+          return escapeHTML(iso);
+        }
+        return date.toLocaleString("es-AR", { dateStyle: "short", timeStyle: "medium" });
+      }
+
+      async function loadOperatorUsage() {
+        await Promise.all([loadOperatorSummary(), loadOperatorEvents(), loadOperatorComments()]);
+      }
+
+      function operatorCommentAuthor(comment) {
+        const name = String(comment.actor_name || "").trim();
+        const kindLabels = { patient: "Paciente", physician: "Profesional", public: "Anónimo" };
+        const kind = kindLabels[comment.actor_kind] || comment.actor_kind || "Anónimo";
+        const role = String(comment.actor_role || "").trim();
+        let label = name || kind;
+        const suffix = name ? kind : "";
+        const parts = [label];
+        if (suffix && suffix !== label) {
+          parts.push(suffix);
+        }
+        if (role && role !== "public") {
+          parts.push(role);
+        }
+        return parts.join(" · ");
+      }
+
+      async function loadOperatorComments() {
+        if (!operatorCommentsList) {
+          return;
+        }
+        operatorCommentsList.innerHTML = '<div class="empty-state">Cargando comentarios...</div>';
+        try {
+          const payload = await fetchOperatorJSON("/api/operator/feedback?limit=50");
+          const comments = payload.comments || [];
+          if (!comments.length) {
+            operatorCommentsList.innerHTML = '<div class="empty-state">Sin comentarios.</div>';
+            return;
+          }
+          operatorCommentsList.innerHTML = comments
+            .map(comment =>
+              '<article class="operator-comment">' +
+                '<div class="operator-comment-meta">' +
+                  '<span class="operator-comment-author">' + escapeHTML(operatorCommentAuthor(comment)) + "</span>" +
+                  '<span class="operator-comment-time">' + escapeHTML(operatorTimestamp(comment.created_at)) + "</span>" +
+                "</div>" +
+                '<div class="operator-comment-body">' + escapeHTML(comment.message || "") + "</div>" +
+              "</article>"
+            )
+            .join("");
+        } catch (error) {
+          const msg = error?.status === 403
+            ? "No tiene permisos para ver comentarios."
+            : "No se pudieron cargar los comentarios.";
+          operatorCommentsList.innerHTML = '<div class="empty-state">' + msg + "</div>";
+        }
+      }
+
+      async function loadOperatorSummary() {
+        operatorSummaryCards.innerHTML = '<div class="empty-state">Cargando métricas...</div>';
+        try {
+          const payload = await fetchOperatorJSON(
+            "/api/operator/usage/summary?window=" + encodeURIComponent(operatorWindow())
+          );
+          renderOperatorSummary(payload);
+        } catch (error) {
+          const msg = error?.status === 403
+            ? "No tiene permisos para ver métricas."
+            : "No se pudieron cargar las métricas.";
+          operatorSummaryCards.innerHTML = '<div class="empty-state">' + msg + "</div>";
+          operatorBreakdowns.innerHTML = "";
+        }
+      }
+
+      function renderOperatorSummary(payload) {
+        const byOutcome = {};
+        (payload.by_outcome || []).forEach(item => {
+          byOutcome[item.outcome] = item.total;
+        });
+        const logins = payload.logins || {};
+        const cards = [
+          { label: "Acciones totales", value: payload.total || 0 },
+          { label: "Éxito", value: byOutcome.success || 0 },
+          { label: "Denegadas", value: byOutcome.denied || 0 },
+          { label: "Fallidas", value: byOutcome.failure || 0 },
+          { label: "Pacientes únicos", value: logins.unique_patients || 0 },
+          { label: "Logins de pacientes", value: logins.patient_logins || 0 },
+          { label: "Profesionales únicos", value: logins.unique_physician_logins || 0 },
+          { label: "Logins de profesionales", value: logins.physician_logins || 0 }
+        ];
+        operatorSummaryCards.innerHTML = cards
+          .map(card =>
+            '<div class="operator-metric-card"><div class="metric-label">' +
+            escapeHTML(card.label) +
+            '</div><div class="metric-value">' +
+            escapeHTML(String(card.value)) +
+            "</div></div>"
+          )
+          .join("");
+
+        const actions = payload.by_action || [];
+        const previous = operatorEventsAction.value;
+        operatorEventsAction.innerHTML =
+          '<option value="">Todas</option>' +
+          actions
+            .map(item => '<option value="' + escapeHTML(item.action) + '">' + escapeHTML(item.action) + "</option>")
+            .join("");
+        operatorEventsAction.value = previous;
+
+        if (!actions.length) {
+          operatorBreakdowns.innerHTML = '<div class="empty-state">Sin acciones en la ventana seleccionada.</div>';
+          return;
+        }
+        const rows = actions
+          .map(item =>
+            "<tr><td>" + escapeHTML(item.action) + "</td><td>" + (item.total || 0) +
+            "</td><td>" + (item.success || 0) + "</td><td>" + (item.denied || 0) +
+            "</td><td>" + (item.failure || 0) + "</td><td>" + (item.avg_latency_ms || 0) +
+            " ms</td><td>" + (item.p95_latency_ms || 0) + " ms</td></tr>"
+          )
+          .join("");
+        const actionTable =
+          "<table><thead><tr><th>Acción</th><th>Total</th><th>OK</th><th>Deneg.</th><th>Fallo</th><th>Lat. prom</th><th>p95</th></tr></thead><tbody>" +
+          rows +
+          "</tbody></table>";
+
+        const statuses = payload.by_status || [];
+        let statusTable = "";
+        if (statuses.length) {
+          const statusRows = statuses
+            .map(item => {
+              const code = item.status_code || 0;
+              const label = code === 0 ? "Sin código" : String(code);
+              return "<tr><td>" + escapeHTML(label) + "</td><td>" + (item.total || 0) + "</td></tr>";
+            })
+            .join("");
+          statusTable =
+            "<table><thead><tr><th>Código HTTP</th><th>Cantidad</th></tr></thead><tbody>" +
+            statusRows +
+            "</tbody></table>";
+        }
+
+        const modalities = payload.downloads_by_modality || [];
+        let modalityTable = "";
+        if (modalities.length) {
+          const modalityRows = modalities
+            .map(item =>
+              "<tr><td>" + escapeHTML(item.modality || "UNKNOWN") + "</td><td>" + (item.total || 0) + "</td></tr>"
+            )
+            .join("");
+          modalityTable =
+            "<table><thead><tr><th>Descargas por modalidad</th><th>Cantidad</th></tr></thead><tbody>" +
+            modalityRows +
+            "</tbody></table>";
+        }
+
+        const retrieveModalities = payload.retrieves_by_modality || [];
+        let retrieveModalityTable = "";
+        if (retrieveModalities.length) {
+          const retrieveModalityRows = retrieveModalities
+            .map(item =>
+              "<tr><td>" + escapeHTML(item.modality || "UNKNOWN") + "</td><td>" + (item.total || 0) + "</td></tr>"
+            )
+            .join("");
+          retrieveModalityTable =
+            "<table><thead><tr><th>Retrieves por modalidad</th><th>Cantidad</th></tr></thead><tbody>" +
+            retrieveModalityRows +
+            "</tbody></table>";
+        }
+
+        const retrievers = payload.top_physician_retrievers || [];
+        let retrieverTable = "";
+        if (retrievers.length) {
+          const retrieverRows = retrievers
+            .map(item =>
+              "<tr><td>" + escapeHTML(item.dni || "—") + "</td><td>" + (item.total || 0) + "</td></tr>"
+            )
+            .join("");
+          retrieverTable =
+            "<table><thead><tr><th>Top profesionales por retrieves (DNI)</th><th>Cantidad</th></tr></thead><tbody>" +
+            retrieverRows +
+            "</tbody></table>";
+        }
+
+        operatorBreakdowns.innerHTML =
+          '<div class="operator-breakdown-full">' + actionTable + "</div>" +
+          '<div class="operator-breakdown-grid">' + statusTable + modalityTable + retrieveModalityTable + retrieverTable + "</div>";
+      }
+
+      async function loadOperatorEvents() {
+        operatorEventsTable.innerHTML = '<div class="empty-state">Cargando acciones...</div>';
+        const params = new URLSearchParams({ window: operatorWindow(), limit: "100" });
+        if (operatorEventsAction.value) {
+          params.set("action", operatorEventsAction.value);
+        }
+        if (operatorEventsOutcome.value) {
+          params.set("outcome", operatorEventsOutcome.value);
+        }
+        if (operatorEventsSearch && operatorEventsSearch.value.trim()) {
+          params.set("q", operatorEventsSearch.value.trim());
+        }
+        try {
+          const payload = await fetchOperatorJSON("/api/operator/usage/events?" + params.toString());
+          renderOperatorEvents(payload);
+        } catch (error) {
+          const msg = error?.status === 403
+            ? "No tiene permisos para ver la auditoría."
+            : "No se pudieron cargar las acciones.";
+          operatorEventsTable.innerHTML = '<div class="empty-state">' + msg + "</div>";
+        }
+      }
+
+      function renderOperatorEvents(payload) {
+        const events = payload.events || [];
+        if (!events.length) {
+          operatorEventsTable.innerHTML = '<div class="empty-state">Sin acciones registradas.</div>';
+          return;
+        }
+        const rows = events
+          .map(evt => {
+            let dims = "";
+            try {
+              dims = JSON.stringify(evt.dims || {});
+            } catch (_) {
+              dims = "";
+            }
+            if (dims === "{}") {
+              dims = "";
+            }
+            const actor = [evt.actor_role, evt.actor_id].filter(Boolean).join(" · ") || evt.actor_kind || "-";
+            return "<tr><td>" + operatorTimestamp(evt.occurred_at) + "</td><td>" +
+              escapeHTML(evt.action) + "</td><td>" + escapeHTML(actor) + "</td><td>" +
+              operatorOutcomeBadge(evt.outcome) + "</td><td>" + (evt.status_code || "-") +
+              "</td><td>" + (evt.latency_ms || 0) + " ms</td><td>" + escapeHTML(dims) + "</td></tr>";
+          })
+          .join("");
+        operatorEventsTable.innerHTML =
+          "<table><thead><tr><th>Fecha</th><th>Acción</th><th>Actor</th><th>Resultado</th><th>HTTP</th><th>Latencia</th><th>Dims</th></tr></thead><tbody>" +
+          rows +
+          "</tbody></table>";
+      }
+
       function renderPatientStudies(payload) {
         renderPatientSyncStatus(payload.sync);
         patientFullNameValue.textContent = payload.patient.full_name || "-";
@@ -1458,6 +1778,9 @@
         physicianDniValue.textContent = payload.physician.dni || "-";
         physicianLicenseValue.textContent = payload.physician.license_number || "-";
         const canShare = Boolean(payload.can_share);
+        if (typeof payload.can_view_metrics !== "undefined") {
+          setOperatorAccess(Boolean(payload.can_view_metrics));
+        }
 
         if (!payload.results.length) {
           physicianResultList.innerHTML =
@@ -1502,7 +1825,12 @@
             const sourceNodeAttr = retrieveSourceNode
               ? ' data-physician-source-node="' + escapeHTML(retrieveSourceNode) + '"'
               : "";
-            let retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '"' + sourceNodeAttr + '>Recuperar estudio</button>';
+            const retrieveModality = (result.modalities || []).filter(Boolean).join("/");
+            const modalityAttr = retrieveModality
+              ? ' data-physician-modality="' + escapeHTML(retrieveModality) + '"'
+              : "";
+            const retrieveAttrs = sourceNodeAttr + modalityAttr;
+            let retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '"' + retrieveAttrs + '>Recuperar estudio</button>';
             if (result.retrieve_status === "done" && result.viewer_url) {
               retrieveAction = "";
             } else if (result.source_node_available === false) {
@@ -1510,10 +1838,10 @@
             } else if (result.retrieve_status === "running" || result.retrieve_status === "queued") {
               retrieveAction = '<button class="action action-secondary" type="button" disabled data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">' + escapeHTML(retrieveActionLabel(result.retrieve_status, result.retrieve_phase, result.retrieve_progress)) + '</button>';
             } else if (result.retrieve_status === "failed") {
-              retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '"' + sourceNodeAttr + ' data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">Reintentar recuperación</button>';
+              retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '"' + retrieveAttrs + ' data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">Reintentar recuperación</button>';
             }
             if (result.retrieve_status !== "done" && result.retrieve_status !== "running" && result.retrieve_status !== "queued" && result.retrieve_status !== "failed") {
-              retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '"' + sourceNodeAttr + ' data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">Recuperar estudio</button>';
+              retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '"' + retrieveAttrs + ' data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">Recuperar estudio</button>';
             }
 
             return (
@@ -1570,6 +1898,7 @@
 
       async function loadPatientStudies(documentNumber, options = {}) {
         activePatientDocument = documentNumber;
+        updateFeedbackAccess();
         const silentRefresh = Boolean(options.silentRefresh);
         const restoreStudyUID = options.restoreStudyUID || "";
         const previousScrollX = window.scrollX;
@@ -1729,6 +2058,7 @@
 
       async function loadPhysicianResults(username, options = {}) {
         activePhysicianUsername = username;
+        updateFeedbackAccess();
         const silentRefresh = Boolean(options.silentRefresh);
         const fromAndesAutoRefresh = Boolean(options.fromAndesAutoRefresh);
         const restoreStudyUID = options.restoreStudyUID || "";
@@ -1787,16 +2117,18 @@
         }
       }
 
-      async function triggerPatientRetrieve(studyInstanceUID) {
+      async function triggerPatientRetrieve(studyInstanceUID, modality) {
+        const body = { study_instance_uid: studyInstanceUID };
+        if (modality) {
+          body.modality = modality;
+        }
         const response = await fetch("/api/patient/retrieve", {
           method: "POST",
           headers: {
             Accept: "application/json",
             "Content-Type": "application/json"
           },
-          body: JSON.stringify({
-            study_instance_uid: studyInstanceUID
-          })
+          body: JSON.stringify(body)
         });
 
         if (!response.ok) {
@@ -1968,10 +2300,13 @@
         }
       }
 
-      async function triggerPhysicianRetrieve(studyInstanceUID, sourceNodeId) {
+      async function triggerPhysicianRetrieve(studyInstanceUID, sourceNodeId, modality) {
         const body = { study_instance_uid: studyInstanceUID };
         if (sourceNodeId) {
           body.source_node_id = sourceNodeId;
+        }
+        if (modality) {
+          body.modality = modality;
         }
         const response = await fetch("/api/physician/retrieve", {
           method: "POST",
@@ -2200,6 +2535,137 @@
         clearCalendarPreview(physicianCalendarGrid, "data-physician-calendar-day", syncPhysicianDateSummary);
       });
 
+      if (operatorPanelToggle) {
+        operatorPanelToggle.addEventListener("click", () => {
+          const opening = operatorPanel.hidden;
+          operatorPanel.hidden = !opening;
+          operatorPanelToggle.setAttribute("aria-pressed", String(opening));
+          if (operatorPanel.parentElement) {
+            operatorPanel.parentElement.classList.toggle("operator-open", opening);
+          }
+          operatorPanelToggle.textContent = opening ? "Volver a la búsqueda" : "Métricas y auditoría";
+          if (opening) {
+            loadOperatorUsage();
+          }
+        });
+      }
+      if (operatorRefreshButton) {
+        operatorRefreshButton.addEventListener("click", () => loadOperatorUsage());
+      }
+      if (operatorWindowSelect) {
+        operatorWindowSelect.addEventListener("change", () => loadOperatorUsage());
+      }
+      if (operatorEventsAction) {
+        operatorEventsAction.addEventListener("change", () => loadOperatorEvents());
+      }
+      if (operatorEventsOutcome) {
+        operatorEventsOutcome.addEventListener("change", () => loadOperatorEvents());
+      }
+      if (operatorEventsSearch) {
+        let operatorSearchTimer = null;
+        operatorEventsSearch.addEventListener("input", () => {
+          window.clearTimeout(operatorSearchTimer);
+          operatorSearchTimer = window.setTimeout(() => loadOperatorEvents(), 300);
+        });
+      }
+      if (operatorCommentsRefresh) {
+        operatorCommentsRefresh.addEventListener("click", () => loadOperatorComments());
+      }
+
+      function setFeedbackStatus(text, kind) {
+        if (!feedbackStatus) {
+          return;
+        }
+        feedbackStatus.textContent = text || "";
+        feedbackStatus.className = "feedback-status" + (kind ? " feedback-status-" + kind : "");
+      }
+
+      function openFeedbackDialog() {
+        if (!feedbackDialog) {
+          return;
+        }
+        feedbackDialog.hidden = false;
+        setFeedbackStatus("");
+        if (feedbackMessage) {
+          feedbackMessage.value = "";
+          window.setTimeout(() => feedbackMessage.focus(), 50);
+        }
+      }
+
+      function closeFeedbackDialog() {
+        if (feedbackDialog) {
+          feedbackDialog.hidden = true;
+        }
+      }
+
+      async function submitFeedback() {
+        if (!feedbackMessage) {
+          return;
+        }
+        const message = feedbackMessage.value.trim();
+        if (!message) {
+          setFeedbackStatus("Escribí un comentario antes de enviar.", "error");
+          feedbackMessage.focus();
+          return;
+        }
+        if (feedbackSendButton) {
+          feedbackSendButton.disabled = true;
+        }
+        setFeedbackStatus("Enviando...", "");
+        try {
+          const response = await fetch("/api/feedback", {
+            method: "POST",
+            headers: {
+              Accept: "application/json",
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ message })
+          });
+          if (!response.ok) {
+            throw new Error("feedback_failed");
+          }
+          setFeedbackStatus("¡Gracias por tu comentario!", "ok");
+          feedbackMessage.value = "";
+          window.setTimeout(closeFeedbackDialog, 1200);
+        } catch (_error) {
+          setFeedbackStatus("No se pudo enviar. Intentá nuevamente.", "error");
+        } finally {
+          if (feedbackSendButton) {
+            feedbackSendButton.disabled = false;
+          }
+        }
+      }
+
+      if (feedbackOpenButton) {
+        feedbackOpenButton.addEventListener("click", openFeedbackDialog);
+      }
+      if (feedbackCloseButton) {
+        feedbackCloseButton.addEventListener("click", closeFeedbackDialog);
+      }
+      if (feedbackDialog) {
+        feedbackDialog.addEventListener("click", event => {
+          if (event.target === feedbackDialog) {
+            closeFeedbackDialog();
+          }
+        });
+      }
+      if (feedbackSendButton) {
+        feedbackSendButton.addEventListener("click", submitFeedback);
+      }
+      if (feedbackMessage) {
+        feedbackMessage.addEventListener("keydown", event => {
+          if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+            event.preventDefault();
+            submitFeedback();
+          }
+        });
+      }
+      document.addEventListener("keydown", event => {
+        if (event.key === "Escape" && feedbackDialog && !feedbackDialog.hidden) {
+          closeFeedbackDialog();
+        }
+      });
+
       physicianCalendarPrev.addEventListener("click", () => {
         if (physicianDateFilter.viewMonth === 0) {
           physicianDateFilter.viewMonth = 11;
@@ -2425,12 +2891,13 @@
           return;
         }
         const sourceNodeId = button.getAttribute("data-physician-source-node") || "";
+        const modality = button.getAttribute("data-physician-modality") || "";
 
         button.disabled = true;
         button.textContent = "Recuperando...";
 
         try {
-          const payload = await triggerPhysicianRetrieve(studyInstanceUID, sourceNodeId);
+          const payload = await triggerPhysicianRetrieve(studyInstanceUID, sourceNodeId, modality);
           if (payload?.job_id) {
             watchPhysicianRetrieveJob(payload.job_id, studyInstanceUID);
           }
@@ -2589,6 +3056,7 @@
           physicianDniValue.textContent = payload.physician?.dni || dniValue;
           physicianLicenseValue.textContent = payload.physician?.license_number || "-";
           physicianNote.textContent = payload.message || "Acceso validado.";
+          setOperatorAccess(Boolean(payload.can_view_metrics));
           try {
             await loadPhysicianResults(dniValue, { useInitialCachePeriod: true });
           } catch (error) {

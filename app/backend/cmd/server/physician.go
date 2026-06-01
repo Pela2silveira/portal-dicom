@@ -16,10 +16,11 @@ import (
 )
 
 type PhysicianResultsResponse struct {
-	Physician PhysicianSummary       `json:"physician"`
-	Filters   PhysicianSearchFilters `json:"filters"`
-	Results   []PhysicianResult      `json:"results"`
-	CanShare  bool                   `json:"can_share"`
+	Physician      PhysicianSummary       `json:"physician"`
+	Filters        PhysicianSearchFilters `json:"filters"`
+	Results        []PhysicianResult      `json:"results"`
+	CanShare       bool                   `json:"can_share"`
+	CanViewMetrics bool                   `json:"can_view_metrics"`
 }
 
 type PhysicianLoginRequest struct {
@@ -28,10 +29,12 @@ type PhysicianLoginRequest struct {
 }
 
 type PhysicianLoginResponse struct {
-	Status       string           `json:"status"`
-	Message      string           `json:"message"`
-	Physician    PhysicianSummary `json:"physician,omitempty"`
-	SessionToken string           `json:"session_token,omitempty"`
+	Status         string           `json:"status"`
+	Message        string           `json:"message"`
+	Physician      PhysicianSummary `json:"physician,omitempty"`
+	SessionToken   string           `json:"session_token,omitempty"`
+	CanShare       bool             `json:"can_share"`
+	CanViewMetrics bool             `json:"can_view_metrics"`
 }
 
 type PhysicianResultsErrorResponse struct {
@@ -46,6 +49,10 @@ type PhysicianRetrieveRequest struct {
 	// When empty/invalid the backend falls back to inferring it from the
 	// physician's recent queries / cached studies.
 	SourceNodeID string `json:"source_node_id,omitempty"`
+	// Modality is the study's modality as known by the UI search results. At
+	// retrieve time the study is not local yet, so the UI is the source for the
+	// usage "retrieves by modality" breakdown.
+	Modality string `json:"modality,omitempty"`
 }
 
 type PhysicianRetrieveResponse struct {
@@ -119,13 +126,15 @@ func clonePhysicianResults(results []PhysicianResult) []PhysicianResult {
 	return cloned
 }
 
-func writePhysicianLoginResponse(w http.ResponseWriter, statusCode int, status, message string, physician PhysicianSummary) {
+func (a *App) writePhysicianLoginResponse(w http.ResponseWriter, statusCode int, status, message string, physician PhysicianSummary) {
 	payload := PhysicianLoginResponse{
 		Status:  strings.TrimSpace(status),
 		Message: strings.TrimSpace(message),
 	}
 	if strings.TrimSpace(physician.ID) != "" {
 		payload.Physician = physician
+		payload.CanShare = a.physicianCanShare(physician)
+		payload.CanViewMetrics = a.physicianCanViewMetrics(physician)
 	}
 	writeJSON(w, statusCode, payload)
 }
@@ -421,10 +430,11 @@ func (a *App) handlePhysicianResults(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := PhysicianResultsResponse{
-		Physician: physician,
-		Filters:   filters,
-		Results:   results,
-		CanShare:  a.physicianCanShare(physician),
+		Physician:      physician,
+		Filters:        filters,
+		Results:        results,
+		CanShare:       a.physicianCanShare(physician),
+		CanViewMetrics: a.physicianCanViewMetrics(physician),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -465,6 +475,10 @@ func (a *App) handlePhysicianDownload(w http.ResponseWriter, r *http.Request) {
 	if !isLocal {
 		http.Error(w, "study not available for physician download", http.StatusNotFound)
 		return
+	}
+
+	if mods, mErr := a.physicianStudyModalities(ctx, physician.ID, studyInstanceUID); mErr == nil {
+		setActionDim(r.Context(), "modality", usageModalityDim(mods))
 	}
 
 	usedDownloads, weeklyLimit, allowed, err := a.enforcePhysicianDownloadLimit(ctx, physician.ID, studyInstanceUID)
@@ -514,13 +528,13 @@ func (a *App) handlePhysicianLogin(w http.ResponseWriter, r *http.Request) {
 
 	var reqBody PhysicianLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-		writePhysicianLoginResponse(w, http.StatusBadRequest, "invalid_request", "JSON inválido.", PhysicianSummary{})
+		a.writePhysicianLoginResponse(w, http.StatusBadRequest, "invalid_request", "JSON inválido.", PhysicianSummary{})
 		return
 	}
 
 	reqBody.Username = normalizeProfessionalDocumentInput(reqBody.Username)
 	if reqBody.Username == "" {
-		writePhysicianLoginResponse(w, http.StatusBadRequest, "invalid_request", "username es requerido.", PhysicianSummary{})
+		a.writePhysicianLoginResponse(w, http.StatusBadRequest, "invalid_request", "username es requerido.", PhysicianSummary{})
 		return
 	}
 	setActionDim(r.Context(), "identifier", reqBody.Username)
@@ -534,14 +548,14 @@ func (a *App) handlePhysicianLogin(w http.ResponseWriter, r *http.Request) {
 	if a.externalConfig != nil && !a.externalConfig.Professional.FakeAuth {
 		if err := authenticateProfessionalLDAP(ctx, reqBody.Username, reqBody.Password); err != nil {
 			if errors.Is(err, ErrProfessionalInvalidCredentials) {
-				writePhysicianLoginResponse(w, http.StatusUnauthorized, "invalid_credentials", "Usuario o contraseña inválidos.", PhysicianSummary{})
+				a.writePhysicianLoginResponse(w, http.StatusUnauthorized, "invalid_credentials", "Usuario o contraseña inválidos.", PhysicianSummary{})
 				return
 			}
 			a.log("error", "physician_ldap_auth_failed", map[string]any{
 				"username": reqBody.Username,
 				"error":    err.Error(),
 			})
-			writePhysicianLoginResponse(w, http.StatusBadGateway, "provider_unavailable", "No se pudo validar la autenticación institucional.", PhysicianSummary{})
+			a.writePhysicianLoginResponse(w, http.StatusBadGateway, "provider_unavailable", "No se pudo validar la autenticación institucional.", PhysicianSummary{})
 			return
 		}
 	}
@@ -549,25 +563,25 @@ func (a *App) handlePhysicianLogin(w http.ResponseWriter, r *http.Request) {
 	physician, err := a.ensurePhysicianRecord(ctx, reqBody.Username)
 	if err != nil {
 		if errors.Is(err, ErrProfessionalIdentityNotFound) {
-			writePhysicianLoginResponse(w, http.StatusNotFound, "professional_not_found", "Profesional no registrado.", PhysicianSummary{})
+			a.writePhysicianLoginResponse(w, http.StatusNotFound, "professional_not_found", "Profesional no registrado.", PhysicianSummary{})
 			return
 		}
 		if errors.Is(err, ErrProfessionalNotLicensed) {
-			writePhysicianLoginResponse(w, http.StatusForbidden, "professional_not_licensed", "El profesional no se encuentra matriculado.", PhysicianSummary{})
+			a.writePhysicianLoginResponse(w, http.StatusForbidden, "professional_not_licensed", "El profesional no se encuentra matriculado.", PhysicianSummary{})
 			return
 		}
-		writePhysicianLoginResponse(w, http.StatusBadGateway, "provider_unavailable", "No se pudo validar el acceso profesional.", PhysicianSummary{})
+		a.writePhysicianLoginResponse(w, http.StatusBadGateway, "provider_unavailable", "No se pudo validar el acceso profesional.", PhysicianSummary{})
 		return
 	}
 
 	_, rawSessionToken, expiresAt, err := a.createPhysicianSession(ctx, physician.ID, r)
 	if err != nil {
-		writePhysicianLoginResponse(w, http.StatusInternalServerError, "internal_error", "No se pudo crear la sesión profesional.", PhysicianSummary{})
+		a.writePhysicianLoginResponse(w, http.StatusInternalServerError, "internal_error", "No se pudo crear la sesión profesional.", PhysicianSummary{})
 		return
 	}
 	setPortalSessionCookie(w, r, physicianSessionCookieName, rawSessionToken, expiresAt)
 
-	writePhysicianLoginResponse(w, http.StatusOK, "ready", "Ingreso profesional validado.", physician)
+	a.writePhysicianLoginResponse(w, http.StatusOK, "ready", "Ingreso profesional validado.", physician)
 }
 
 func (a *App) handlePhysicianLogout(w http.ResponseWriter, r *http.Request) {
@@ -644,6 +658,13 @@ func (a *App) handlePhysicianRetrieve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "physician session does not match requested user", http.StatusForbidden)
 		return
 	}
+
+	physicianDNI := strings.TrimSpace(physician.Username)
+	if physicianDNI == "" {
+		physicianDNI = strings.TrimSpace(physician.DNI)
+	}
+	setActionDim(r.Context(), "physician_dni", physicianDNI)
+	setActionDim(r.Context(), "modality", usageModalityDim(strings.Split(reqBody.Modality, "/")))
 
 	resp, err := a.queuePhysicianRetrieve(ctx, physician, reqBody.StudyInstanceUID, reqBody.SourceNodeID)
 	if err != nil {

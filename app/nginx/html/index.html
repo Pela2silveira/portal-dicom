@@ -220,9 +220,61 @@
               <p class="eyebrow">Profesional</p>
               <h3>Búsqueda y recuperación</h3>
             </div>
-            <button class="action action-secondary" type="button" data-reset>Salir</button>
+            <div class="workspace-header-actions">
+              <button class="action action-secondary" type="button" id="operator-panel-toggle" aria-pressed="false" hidden>Métricas y auditoría</button>
+              <button class="action action-secondary" type="button" data-reset>Salir</button>
+            </div>
           </div>
           <div class="workspace-stack">
+            <section class="workspace-card" id="operator-panel" hidden>
+              <div class="operator-panel-header">
+                <h4>Métricas de uso y acciones auditadas</h4>
+                <div class="operator-window">
+                  <label for="operator-window-select">Ventana</label>
+                  <select id="operator-window-select">
+                    <option value="24h">Últimas 24 h</option>
+                    <option value="7d" selected>Últimos 7 días</option>
+                    <option value="30d">Últimos 30 días</option>
+                  </select>
+                  <button class="action action-secondary" type="button" id="operator-refresh">Actualizar</button>
+                </div>
+              </div>
+              <div class="operator-summary-cards" id="operator-summary-cards">
+                <div class="empty-state">Sin datos cargados.</div>
+              </div>
+              <div class="operator-breakdowns" id="operator-breakdowns"></div>
+              <div class="operator-events-controls">
+                <div class="field-group">
+                  <label for="operator-events-action">Acción</label>
+                  <select id="operator-events-action"><option value="">Todas</option></select>
+                </div>
+                <div class="field-group">
+                  <label for="operator-events-outcome">Resultado</label>
+                  <select id="operator-events-outcome">
+                    <option value="">Todos</option>
+                    <option value="success">success</option>
+                    <option value="denied">denied</option>
+                    <option value="failure">failure</option>
+                  </select>
+                </div>
+                <div class="field-group">
+                  <label for="operator-events-search">Buscar en dims</label>
+                  <input id="operator-events-search" type="search" autocomplete="off" spellcheck="false" placeholder="Ej.: CT, 31595723, study_uid...">
+                </div>
+              </div>
+              <div class="operator-events-table" id="operator-events-table">
+                <div class="empty-state">Sin acciones registradas.</div>
+              </div>
+              <div class="operator-comments">
+                <div class="operator-comments-header">
+                  <h4>Comentarios de usuarios</h4>
+                  <button class="action action-secondary" type="button" id="operator-comments-refresh">Actualizar</button>
+                </div>
+                <div class="operator-comments-list" id="operator-comments-list">
+                  <div class="empty-state">Sin comentarios.</div>
+                </div>
+              </div>
+            </section>
             <section class="workspace-card workspace-card-primary">
               <h4>Datos del Profesional</h4>
               <div class="summary-grid summary-grid-compact">
@@ -406,6 +458,27 @@
         </div>
       </section>
 
+      <button class="feedback-fab" type="button" id="feedback-open" aria-haspopup="dialog" aria-controls="feedback-dialog" hidden>
+        <span aria-hidden="true">💬</span> Comentarios
+      </button>
+
+      <section class="feedback-overlay" id="feedback-dialog" role="dialog" aria-modal="true" aria-labelledby="feedback-title" hidden>
+        <div class="feedback-dialog">
+          <div class="feedback-header">
+            <h4 id="feedback-title">Dejanos tu comentario</h4>
+            <button class="action ghost" type="button" id="feedback-close" aria-label="Cerrar">✕</button>
+          </div>
+          <div class="feedback-body">
+            <p class="feedback-hint">Contanos qué te pareció el portal o reportá un problema. No incluyas datos sensibles.</p>
+            <textarea id="feedback-message" rows="5" maxlength="2000" placeholder="Escribí tu comentario..." spellcheck="true"></textarea>
+            <div class="feedback-footer">
+              <span class="feedback-status" id="feedback-status" role="status" aria-live="polite"></span>
+              <button class="action action-primary" type="button" id="feedback-send">Enviar</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <footer class="site-footer">
         <div class="site-footer-copy">
           <strong>Portal de Imágenes</strong> integra acceso, consulta y visualización de estudios por imágenes desde un único portal.
@@ -414,7 +487,7 @@
             <a href="https://play.google.com/store/apps/details?id=org.andes.mobile" target="_blank" rel="noopener noreferrer">App Android de Salud</a>
             <a href="https://misalud.andes.gob.ar/login" target="_blank" rel="noopener noreferrer">Portal Mi Salud</a>
           </div>
-          <div class="site-version" aria-label="Versión">v0.3.0</div>
+          <div class="site-version" aria-label="Versión">v0.4.0</div>
         </div>
         <div class="footer-brand-row">
           <div class="footer-logo" aria-label="ANDES">

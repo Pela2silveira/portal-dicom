@@ -68,6 +68,9 @@ type RBACConfig struct {
 	Roles                map[string][]string `json:"roles"`
 	PhysicianSharers     []string            `json:"physician_sharers"`
 	PhysicianDefaultRole string              `json:"physician_default_role"`
+	// Operators are professionals (by username/DNI) granted the operator role,
+	// which unlocks the read-only usage metrics and audited-actions view.
+	Operators []string `json:"operators"`
 }
 
 // ObservabilityConfig toggles audit logging and usage metrics. When *Enabled is

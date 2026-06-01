@@ -80,6 +80,7 @@
   },
   "rbac": {
     "physician_sharers": [],
+    "operators": [],
     "physician_default_role": "physician",
     "roles": {
       "patient": ["share_link:create", "share_link:revoke", "study:retrieve"],

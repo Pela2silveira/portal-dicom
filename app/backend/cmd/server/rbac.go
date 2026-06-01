@@ -23,6 +23,9 @@ const (
 	ActionShareLinkCreate   ActionID = "share_link.create"
 	ActionShareLinkRevoke   ActionID = "share_link.revoke"
 	ActionShareLinkConsume  ActionID = "share_link.consume"
+	ActionUsageRead         ActionID = "usage.read"
+	ActionFeedbackCreate    ActionID = "feedback.create"
+	ActionFeedbackRead      ActionID = "feedback.read"
 )
 
 // SubjectKind is the type of actor that can perform an action.
@@ -131,6 +134,41 @@ var actionCatalog = map[ActionID]Action{
 		Auditable: true,
 		Metered:   true,
 	},
+	// Operator-only read of usage metrics / audited actions. Resolved as a
+	// physician session whose role is "operator" (rbac.operators). Audited but
+	// NOT metered, to avoid the view recording usage about itself.
+	ActionUsageRead: {
+		ID:         ActionUsageRead,
+		Resource:   "usage",
+		Permission: "usage:read",
+		Subjects:   []SubjectKind{SubjectPhysician},
+		Mutating:   false,
+		Auditable:  true,
+		Metered:    false,
+	},
+	// Any logged-in portal user (patient or physician) can leave a comment.
+	// Anonymous visitors are not allowed (no SubjectPublic), so the decorator
+	// fails closed with 401. No extra RBAC permission gate; same-origin is
+	// enforced because it mutates. Audited + metered like other writes.
+	ActionFeedbackCreate: {
+		ID:        ActionFeedbackCreate,
+		Resource:  "feedback",
+		Subjects:  []SubjectKind{SubjectPatient, SubjectPhysician},
+		Mutating:  true,
+		Auditable: true,
+		Metered:   true,
+	},
+	// Operator-only read of submitted comments (shown at the bottom of the
+	// metrics/audit view). Resolved as a physician session with operator role.
+	ActionFeedbackRead: {
+		ID:         ActionFeedbackRead,
+		Resource:   "feedback",
+		Permission: "feedback:read",
+		Subjects:   []SubjectKind{SubjectPhysician},
+		Mutating:   false,
+		Auditable:  true,
+		Metered:    false,
+	},
 }
 
 // Roles known to the system. LDAP/IdP integration for roles is intentionally
@@ -149,6 +187,7 @@ const (
 type RBACPolicy struct {
 	roles                map[string]map[string]bool // role -> set of permissions
 	physicianSharers     map[string]bool            // lowercased username/dni -> sharer
+	operators            map[string]bool            // lowercased username/dni -> operator
 	physicianDefaultRole string
 }
 
@@ -170,6 +209,7 @@ func buildRBACPolicy(cfg *ExternalConfig) *RBACPolicy {
 	policy := &RBACPolicy{
 		roles:                map[string]map[string]bool{},
 		physicianSharers:     map[string]bool{},
+		operators:            map[string]bool{},
 		physicianDefaultRole: RolePhysician,
 	}
 
@@ -189,6 +229,13 @@ func buildRBACPolicy(cfg *ExternalConfig) *RBACPolicy {
 		key := strings.ToLower(strings.TrimSpace(raw))
 		if key != "" {
 			policy.physicianSharers[key] = true
+		}
+	}
+
+	for _, raw := range cfg.RBAC.Operators {
+		key := strings.ToLower(strings.TrimSpace(raw))
+		if key != "" {
+			policy.operators[key] = true
 		}
 	}
 
@@ -229,6 +276,13 @@ func (p *RBACPolicy) roleForPhysician(summary PhysicianSummary) string {
 		return RolePhysician
 	}
 	candidates := []string{summary.Username, summary.DNI}
+	// Operator outranks sharer; check it across all identifiers first.
+	for _, c := range candidates {
+		key := strings.ToLower(strings.TrimSpace(c))
+		if key != "" && p.operators[key] {
+			return RoleOperator
+		}
+	}
 	for _, c := range candidates {
 		key := strings.ToLower(strings.TrimSpace(c))
 		if key != "" && p.physicianSharers[key] {
