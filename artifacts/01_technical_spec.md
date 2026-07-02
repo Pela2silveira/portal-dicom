@@ -13,6 +13,7 @@
 - Integración HIS **solo configurable** (valores provistos posteriormente).
 - Excepción transitoria permitida: mientras no exista integración REST operativa del HIS, el backend puede consultar MongoDB en forma directa solo para resolver identidad de paciente e identificadores alternativos.
 - Cuando el provider activo es `his_mongo_direct`, el backend consulta la colección Mongo `paciente` en modo read-only y persiste en Postgres los resultados exitosos ya normalizados.
+- El email destinatario del código de acceso se resuelve con precedencia: primero la cuenta de la colección Mongo `pacienteApp` cuyo array `pacientes` referencia al `_id` del paciente con `relacion = "principal"` (campo `email` en la raíz), y como fallback el primer email activo de `paciente.contacto`. La consulta a `pacienteApp` es read-only, best-effort y no bloquea el envío ante error si existe email de contacto. Este vínculo cuenta↔pacientes es también la base prevista para que, a futuro, una cuenta pueda impersonar perfiles relacionados (por ejemplo hijos).
 - Los demográficos visibles del paciente (`full_name`, `birth_date`, `sex`, `gender_identity`) deben priorizar la fuente de identidad HIS/Mongo y no deben ser reemplazados por `PatientName` DICOM durante QIDO.
 - Configuración de PACS remotos (dcm4chee, Orthanc, legacy) **externalizada**.
 - La landing pública forma parte del MVP como experiencia visual, aunque sin autenticación real.
