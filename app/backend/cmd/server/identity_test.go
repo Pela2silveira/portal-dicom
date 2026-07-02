@@ -210,6 +210,96 @@ func TestUnavailableProfessionalIdentitySource(t *testing.T) {
 	}
 }
 
+// --- Patient email selection ---
+
+func TestActivePatientContactoEmail(t *testing.T) {
+	cases := []struct {
+		name      string
+		contactos []MongoPacienteContacto
+		want      string
+	}{
+		{"none", nil, ""},
+		{"inactive skipped", []MongoPacienteContacto{{Activo: false, Tipo: "email", Valor: "a@b.com"}}, ""},
+		{"non-email skipped", []MongoPacienteContacto{{Activo: true, Tipo: "celular", Valor: "123"}}, ""},
+		{"first active email", []MongoPacienteContacto{
+			{Activo: true, Tipo: "celular", Valor: "123"},
+			{Activo: true, Tipo: "EMAIL", Valor: " first@b.com "},
+			{Activo: true, Tipo: "email", Valor: "second@b.com"},
+		}, "first@b.com"},
+		{"blank value skipped", []MongoPacienteContacto{
+			{Activo: true, Tipo: "email", Valor: "   "},
+			{Activo: true, Tipo: "email", Valor: "real@b.com"},
+		}, "real@b.com"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := activePatientContactoEmail(tc.contactos); got != tc.want {
+				t.Errorf("activePatientContactoEmail() = %q want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPreferPatientAppEmail(t *testing.T) {
+	cases := []struct {
+		name          string
+		appEmail      string
+		contactoEmail string
+		want          string
+	}{
+		{"app email wins", "app@b.com", "contacto@b.com", "app@b.com"},
+		{"app email trimmed", "  app@b.com  ", "contacto@b.com", "app@b.com"},
+		{"blank app falls back to contacto", "   ", "contacto@b.com", "contacto@b.com"},
+		{"empty app falls back to contacto", "", "contacto@b.com", "contacto@b.com"},
+		{"both empty", "", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := preferPatientAppEmail(tc.appEmail, tc.contactoEmail); got != tc.want {
+				t.Errorf("preferPatientAppEmail(%q,%q) = %q want %q", tc.appEmail, tc.contactoEmail, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestMongoPacienteToPatientIdentity_EmailPrecedence(t *testing.T) {
+	doc := MongoPacienteDocument{
+		Nombre:   "Juan",
+		Apellido: "Perez",
+		Contacto: []MongoPacienteContacto{{Activo: true, Tipo: "email", Valor: "contacto@b.com"}},
+	}
+
+	withApp := mongoPacienteToPatientIdentity("30111222", doc, "app@b.com")
+	if withApp.Email != "app@b.com" {
+		t.Errorf("pacienteApp email should take precedence, got %q", withApp.Email)
+	}
+	if !hasEmailAlternate(withApp.AlternateIDs, "app@b.com") {
+		t.Errorf("expected app email alternate id, got %+v", withApp.AlternateIDs)
+	}
+
+	fallback := mongoPacienteToPatientIdentity("30111222", doc, "")
+	if fallback.Email != "contacto@b.com" {
+		t.Errorf("expected contacto fallback, got %q", fallback.Email)
+	}
+
+	none := mongoPacienteToPatientIdentity("30111222", MongoPacienteDocument{}, "")
+	if none.Email != "" {
+		t.Errorf("expected empty email when no source has one, got %q", none.Email)
+	}
+	if hasEmailAlternate(none.AlternateIDs, "") {
+		t.Errorf("did not expect an email alternate id when there is no email")
+	}
+}
+
+func hasEmailAlternate(ids []PatientAlternateIdentifier, value string) bool {
+	for _, id := range ids {
+		if id.Type == "email" && id.Value == value {
+			return true
+		}
+	}
+	return false
+}
+
 // --- Prestación lookup sources ---
 
 func TestNoopPrestacionLookupSource(t *testing.T) {

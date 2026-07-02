@@ -352,14 +352,30 @@ type MongoPacienteContacto struct {
 	Valor  string `bson:"valor"`
 }
 
+// MongoPacienteAppDocument models the pacienteApp collection. Each document
+// links one portal-app account (root email) to one or more paciente records
+// through the pacientes array; the "principal" entry is the account owner.
+type MongoPacienteAppDocument struct {
+	ID        primitive.ObjectID         `bson:"_id"`
+	Email     string                     `bson:"email"`
+	Pacientes []MongoPacienteAppRelacion `bson:"pacientes"`
+}
+
+type MongoPacienteAppRelacion struct {
+	ID       primitive.ObjectID `bson:"id"`
+	Relacion string             `bson:"relacion"`
+}
+
 type LocalSeedPatientIdentitySource struct{}
 type LocalSeedProfessionalIdentitySource struct{}
 
 type MongoPatientIdentitySource struct {
 	client         *mongo.Client
 	collection     *mongo.Collection
+	appCollection  *mongo.Collection
 	connectTimeout time.Duration
 	queryTimeout   time.Duration
+	logger         *log.Logger
 }
 
 type MongoProfessionalIdentitySource struct {
@@ -460,7 +476,43 @@ func (s *MongoPatientIdentitySource) ResolveByDocument(ctx context.Context, docu
 		return PatientIdentity{}, fmt.Errorf("find paciente by documento: %w", err)
 	}
 
-	return mongoPacienteToPatientIdentity(documentNumber, doc), nil
+	// The pacienteApp account email is the primary channel for the access code;
+	// a lookup failure must not block login when a contacto email exists, so we
+	// log and fall back to the paciente.contacto email.
+	appEmail, appErr := s.resolvePrincipalAppEmail(queryCtx, doc.ID)
+	if appErr != nil && s.logger != nil {
+		s.logger.Printf(`{"level":"warn","msg":"paciente_app_email_lookup_failed","paciente_id":%q,"error":%q}`, doc.ID.Hex(), appErr.Error())
+	}
+
+	return mongoPacienteToPatientIdentity(documentNumber, doc, appEmail), nil
+}
+
+// resolvePrincipalAppEmail finds the pacienteApp account whose pacientes array
+// references pacienteID as the "principal" relation and returns its root email.
+// An empty string means no principal account email was found.
+func (s *MongoPatientIdentitySource) resolvePrincipalAppEmail(ctx context.Context, pacienteID primitive.ObjectID) (string, error) {
+	if s.appCollection == nil || pacienteID.IsZero() {
+		return "", nil
+	}
+
+	filter := bson.D{{Key: "pacientes", Value: bson.D{{Key: "$elemMatch", Value: bson.D{
+		{Key: "id", Value: pacienteID},
+		{Key: "relacion", Value: "principal"},
+	}}}}}
+	projection := bson.D{
+		{Key: "_id", Value: 1},
+		{Key: "email", Value: 1},
+	}
+
+	var appDoc MongoPacienteAppDocument
+	err := s.appCollection.FindOne(ctx, filter, options.FindOne().SetProjection(projection)).Decode(&appDoc)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return "", nil
+		}
+		return "", fmt.Errorf("find pacienteApp principal by paciente id: %w", err)
+	}
+	return strings.TrimSpace(appDoc.Email), nil
 }
 
 func (s *MongoPatientIdentitySource) Close(ctx context.Context) error {
@@ -552,7 +604,33 @@ func (s *MongoProfessionalIdentitySource) Close(ctx context.Context) error {
 	return s.client.Disconnect(disconnectCtx)
 }
 
-func mongoPacienteToPatientIdentity(documentNumber string, doc MongoPacienteDocument) PatientIdentity {
+// activePatientContactoEmail returns the first active email in the paciente
+// contacto array, or an empty string when none is present.
+func activePatientContactoEmail(contactos []MongoPacienteContacto) string {
+	for _, contacto := range contactos {
+		if !contacto.Activo {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(contacto.Tipo), "email") {
+			if email := strings.TrimSpace(contacto.Valor); email != "" {
+				return email
+			}
+		}
+	}
+	return ""
+}
+
+// preferPatientAppEmail selects the access-code recipient: the pacienteApp
+// account email takes precedence and the paciente contacto email is the
+// fallback.
+func preferPatientAppEmail(appEmail, contactoEmail string) string {
+	if trimmed := strings.TrimSpace(appEmail); trimmed != "" {
+		return trimmed
+	}
+	return strings.TrimSpace(contactoEmail)
+}
+
+func mongoPacienteToPatientIdentity(documentNumber string, doc MongoPacienteDocument, appEmail string) PatientIdentity {
 	resolvedDocument := normalizeMongoDocumento(doc.Documento)
 	if resolvedDocument == "" {
 		resolvedDocument = documentNumber
@@ -588,17 +666,7 @@ func mongoPacienteToPatientIdentity(documentNumber string, doc MongoPacienteDocu
 		identity.BirthDate = doc.FechaNacimiento.UTC().Format("2006-01-02")
 	}
 
-	for _, contacto := range doc.Contacto {
-		if !contacto.Activo {
-			continue
-		}
-		if strings.EqualFold(strings.TrimSpace(contacto.Tipo), "email") {
-			identity.Email = strings.TrimSpace(contacto.Valor)
-			if identity.Email != "" {
-				break
-			}
-		}
-	}
+	identity.Email = preferPatientAppEmail(appEmail, activePatientContactoEmail(doc.Contacto))
 
 	if alias := strings.TrimSpace(doc.Alias); alias != "" {
 		identity.AlternateIDs = append(identity.AlternateIDs, PatientAlternateIdentifier{
@@ -678,7 +746,7 @@ func buildPatientIdentitySource(cfg ExternalConfig, logger *log.Logger) PatientI
 	}
 
 	return NewRetryingPatientIdentitySource("his_mongo_direct", logger, time.Minute, func() (PatientIdentitySource, error) {
-		return connectMongoPatientIdentitySource()
+		return connectMongoPatientIdentitySource(logger)
 	})
 }
 
@@ -692,7 +760,7 @@ func buildProfessionalIdentitySource(cfg ExternalConfig, logger *log.Logger) Pro
 	})
 }
 
-func connectMongoPatientIdentitySource() (PatientIdentitySource, error) {
+func connectMongoPatientIdentitySource(logger *log.Logger) (PatientIdentitySource, error) {
 	mongoURI := strings.TrimSpace(os.Getenv("HIS_MONGO_URI"))
 	mongoDatabase := strings.TrimSpace(os.Getenv("HIS_MONGO_DATABASE"))
 	if mongoURI == "" || mongoDatabase == "" {
@@ -718,8 +786,10 @@ func connectMongoPatientIdentitySource() (PatientIdentitySource, error) {
 	return &MongoPatientIdentitySource{
 		client:         client,
 		collection:     client.Database(mongoDatabase).Collection("paciente"),
+		appCollection:  client.Database(mongoDatabase).Collection("pacienteApp"),
 		connectTimeout: connectTimeout,
 		queryTimeout:   queryTimeout,
+		logger:         logger,
 	}, nil
 }
 
