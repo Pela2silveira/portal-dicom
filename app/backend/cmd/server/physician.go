@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -1374,12 +1375,81 @@ func (a *App) persistPhysicianRecentQuery(ctx context.Context, physicianID strin
 	return err
 }
 
-func (a *App) searchPhysicianResultsFromLocalCache(ctx context.Context, physician PhysicianSummary, filters PhysicianSearchFilters, useInitialCachePeriod bool) ([]PhysicianResult, error) {
-	endpoint, err := url.Parse(strings.TrimRight(a.cfg.OrthancURL, "/") + "/dicom-web/studies")
-	if err != nil {
-		return nil, fmt.Errorf("build orthanc physician cache url: %w", err)
-	}
+type orthancFindRequest struct {
+	Level         string            `json:"Level"`
+	Query         map[string]string `json:"Query"`
+	Expand        bool              `json:"Expand"`
+	CaseSensitive bool              `json:"CaseSensitive"`
+	Limit         int               `json:"Limit,omitempty"`
+	RequestedTags []string          `json:"RequestedTags,omitempty"`
+}
 
+type orthancFindStudyResource struct {
+	ID            string `json:"ID"`
+	MainDicomTags struct {
+		StudyInstanceUID string `json:"StudyInstanceUID"`
+		StudyDate        string `json:"StudyDate"`
+		StudyDescription string `json:"StudyDescription"`
+		AccessionNumber  string `json:"AccessionNumber"`
+	} `json:"MainDicomTags"`
+	PatientMainDicomTags struct {
+		PatientName string `json:"PatientName"`
+		PatientID   string `json:"PatientID"`
+	} `json:"PatientMainDicomTags"`
+	RequestedTags struct {
+		ModalitiesInStudy             string `json:"ModalitiesInStudy"`
+		NumberOfStudyRelatedInstances string `json:"NumberOfStudyRelatedInstances"`
+	} `json:"RequestedTags"`
+}
+
+// buildPhysicianLocalCacheFindQuery maps the physician search filters to an
+// Orthanc /tools/find Query at Study level. PatientName keeps the fuzzy
+// wildcard form and StudyDate is expressed as a DICOM date range.
+func buildPhysicianLocalCacheFindQuery(filters PhysicianSearchFilters, dateFrom, dateTo string) map[string]string {
+	query := map[string]string{}
+	if v := strings.TrimSpace(filters.PatientID); v != "" {
+		query["PatientID"] = v
+	}
+	if name := buildPatientNameFuzzyQuery(filters.PatientName); name != "" {
+		query["PatientName"] = name
+	}
+	if v := strings.TrimSpace(filters.Modality); v != "" {
+		query["ModalitiesInStudy"] = v
+	}
+	if r := buildQIDODateRange(dateFrom, dateTo); r != "" {
+		query["StudyDate"] = r
+	}
+	return query
+}
+
+// parseDICOMMultiValue splits a DICOM multi-valued string (backslash-separated)
+// into trimmed, non-empty values.
+func parseDICOMMultiValue(value string) []string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	parts := strings.Split(trimmed, `\`)
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+// parseNonNegativeInt parses a non-negative integer, returning 0 on any
+// malformed or negative input.
+func parseNonNegativeInt(value string) int {
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || parsed < 0 {
+		return 0
+	}
+	return parsed
+}
+
+func (a *App) searchPhysicianResultsFromLocalCache(ctx context.Context, physician PhysicianSummary, filters PhysicianSearchFilters, useInitialCachePeriod bool) ([]PhysicianResult, error) {
 	dateFrom := strings.TrimSpace(filters.DateFrom)
 	dateTo := strings.TrimSpace(filters.DateTo)
 	if useInitialCachePeriod && !hasPhysicianQueryFilters(filters) {
@@ -1390,35 +1460,29 @@ func (a *App) searchPhysicianResultsFromLocalCache(ctx context.Context, physicia
 		dateFrom, dateTo = configuredDateRange(period, time.Now())
 	}
 
-	query := endpoint.Query()
-	query.Set("limit", "200")
-	query.Add("includefield", "StudyInstanceUID")
-	query.Add("includefield", "StudyDate")
-	query.Add("includefield", "StudyDescription")
-	query.Add("includefield", "ModalitiesInStudy")
-	query.Add("includefield", "PatientName")
-	query.Add("includefield", "PatientID")
-	query.Add("includefield", "AccessionNumber")
-	query.Add("includefield", "NumberOfStudyRelatedInstances")
-	if strings.TrimSpace(filters.PatientID) != "" {
-		query.Set("PatientID", strings.TrimSpace(filters.PatientID))
+	// Local presence must go through POST /tools/find, not QIDO GET
+	// /dicom-web/studies: under the Orthanc authorization plugin (CheckedLevel
+	// studies) a QIDO search filtered by PatientID is classified as an unknown
+	// resource and rejected with 403 when the patient has nothing cached yet.
+	findBody := orthancFindRequest{
+		Level:         "Study",
+		Query:         buildPhysicianLocalCacheFindQuery(filters, dateFrom, dateTo),
+		Expand:        true,
+		CaseSensitive: false,
+		Limit:         200,
+		RequestedTags: []string{"ModalitiesInStudy", "NumberOfStudyRelatedInstances"},
 	}
-	if strings.TrimSpace(filters.PatientName) != "" {
-		query.Set("PatientName", buildPatientNameFuzzyQuery(filters.PatientName))
+	bodyBytes, err := json.Marshal(findBody)
+	if err != nil {
+		return nil, fmt.Errorf("encode orthanc physician cache find body: %w", err)
 	}
-	if strings.TrimSpace(filters.Modality) != "" {
-		query.Set("ModalitiesInStudy", strings.TrimSpace(filters.Modality))
-	}
-	if dateFrom != "" || dateTo != "" {
-		query.Set("StudyDate", buildQIDODateRange(dateFrom, dateTo))
-	}
-	endpoint.RawQuery = query.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(a.cfg.OrthancURL, "/")+"/tools/find", strings.NewReader(string(bodyBytes)))
 	if err != nil {
 		return nil, fmt.Errorf("build orthanc physician cache request: %w", err)
 	}
-	req.Header.Set("Accept", "application/dicom+json, application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
 	a.applyOrthancInternalRequestAuth(req)
 
 	res, err := a.httpClient.Do(req)
@@ -1432,21 +1496,21 @@ func (a *App) searchPhysicianResultsFromLocalCache(ctx context.Context, physicia
 		return nil, fmt.Errorf("orthanc physician cache bad status %d: %s", res.StatusCode, strings.TrimSpace(string(body)))
 	}
 
-	var payload []qidoResponseItem
+	var payload []orthancFindStudyResource
 	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
 		if !errors.Is(err, io.EOF) {
 			return nil, fmt.Errorf("decode orthanc physician cache response: %w", err)
 		}
-		payload = []qidoResponseItem{}
+		payload = []orthancFindStudyResource{}
 	}
 
 	results := make([]PhysicianResult, 0, len(payload))
 	for _, item := range payload {
-		studyUID := dicomFirstString(item, "0020000D")
+		studyUID := strings.TrimSpace(item.MainDicomTags.StudyInstanceUID)
 		if studyUID == "" {
 			continue
 		}
-		a.logAccessionNumberProbe("physician_local_cache_qido", "orthanc", studyUID, dicomFirstString(item, "00080050"))
+		a.logAccessionNumberProbe("physician_local_cache_find", "orthanc", studyUID, strings.TrimSpace(item.MainDicomTags.AccessionNumber))
 
 		cacheStatus, retrieveStatus, retrievePhase, retrieveProgress, viewerURL, ohifViewerURL, err := a.getStudyOperationalState(ctx, studyUID, "local_complete", "done")
 		if err != nil {
@@ -1462,12 +1526,12 @@ func (a *App) searchPhysicianResultsFromLocalCache(ctx context.Context, physicia
 
 		results = append(results, PhysicianResult{
 			StudyInstanceUID:    studyUID,
-			PatientName:         dicomFirstPersonName(item, "00100010"),
-			PatientID:           dicomFirstString(item, "00100020"),
-			StudyDate:           normalizeStudyDate(dicomFirstString(item, "00080020")),
-			StudyDescription:    dicomFirstString(item, "00081030"),
-			NumberOfImages:      dicomFirstInt(item, "00201208"),
-			Modalities:          dicomStringList(item, "00080061"),
+			PatientName:         strings.TrimSpace(item.PatientMainDicomTags.PatientName),
+			PatientID:           strings.TrimSpace(item.PatientMainDicomTags.PatientID),
+			StudyDate:           normalizeStudyDate(item.MainDicomTags.StudyDate),
+			StudyDescription:    strings.TrimSpace(item.MainDicomTags.StudyDescription),
+			NumberOfImages:      parseNonNegativeInt(item.RequestedTags.NumberOfStudyRelatedInstances),
+			Modalities:          parseDICOMMultiValue(item.RequestedTags.ModalitiesInStudy),
 			Locations:           a.resolveLocationLabels(locations),
 			CacheStatus:         cacheStatus,
 			RetrieveStatus:      retrieveStatus,

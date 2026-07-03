@@ -409,7 +409,11 @@ func (a *App) getStudyOperationalState(ctx context.Context, studyUID string, fal
 		return "", "", "", 0, "", "", err
 	}
 	if isLocal {
-		cacheStatus = "local_complete"
+		// A partial study is present and viewable; keep its partial flag rather
+		// than masking it as complete so callers/UI can surface remediation.
+		if cacheStatus != "local_partial" {
+			cacheStatus = "local_complete"
+		}
 		retrieveStatus = "done"
 		retrievePhase = "done"
 		retrieveProgress = 100

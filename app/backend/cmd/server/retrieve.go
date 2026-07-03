@@ -187,7 +187,7 @@ func (a *HybridRetrieveAdapter) RetrieveStudy(_ context.Context, _ PACSNodeResol
 }
 
 func (a *App) processRetrieveJob(jobID string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), a.retrieveTimeout())
 	defer cancel()
 
 	var (
@@ -278,7 +278,31 @@ func (a *App) processRetrieveJob(jobID string) {
 		})
 	}
 
-	if err := a.completeRetrieveSuccess(ctx, jobID, studyInstanceUID, orthancStudyID, sourceNodeCode); err != nil {
+	// Completeness is best-effort: a lookup failure must not fail an otherwise
+	// successful retrieve, it only means we cannot assert local_partial.
+	report, cerr := a.verifyRetrievedStudyCompleteness(ctx, node, studyInstanceUID)
+	if cerr != nil {
+		a.log("warn", "retrieve_completeness_check_failed", map[string]any{
+			"job_id":             jobID,
+			"study_instance_uid": studyInstanceUID,
+			"source_node_id":     sourceNodeCode,
+			"error":              cerr.Error(),
+		})
+		report = studyCompletenessReport{}
+	}
+	if report.Evaluated && !report.Complete {
+		a.log("warn", "retrieve_study_incomplete", map[string]any{
+			"job_id":             jobID,
+			"study_instance_uid": studyInstanceUID,
+			"source_node_id":     sourceNodeCode,
+			"expected_series":    report.ExpectedSeries,
+			"present_series":     report.PresentSeries,
+			"missing_series":     len(report.MissingSeries),
+		})
+		report = a.remediateIncompleteRetrieve(ctx, jobID, node, studyInstanceUID, orthancJobID, report)
+	}
+
+	if err := a.completeRetrieveSuccess(ctx, jobID, studyInstanceUID, orthancStudyID, sourceNodeCode, report); err != nil {
 		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", "verifying", 100, err.Error(), orthancJobID, orthancStudyID, 0, false)
 		a.log("error", "retrieve_job_mark_done_failed", map[string]any{
 			"job_id": jobID,
@@ -296,6 +320,88 @@ func (a *App) processRetrieveJob(jobID string) {
 		"orthanc_study_id":   orthancStudyID,
 		"duration_ms":        time.Since(startedAt).Milliseconds(),
 	})
+}
+
+// remediateIncompleteRetrieve retries only the missing series of a partial study,
+// up to the configured max attempts with a linear backoff, re-verifying
+// completeness after each attempt. It never re-pulls series already stored and
+// stops early once the study is complete or the context is cancelled. Failures
+// are logged and tolerated: the caller persists whatever completeness we reach.
+func (a *App) remediateIncompleteRetrieve(ctx context.Context, jobID string, node PACSNodeConfig, studyUID, orthancJobID string, report studyCompletenessReport) studyCompletenessReport {
+	maxAttempts := a.retrieveMaxAttempts()
+	backoff := a.retrieveRetryBackoff()
+
+	for attempt := 2; attempt <= maxAttempts; attempt++ {
+		if report.Complete || !report.Evaluated || len(report.MissingSeries) == 0 {
+			return report
+		}
+
+		wait := time.Duration(attempt-1) * backoff
+		a.log("info", "retrieve_remediation_attempt", map[string]any{
+			"job_id":             jobID,
+			"study_instance_uid": studyUID,
+			"source_node_id":     node.ID,
+			"attempt":            attempt,
+			"max_attempts":       maxAttempts,
+			"missing_series":     len(report.MissingSeries),
+			"backoff_seconds":    int(wait / time.Second),
+		})
+
+		select {
+		case <-ctx.Done():
+			return report
+		case <-time.After(wait):
+		}
+
+		_ = a.updateRetrieveJobStatus(ctx, jobID, "running", "completing", report.completionPercent(), "", orthancJobID, "", 0, false)
+
+		retryJobID, err := a.startOrthancCGetSeries(ctx, node, studyUID, report.MissingSeries)
+		if err != nil {
+			a.log("warn", "retrieve_remediation_cget_failed", map[string]any{
+				"job_id":             jobID,
+				"study_instance_uid": studyUID,
+				"source_node_id":     node.ID,
+				"attempt":            attempt,
+				"error":              err.Error(),
+			})
+			continue
+		}
+
+		if _, err := a.monitorOrthancRetrieveJob(ctx, jobID, retryJobID, studyUID); err != nil {
+			a.log("warn", "retrieve_remediation_monitor_failed", map[string]any{
+				"job_id":             jobID,
+				"study_instance_uid": studyUID,
+				"source_node_id":     node.ID,
+				"attempt":            attempt,
+				"error":              err.Error(),
+			})
+			continue
+		}
+
+		newReport, err := a.verifyRetrievedStudyCompleteness(ctx, node, studyUID)
+		if err != nil {
+			a.log("warn", "retrieve_remediation_verify_failed", map[string]any{
+				"job_id":             jobID,
+				"study_instance_uid": studyUID,
+				"source_node_id":     node.ID,
+				"attempt":            attempt,
+				"error":              err.Error(),
+			})
+			continue
+		}
+		report = newReport
+
+		a.log("info", "retrieve_remediation_result", map[string]any{
+			"job_id":             jobID,
+			"study_instance_uid": studyUID,
+			"source_node_id":     node.ID,
+			"attempt":            attempt,
+			"complete":           report.Complete,
+			"missing_series":     len(report.MissingSeries),
+		})
+	}
+
+	return report
 }
 
 func (a *App) findActiveRetrieveJob(ctx context.Context, studyUID, actorType, actorID string) (*retrieveJobSnapshot, error) {
@@ -482,6 +588,33 @@ func (a *App) retrieveProgressPollInterval() time.Duration {
 	return time.Duration(a.externalConfig.Portal.RetrieveProgressPollSeconds) * time.Second
 }
 
+// retrieveMaxAttempts is the total number of C-GET attempts (1 initial + retries)
+// used to remediate an incomplete study.
+func (a *App) retrieveMaxAttempts() int {
+	if a.externalConfig == nil || a.externalConfig.Portal.RetrieveMaxAttempts <= 0 {
+		return 3
+	}
+	return a.externalConfig.Portal.RetrieveMaxAttempts
+}
+
+// retrieveRetryBackoff is the base backoff between remediation attempts; the
+// effective wait grows linearly with the attempt number to spare an unstable
+// source PACS.
+func (a *App) retrieveRetryBackoff() time.Duration {
+	if a.externalConfig == nil || a.externalConfig.Portal.RetrieveRetryBackoffSeconds <= 0 {
+		return 10 * time.Second
+	}
+	return time.Duration(a.externalConfig.Portal.RetrieveRetryBackoffSeconds) * time.Second
+}
+
+// retrieveTimeout bounds the whole retrieve job (initial C-GET plus remediation).
+func (a *App) retrieveTimeout() time.Duration {
+	if a.externalConfig == nil || a.externalConfig.Portal.RetrieveTimeoutMinutes <= 0 {
+		return 30 * time.Minute
+	}
+	return time.Duration(a.externalConfig.Portal.RetrieveTimeoutMinutes) * time.Minute
+}
+
 func (a *App) retrieveWorkerConcurrency() int {
 	if a.externalConfig == nil || a.externalConfig.Portal.RetrieveWorkerConcurrency <= 0 {
 		return 2
@@ -601,7 +734,19 @@ func (a *App) listScheduledRetrieveCandidates(ctx context.Context, maxStudyAgeDa
 	return candidates, rows.Err()
 }
 
-func (a *App) completeRetrieveSuccess(ctx context.Context, jobID, studyUID, orthancStudyID, sourceNodeID string) error {
+func (a *App) completeRetrieveSuccess(ctx context.Context, jobID, studyUID, orthancStudyID, sourceNodeID string, report studyCompletenessReport) error {
+	// A partial study is still viewable (the present series open fine); we only
+	// stop asserting local_complete so the UI and background remediation can act.
+	cacheStatus := "local_complete"
+	if report.Evaluated && !report.Complete {
+		cacheStatus = "local_partial"
+	}
+
+	missingSeriesJSON, err := json.Marshal(report.MissingSeries)
+	if err != nil {
+		return err
+	}
+
 	tx, err := a.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -631,16 +776,23 @@ func (a *App) completeRetrieveSuccess(ctx context.Context, jobID, studyUID, orth
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO cached_studies (
-			study_instance_uid, orthanc_study_id, first_seen_at, last_verified_at, cache_status, locations_json
+			study_instance_uid, orthanc_study_id, first_seen_at, last_verified_at, cache_status, locations_json,
+			expected_series_count, present_series_count, missing_series_json, last_completeness_checked_at
 		) VALUES (
-			$1, $2, now(), now(), 'local_complete', $3::jsonb
+			$1, $2, now(), now(), $4, $3::jsonb,
+			$5, $6, $7::jsonb, CASE WHEN $8 THEN now() ELSE NULL END
 		)
 		ON CONFLICT (study_instance_uid) DO UPDATE SET
 			orthanc_study_id = EXCLUDED.orthanc_study_id,
 			last_verified_at = now(),
 			cache_status = EXCLUDED.cache_status,
-			locations_json = EXCLUDED.locations_json
-	`, studyUID, orthancStudyID, string(locationsJSON)); err != nil {
+			locations_json = EXCLUDED.locations_json,
+			expected_series_count = EXCLUDED.expected_series_count,
+			present_series_count = EXCLUDED.present_series_count,
+			missing_series_json = EXCLUDED.missing_series_json,
+			last_completeness_checked_at = EXCLUDED.last_completeness_checked_at
+	`, studyUID, orthancStudyID, string(locationsJSON), cacheStatus,
+		report.ExpectedSeries, report.PresentSeries, string(missingSeriesJSON), report.Evaluated); err != nil {
 		return err
 	}
 
