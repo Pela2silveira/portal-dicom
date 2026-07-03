@@ -67,6 +67,27 @@ func evaluateStudyCompleteness(expected, local seriesCounts) studyCompletenessRe
 	return report
 }
 
+// completionPercent returns an approximate 0..100 completion ratio, preferring
+// instance counts and falling back to series counts.
+func (r studyCompletenessReport) completionPercent() int {
+	clamp := func(v int) int {
+		if v < 0 {
+			return 0
+		}
+		if v > 100 {
+			return 100
+		}
+		return v
+	}
+	if r.ExpectedInstances > 0 {
+		return clamp(r.PresentInstances * 100 / r.ExpectedInstances)
+	}
+	if r.ExpectedSeries > 0 {
+		return clamp(r.PresentSeries * 100 / r.ExpectedSeries)
+	}
+	return 0
+}
+
 // orthancFindSeriesResource is the Series-level shape returned by POST
 // /tools/find with Expand=true; Instances carries one entry per stored instance.
 type orthancFindSeriesResource struct {

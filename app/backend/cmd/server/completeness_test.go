@@ -76,3 +76,24 @@ func TestEvaluateStudyCompleteness(t *testing.T) {
 		}
 	})
 }
+
+func TestStudyCompletenessCompletionPercent(t *testing.T) {
+	cases := []struct {
+		name   string
+		report studyCompletenessReport
+		want   int
+	}{
+		{"prefers instances", studyCompletenessReport{ExpectedInstances: 200, PresentInstances: 100, ExpectedSeries: 2, PresentSeries: 2}, 50},
+		{"falls back to series when no instance counts", studyCompletenessReport{ExpectedSeries: 4, PresentSeries: 1}, 25},
+		{"complete is 100", studyCompletenessReport{ExpectedInstances: 10, PresentInstances: 10}, 100},
+		{"clamps above 100", studyCompletenessReport{ExpectedInstances: 10, PresentInstances: 25}, 100},
+		{"no expected is zero", studyCompletenessReport{}, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.report.completionPercent(); got != tc.want {
+				t.Errorf("completionPercent() = %d want %d", got, tc.want)
+			}
+		})
+	}
+}

@@ -1968,14 +1968,38 @@ func assignOrthancQueryAnswerNestedValue(target qidoResponseItem, tag string, pa
 }
 
 func (a *App) startOrthancCGetWithRefresh(ctx context.Context, node PACSNodeConfig, studyInstanceUID string, allowRefresh bool) (string, error) {
+	return a.startOrthancCGetResources(ctx, node, "Study", []map[string]string{
+		{"StudyInstanceUID": studyInstanceUID},
+	}, allowRefresh)
+}
+
+// startOrthancCGetSeries issues a C-GET for a specific set of series of a study,
+// used to remediate a partial retrieve without re-pulling series already stored.
+func (a *App) startOrthancCGetSeries(ctx context.Context, node PACSNodeConfig, studyInstanceUID string, seriesInstanceUIDs []string) (string, error) {
+	resources := make([]map[string]string, 0, len(seriesInstanceUIDs))
+	for _, seriesUID := range seriesInstanceUIDs {
+		seriesUID = strings.TrimSpace(seriesUID)
+		if seriesUID == "" {
+			continue
+		}
+		resources = append(resources, map[string]string{
+			"StudyInstanceUID":  studyInstanceUID,
+			"SeriesInstanceUID": seriesUID,
+		})
+	}
+	if len(resources) == 0 {
+		return "", errors.New("no series to retrieve")
+	}
+	return a.startOrthancCGetResources(ctx, node, "Series", resources, true)
+}
+
+func (a *App) startOrthancCGetResources(ctx context.Context, node PACSNodeConfig, level string, resources []map[string]string, allowRefresh bool) (string, error) {
 	resolved := node.Resolved()
 	payload, err := json.Marshal(map[string]any{
 		"Asynchronous": true,
-		"Level":        "Study",
-		"Resources": []map[string]string{
-			{"StudyInstanceUID": studyInstanceUID},
-		},
-		"Timeout": 60,
+		"Level":        level,
+		"Resources":    resources,
+		"Timeout":      60,
 	})
 	if err != nil {
 		return "", err
@@ -2002,7 +2026,7 @@ func (a *App) startOrthancCGetWithRefresh(ctx context.Context, node PACSNodeConf
 			if err := a.ensureOrthancModality(ctx, node); err != nil {
 				return "", fmt.Errorf("orthanc c-get modality refresh failed: %w", err)
 			}
-			return a.startOrthancCGetWithRefresh(ctx, node, studyInstanceUID, false)
+			return a.startOrthancCGetResources(ctx, node, level, resources, false)
 		}
 		return "", fmt.Errorf("orthanc c-get bad status %d: %s", res.StatusCode, bodyText)
 	}

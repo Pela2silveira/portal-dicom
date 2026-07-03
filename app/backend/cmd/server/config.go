@@ -177,6 +177,9 @@ type PortalConfig struct {
 	ScheduledRetrieveMaxStudyAgeDays int      `json:"scheduled_retrieve_max_study_age_days"`
 	ScheduledRetrieveBatchSize       int      `json:"scheduled_retrieve_batch_size"`
 	RetrieveBlockedModalities        []string `json:"retrieve_blocked_modalities"`
+	RetrieveMaxAttempts              int      `json:"retrieve_max_attempts"`
+	RetrieveRetryBackoffSeconds      int      `json:"retrieve_retry_backoff_seconds"`
+	RetrieveTimeoutMinutes           int      `json:"retrieve_timeout_minutes"`
 }
 
 func (a *App) handleConfig(appliedMigrations []string) http.HandlerFunc {
@@ -401,6 +404,9 @@ func loadExternalConfig(path string) (*ExternalConfig, error) {
 			ScheduledRetrieveIntervalMinutes: 60,
 			ScheduledRetrieveMaxStudyAgeDays: 7,
 			ScheduledRetrieveBatchSize:       5,
+			RetrieveMaxAttempts:              3,
+			RetrieveRetryBackoffSeconds:      10,
+			RetrieveTimeoutMinutes:           30,
 		},
 		Patient: PatientConfig{
 			AuthMode: PatientAuthModeFakeAuth,

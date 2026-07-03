@@ -1617,6 +1617,7 @@
         if (phase === "preparing") return "Preparando recuperación";
         if (phase === "retrieving") return "Recuperando desde origen";
         if (phase === "verifying") return "Verificando disponibilidad local";
+        if (phase === "completing") return "Completando series faltantes";
         if (phase === "paused") return "Recuperación pausada";
         if (phase === "done") return "Recuperación completa";
         return "";
