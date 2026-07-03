@@ -278,7 +278,30 @@ func (a *App) processRetrieveJob(jobID string) {
 		})
 	}
 
-	if err := a.completeRetrieveSuccess(ctx, jobID, studyInstanceUID, orthancStudyID, sourceNodeCode); err != nil {
+	// Completeness is best-effort: a lookup failure must not fail an otherwise
+	// successful retrieve, it only means we cannot assert local_partial.
+	report, cerr := a.verifyRetrievedStudyCompleteness(ctx, node, studyInstanceUID)
+	if cerr != nil {
+		a.log("warn", "retrieve_completeness_check_failed", map[string]any{
+			"job_id":             jobID,
+			"study_instance_uid": studyInstanceUID,
+			"source_node_id":     sourceNodeCode,
+			"error":              cerr.Error(),
+		})
+		report = studyCompletenessReport{}
+	}
+	if report.Evaluated && !report.Complete {
+		a.log("warn", "retrieve_study_incomplete", map[string]any{
+			"job_id":             jobID,
+			"study_instance_uid": studyInstanceUID,
+			"source_node_id":     sourceNodeCode,
+			"expected_series":    report.ExpectedSeries,
+			"present_series":     report.PresentSeries,
+			"missing_series":     len(report.MissingSeries),
+		})
+	}
+
+	if err := a.completeRetrieveSuccess(ctx, jobID, studyInstanceUID, orthancStudyID, sourceNodeCode, report); err != nil {
 		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", "verifying", 100, err.Error(), orthancJobID, orthancStudyID, 0, false)
 		a.log("error", "retrieve_job_mark_done_failed", map[string]any{
 			"job_id": jobID,
@@ -601,7 +624,19 @@ func (a *App) listScheduledRetrieveCandidates(ctx context.Context, maxStudyAgeDa
 	return candidates, rows.Err()
 }
 
-func (a *App) completeRetrieveSuccess(ctx context.Context, jobID, studyUID, orthancStudyID, sourceNodeID string) error {
+func (a *App) completeRetrieveSuccess(ctx context.Context, jobID, studyUID, orthancStudyID, sourceNodeID string, report studyCompletenessReport) error {
+	// A partial study is still viewable (the present series open fine); we only
+	// stop asserting local_complete so the UI and background remediation can act.
+	cacheStatus := "local_complete"
+	if report.Evaluated && !report.Complete {
+		cacheStatus = "local_partial"
+	}
+
+	missingSeriesJSON, err := json.Marshal(report.MissingSeries)
+	if err != nil {
+		return err
+	}
+
 	tx, err := a.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -631,16 +666,23 @@ func (a *App) completeRetrieveSuccess(ctx context.Context, jobID, studyUID, orth
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO cached_studies (
-			study_instance_uid, orthanc_study_id, first_seen_at, last_verified_at, cache_status, locations_json
+			study_instance_uid, orthanc_study_id, first_seen_at, last_verified_at, cache_status, locations_json,
+			expected_series_count, present_series_count, missing_series_json, last_completeness_checked_at
 		) VALUES (
-			$1, $2, now(), now(), 'local_complete', $3::jsonb
+			$1, $2, now(), now(), $4, $3::jsonb,
+			$5, $6, $7::jsonb, CASE WHEN $8 THEN now() ELSE NULL END
 		)
 		ON CONFLICT (study_instance_uid) DO UPDATE SET
 			orthanc_study_id = EXCLUDED.orthanc_study_id,
 			last_verified_at = now(),
 			cache_status = EXCLUDED.cache_status,
-			locations_json = EXCLUDED.locations_json
-	`, studyUID, orthancStudyID, string(locationsJSON)); err != nil {
+			locations_json = EXCLUDED.locations_json,
+			expected_series_count = EXCLUDED.expected_series_count,
+			present_series_count = EXCLUDED.present_series_count,
+			missing_series_json = EXCLUDED.missing_series_json,
+			last_completeness_checked_at = EXCLUDED.last_completeness_checked_at
+	`, studyUID, orthancStudyID, string(locationsJSON), cacheStatus,
+		report.ExpectedSeries, report.PresentSeries, string(missingSeriesJSON), report.Evaluated); err != nil {
 		return err
 	}
 
