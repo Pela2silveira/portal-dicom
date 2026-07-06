@@ -634,6 +634,7 @@ Problema: Orthanc puede recibir instancias progresivamente.
 
 ### 12.1 Archivo `config.json` (alineado con tu ejemplo)
 - `pacs_nodes[]`: incluye campos por protocolo (QIDO-RS vs DIMSE).
+- `pacs_nodes[].patient_id_source` (opcional, default `"dni"`): regla de mapeo que decide qué identificador del paciente viaja como `PatientID` DICOM cuando la búsqueda profesional es por DNI. Valores soportados: `"dni"`, `"mongo_id"`; otros valores quedan reservados para campos de otros HIS providers (aún no implementados).
 - `cache_config`: retención, límite disco, parámetros Orthanc.
 - `his_config`: persistir valores (no ejecutar lógica obligatoria).
 
@@ -663,6 +664,7 @@ Problema: Orthanc puede recibir instancias progresivamente.
 - `GET /api/physician/results`:
   - sin filtros: debe consultar Orthanc local en vivo para estudios en cache de la semana actual;
   - con filtros: debe ejecutar QIDO real al nodo configurado.
+  - DNI vs ID (v0.7.0): acepta `patient_id` (ID DICOM directo, se envía tal cual como `PatientID`) y `document_number` (DNI). `patient_id` tiene precedencia. Para `document_number`, el backend resuelve identificadores (cache `patient_identifiers` primero, refresco Mongo/HIS del `mongo_id` sólo si hace falta) y por cada nodo aplica su `patient_id_source` (`dni`|`mongo_id`|campo futuro) para elegir el `PatientID` a enviar; si no puede mapear, ese nodo no devuelve resultados (log `physician_search_dni_unmapped`). En `local_cache` consulta por cada identificador mapeado distinto y deduplica por `StudyInstanceUID`.
 
 ### Retrieve
 - Botón/endpoint `retrieve` crea job persistente.

@@ -97,6 +97,7 @@ type PACSNodeConfig struct {
 	DICOMwebBaseURL     string                     `json:"dicomweb_base_url"`
 	SupportsCMove       bool                       `json:"supports_cmove"`
 	SupportsCGet        bool                       `json:"supports_cget"`
+	PatientIDSource     string                     `json:"patient_id_source,omitempty"`
 	Auth                PACSAuthConfig             `json:"auth"`
 	Search              PACSNodeSearchConfig       `json:"search"`
 	Retrieve            PACSNodeRetrieveConfig     `json:"retrieve"`
@@ -144,6 +145,7 @@ type PACSNodeResolvedConfig struct {
 	DICOMwebBaseURL     string
 	SupportsCMove       bool
 	SupportsCGet        bool
+	PatientIDSource     string
 	Auth                PACSAuthConfig
 	SearchMode          string
 	RetrieveMode        string
@@ -320,6 +322,7 @@ func (n PACSNodeConfig) Resolved() PACSNodeResolvedConfig {
 		DICOMwebBaseURL:     strings.TrimSpace(n.DICOMwebBaseURL),
 		SupportsCMove:       n.SupportsCMove,
 		SupportsCGet:        n.SupportsCGet,
+		PatientIDSource:     normalizePatientIDSource(n.PatientIDSource),
 		Auth:                n.Auth,
 		SearchMode:          strings.TrimSpace(n.Protocol),
 		HealthMode:          "http",

@@ -209,31 +209,25 @@ Use this file to record the decisions you make after reviewing the agent discuss
   - result rows must keep `study_instance_uid`/origin integrity,
   - local availability, viewer, retrieve, and download actions must stay consistent for the same row.
 
-## Pending Decisions — Physician Search: DNI vs PatientID
+## Physician Search: DNI vs PatientID (resolved + implemented)
 
-### Current state (documented 2026-04-30)
-- The physician search filter `patient_id` maps directly to DICOM tag `PatientID` (0010,0020) and is sent as-is to every PACS node via QIDO-RS and C-FIND. There is no identity resolution step.
-- The UI field is labeled "DNI del paciente" and enforces digit-only input (max 11 digits), but the backend treats it as a DICOM `PatientID` query value — the two concepts are conflated in the current implementation.
-- `patient_identifiers` is only populated through the patient portal login flow (via HIS/Mongo). It stores `document_number`, `mongo_object_id`, `alias`, and `email` types. No PACS-specific patient identifiers are stored for the physician search path.
-- DICOM `PatientID` values seen in physician searches are stored in `qido_study_cache.patient_id` (keyed by `study_instance_uid + source_node_id`) and inside `physician_recent_queries.query_json` on each result object, but they are never cross-referenced against the DNI stored in `patient_identifiers`.
-- The physician ANDES enrichment path partially bridges this gap by calling `loadCachedMongoObjectIDByDocument` when `result.PatientID` resembles a document number — but this is a read-only opportunistic path and does not write back any correlation.
+### Operator decision (2026-07-06) that unblocked this
+- **PACS nodes are always queried by DICOM `PatientID`; the value that `PatientID` corresponds to is owned by the HIS, not the portal.** The id↔dni correspondence is the HIS's responsibility. Per node, that `PatientID` may be the DNI, the Mongo `_id`, or another HIS-provider field.
+- **Searching by ID is a direct DICOM query with no intermediaries.** The value the professional types is sent verbatim as `PatientID`. It may coincide with the DNI but is not the same concept.
+- **Searching by DNI resolves against the local cache first** (`patient_identifiers`, the same table the patient-portal login flow populates), refreshing from Mongo/HIS when needed. The mapping rule is declared per node in config.
 
-### Open questions requiring operator input
-- **HPN and HHH (dcm4chee)**: does the DICOM `PatientID` in those PACS nodes store the patient's Argentine DNI or an internal HIS system ID? This determines whether the simple path (send DNI as `PatientID`) works for these nodes.
-- **Synapse (hpnsyn)**: from observed logs (`patient_id=20399527`), the Synapse PatientID appears to be an internal node ID distinct from the DNI. Confirm whether Synapse stores any DNI-compatible identifier in any DICOM tag, and if so which tag.
-- **Hospital Centenario Orthanc (hc)**: same question — is DICOM `PatientID` the DNI or an internal ID?
+### Implemented design (v0.7.0)
+- `PhysicianSearchFilters` gains `DocumentNumber` (DNI), independent from `PatientID` (direct DICOM ID). The handler parses `document_number` and `patient_id` separately.
+- Each PACS node declares a mapping rule via `patient_id_source` in config: `"dni"` (default), `"mongo_id"`, or a future HIS-provider field (unknown values are accepted but currently resolve to no query, leaving a hook).
+- **Search by ID (`patient_id`)** takes precedence and is sent as-is to the selected source — unchanged behavior.
+- **Search by DNI (`document_number`)** resolves identifiers once (DNI + Mongo id) via `resolvePatientSearchIdentifiers`: local `patient_identifiers` cache first, then a live `ensurePatientRecordWithIdentity` (HIS/Mongo) only when the Mongo id is actually required and missing — which also refreshes the cache. `effectivePatientIDForNode(node.patient_id_source, ids)` then picks the value sent as `PatientID` for that node. If the required identifier is unknown, the node returns no results (logged `physician_search_dni_unmapped`) rather than sending a wrong value.
+- **Local cache DNI search** probes the local Orthanc once per distinct mapped identifier across configured nodes (`candidateLocalCachePatientIDs`) and merges unique studies by `StudyInstanceUID`, because the local cache aggregates studies keyed by each source node's mapped `PatientID`.
+- Reusing `patient_identifiers` means correlations learned by the patient portal are leveraged automatically, and DNI searches that hit the HIS write the mapping back for reuse. No new `identifier_type` or migration was required.
+- Pure helpers (`normalizePatientIDSource`, `patientIDSourceNeedsMongo`, `effectivePatientIDForNode`, `candidateLocalCachePatientIDs`) are covered by Tier 1 tests in `physician_patient_id_test.go`.
+- UI: the professional filter block now exposes a **DNI del paciente** field (mapped to `document_number`) and a separate **ID DICOM (directo)** field (mapped to `patient_id`).
 
-### Agreed direction for the improvement
-- The physician search form should expose two distinct input fields: one for **DNI** (Argentine document number) and one for **ID** (DICOM `PatientID`, internal PACS identifier). Both are optional and independent.
-- When searching by DNI: the backend should first attempt to resolve known PACS PatientIDs for that DNI by querying `patient_identifiers` (requires a new `identifier_type` such as `pacs_patient_id` with `source_system = node_id`). If no mapping exists, it may fall back to sending the DNI value directly as `PatientID` for nodes where the DNI is known to be the PatientID.
-- When searching by ID: the current behavior is preserved — the value is sent directly as DICOM `PatientID`.
-- The `patient_identifiers` table must be extended to store PACS-specific PatientIDs discovered during physician search flows. A new `identifier_type = 'pacs_patient_id'` row with `source_system = <node_id>` must be written when a physician search returns results and an existing `document_number` can be correlated (e.g., from a prior patient portal login for the same patient).
-- For Synapse and other DIMSE-only nodes with no HIS linkage, the correlation can only be built incrementally: a physician must first find the patient by name or approximate ID, then the system learns and caches the mapping.
-- `PhysicianSearchFilters` must gain a `DocumentNumber` field (separate from `PatientID`) that carries the DNI search value through the backend without conflating it with the DICOM query tag.
-
-### Implementation is NOT started
-- This section exists to capture design understanding before implementation begins.
-- Implementation must not start until the open questions above about HPN PatientID semantics are resolved by the operator.
+### Deferred
+- The `"otro_campo"` mapping for other HIS providers is not implemented yet (only `dni` and `mongo_id`); the enum leaves the hook.
 
 
 ## Pending: Backend modularization (Phase 2) + tests
