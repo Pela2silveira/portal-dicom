@@ -1033,6 +1033,10 @@
           grid-template-columns: minmax(140px, 1fr) minmax(0, 2fr);
         }
 
+        .field-group-grouped-body.field-group-grouped-body-patient-lookup > .field-group-span-full {
+          grid-column: 1 / -1;
+        }
+
         .field-group-grouped-body.field-group-grouped-body-date {
           grid-template-columns: minmax(180px, 1.15fr) minmax(0, 1fr);
           align-items: start;
