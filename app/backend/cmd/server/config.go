@@ -97,11 +97,16 @@ type PACSNodeConfig struct {
 	DICOMwebBaseURL     string                     `json:"dicomweb_base_url"`
 	SupportsCMove       bool                       `json:"supports_cmove"`
 	SupportsCGet        bool                       `json:"supports_cget"`
-	PatientIDSource     string                     `json:"patient_id_source,omitempty"`
-	Auth                PACSAuthConfig             `json:"auth"`
-	Search              PACSNodeSearchConfig       `json:"search"`
-	Retrieve            PACSNodeRetrieveConfig     `json:"retrieve"`
-	Health              PACSNodeHealthConfig       `json:"health"`
+	// PatientIDSource selects which patient identifier is sent as the DICOM
+	// PatientID when the professional searches by DNI. Options:
+	//   "dni"      -> the document number (default when empty)
+	//   "mongo_id" -> the patient's Mongo _id (mongo_object_id)
+	//   <other>    -> reserved for a future HIS-provider field (not implemented)
+	PatientIDSource string                 `json:"patient_id_source,omitempty"`
+	Auth            PACSAuthConfig         `json:"auth"`
+	Search          PACSNodeSearchConfig   `json:"search"`
+	Retrieve        PACSNodeRetrieveConfig `json:"retrieve"`
+	Health          PACSNodeHealthConfig   `json:"health"`
 }
 
 type PACSAuthConfig struct {

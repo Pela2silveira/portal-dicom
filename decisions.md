@@ -225,6 +225,8 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Reusing `patient_identifiers` means correlations learned by the patient portal are leveraged automatically, and DNI searches that hit the HIS write the mapping back for reuse. No new `identifier_type` or migration was required.
 - Pure helpers (`normalizePatientIDSource`, `patientIDSourceNeedsMongo`, `effectivePatientIDForNode`, `candidateLocalCachePatientIDs`) are covered by Tier 1 tests in `physician_patient_id_test.go`.
 - UI: the professional filter block now exposes a **DNI del paciente** field (mapped to `document_number`) and a separate **ID DICOM (directo)** field (mapped to `patient_id`).
+- (v0.7.1) UI field order: in the 2-column patient-lookup grid the first row splits into `DNI | ID DICOM (directo)` and the `Nombre` field spans the full width on the second row (`.field-group-span-full` → `grid-column: 1 / -1`). This keeps the two short identifiers side by side and gives the name its own wide row.
+- (v0.7.1) Static asset caching fixed: `/portal-assets/portal.js` and `portal.css` were served without `Cache-Control`, so after a deploy browsers kept a stale `portal.js` while loading the new `index.html`. A mismatched pair (new HTML with the ID field, old JS without its wiring) made the professional ID search send no `patient_id` at all, returning unfiltered results. Fix: nginx now sends `expires -1` (revalidate) for `/portal-assets/` and the HTML routes, and the asset URLs carry a `?v=<version>` query. `expires` is used instead of `add_header Cache-Control` so the inherited security headers are preserved.
 
 ### Deferred
 - The `"otro_campo"` mapping for other HIS providers is not implemented yet (only `dni` and `mongo_id`); the enum leaves the hook.
