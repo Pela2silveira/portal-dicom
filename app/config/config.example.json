@@ -16,6 +16,7 @@
       ],
       "protocol": "hybrid",
       "priority": 1,
+      "patient_id_source": "dni",
       "search": {
         "mode": "qido_rs",
         "dicomweb_base_url": "https://pending-host/dcm4chee-arc/aets/PACSHPN/rs",

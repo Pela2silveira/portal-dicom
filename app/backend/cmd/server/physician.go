@@ -81,6 +81,7 @@ type PhysicianSummary struct {
 
 type PhysicianSearchFilters struct {
 	PatientID      string `json:"patient_id,omitempty"`
+	DocumentNumber string `json:"document_number,omitempty"`
 	PatientName    string `json:"patient_name,omitempty"`
 	PatientNameRaw string `json:"patient_name_raw,omitempty"`
 	BirthDate      string `json:"birth_date,omitempty"`
@@ -394,12 +395,13 @@ func (a *App) handlePhysicianResults(w http.ResponseWriter, r *http.Request) {
 	username := normalizeProfessionalDocumentInput(r.URL.Query().Get("username"))
 
 	filters := PhysicianSearchFilters{
-		PatientID:   strings.TrimSpace(r.URL.Query().Get("patient_id")),
-		PatientName: strings.TrimSpace(r.URL.Query().Get("patient_name")),
-		DateFrom:    strings.TrimSpace(r.URL.Query().Get("date_from")),
-		DateTo:      strings.TrimSpace(r.URL.Query().Get("date_to")),
-		Modality:    strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("modality"))),
-		Source:      normalizePhysicianSearchSource(r.URL.Query().Get("source")),
+		PatientID:      strings.TrimSpace(r.URL.Query().Get("patient_id")),
+		DocumentNumber: strings.TrimSpace(r.URL.Query().Get("document_number")),
+		PatientName:    strings.TrimSpace(r.URL.Query().Get("patient_name")),
+		DateFrom:       strings.TrimSpace(r.URL.Query().Get("date_from")),
+		DateTo:         strings.TrimSpace(r.URL.Query().Get("date_to")),
+		Modality:       strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("modality"))),
+		Source:         normalizePhysicianSearchSource(r.URL.Query().Get("source")),
 	}
 	useInitialCachePeriod := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("use_initial_cache_period")), "true")
 	if filters.Source != physicianSearchSourceLocalCache && !hasPhysicianQueryFilters(filters) {
@@ -621,6 +623,7 @@ func normalizePhysicianSearchSource(value string) string {
 
 func hasPhysicianQueryFilters(filters PhysicianSearchFilters) bool {
 	return strings.TrimSpace(filters.PatientID) != "" ||
+		strings.TrimSpace(filters.DocumentNumber) != "" ||
 		strings.TrimSpace(filters.PatientName) != "" ||
 		strings.TrimSpace(filters.DateFrom) != "" ||
 		strings.TrimSpace(filters.DateTo) != "" ||
@@ -1674,7 +1677,16 @@ func (a *App) listPhysicianResults(ctx context.Context, physicianID string, filt
 	}
 
 	filters.Source = normalizePhysicianSearchSource(filters.Source)
+
+	// A direct search by DICOM ID (patient_id) is sent verbatim and takes
+	// precedence. A search by DNI (document_number) is mapped to the identifier
+	// each source expects (see resolvePhysicianSearchByDNI).
+	searchByDNI := strings.TrimSpace(filters.PatientID) == "" && strings.TrimSpace(filters.DocumentNumber) != ""
+
 	if filters.Source == physicianSearchSourceLocalCache {
+		if searchByDNI {
+			return a.searchPhysicianLocalCacheByDNI(ctx, physician, filters, useInitialCachePeriod)
+		}
 		return a.searchPhysicianResultsFromLocalCache(ctx, physician, filters, useInitialCachePeriod)
 	}
 
@@ -1683,7 +1695,67 @@ func (a *App) listPhysicianResults(ctx context.Context, physicianID string, filt
 		return nil, fmt.Errorf("unknown physician search source %q", filters.Source)
 	}
 
+	if searchByDNI {
+		source := node.Resolved().PatientIDSource
+		ids := a.resolvePatientSearchIdentifiers(ctx, filters.DocumentNumber, patientIDSourceNeedsMongo(source))
+		effective := effectivePatientIDForNode(source, ids)
+		if effective == "" {
+			a.log("info", "physician_search_dni_unmapped", map[string]any{
+				"node":   node.ID,
+				"source": source,
+			})
+			return []PhysicianResult{}, nil
+		}
+		filters.PatientID = effective
+	}
+
 	return a.searchPhysicianResultsFromNode(ctx, physician, node, filters)
+}
+
+// searchPhysicianLocalCacheByDNI resolves a DNI to its candidate DICOM PatientID
+// values (one per distinct node mapping rule) and probes the local cache for
+// each, merging unique studies. The local Orthanc aggregates studies retrieved
+// from multiple nodes, each keyed by that node's mapped PatientID, so a single
+// DNI may need several probes.
+func (a *App) searchPhysicianLocalCacheByDNI(ctx context.Context, physician PhysicianSummary, filters PhysicianSearchFilters, useInitialCachePeriod bool) ([]PhysicianResult, error) {
+	sources := a.distinctConfiguredPatientIDSources()
+	needMongo := false
+	for _, source := range sources {
+		if patientIDSourceNeedsMongo(source) {
+			needMongo = true
+			break
+		}
+	}
+	ids := a.resolvePatientSearchIdentifiers(ctx, filters.DocumentNumber, needMongo)
+	candidates := candidateLocalCachePatientIDs(ids, sources)
+	if len(candidates) == 0 {
+		return []PhysicianResult{}, nil
+	}
+
+	merged := make([]PhysicianResult, 0)
+	seen := make(map[string]struct{})
+	for _, candidate := range candidates {
+		probe := filters
+		probe.DocumentNumber = ""
+		probe.PatientID = candidate
+		results, err := a.searchPhysicianResultsFromLocalCache(ctx, physician, probe, useInitialCachePeriod)
+		if err != nil {
+			return nil, err
+		}
+		for _, result := range results {
+			key := strings.TrimSpace(result.StudyInstanceUID)
+			if key == "" {
+				merged = append(merged, result)
+				continue
+			}
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			merged = append(merged, result)
+		}
+	}
+	return merged, nil
 }
 
 func buildPhysicianDownloadURL(studyInstanceUID string) string {

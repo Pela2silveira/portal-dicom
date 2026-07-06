@@ -62,6 +62,7 @@
       const physicianDniError = document.getElementById("physician-dni-error");
       const physicianPasswordError = document.getElementById("physician-password-error");
       const physicianSearchPatientID = document.getElementById("physician-search-patient-id");
+      const physicianSearchDicomID = document.getElementById("physician-search-dicom-id");
       const physicianSearchPatient = document.getElementById("physician-search-patient");
       const physicianFilterPeriod = document.getElementById("physician-filter-period");
       const physicianDateDropdown = document.getElementById("physician-date-dropdown");
@@ -497,7 +498,8 @@
         if (activeKind === "physician" && activePhysicianUsername) {
           state.physician = {
             username: activePhysicianUsername,
-            patient_id: physicianSearchPatientID.value.trim(),
+            document_number: physicianSearchPatientID.value.trim(),
+            dicom_id: physicianSearchDicomID.value.trim(),
             patient_name: physicianSearchPatient.value.trim(),
             date_from: physicianDateFilter.from || "",
             date_to: physicianDateFilter.to || "",
@@ -569,7 +571,8 @@
         if (state?.kind === "physician" && state.physician?.username) {
           activateRole("physician");
           physicianDni.value = state.physician.username;
-          physicianSearchPatientID.value = state.physician.patient_id || "";
+          physicianSearchPatientID.value = state.physician.document_number || state.physician.patient_id || "";
+          physicianSearchDicomID.value = state.physician.dicom_id || "";
           physicianSearchPatient.value = state.physician.patient_name || "";
           if (state.physician.date_from || state.physician.date_to) {
             physicianFilterPeriod.value = "custom";
@@ -589,6 +592,8 @@
           try {
             await loadPhysicianResults(state.physician.username, {
               useInitialCachePeriod:
+                !state.physician.document_number &&
+                !state.physician.dicom_id &&
                 !state.physician.patient_id &&
                 !state.physician.patient_name &&
                 !state.physician.date_from &&
@@ -1698,6 +1703,7 @@
 
       function hasPhysicianQueryFilters(filters) {
         return Boolean(filters?.patient_id) ||
+          Boolean(filters?.document_number) ||
           Boolean(filters?.patient_name) ||
           Boolean(filters?.date_from) ||
           Boolean(filters?.date_to) ||
@@ -2068,7 +2074,8 @@
         const previousScrollY = window.scrollY;
 
         const params = new URLSearchParams();
-        if (physicianSearchPatientID.value.trim()) params.set("patient_id", physicianSearchPatientID.value.trim());
+        if (physicianSearchPatientID.value.trim()) params.set("document_number", physicianSearchPatientID.value.trim());
+        if (physicianSearchDicomID.value.trim()) params.set("patient_id", physicianSearchDicomID.value.trim());
         if (physicianSearchPatient.value.trim()) params.set("patient_name", physicianSearchPatient.value.trim());
         if (physicianDateFilter.from) params.set("date_from", physicianDateFilter.from);
         if (physicianDateFilter.to) {
@@ -2916,7 +2923,8 @@
         }
         if ((physicianSearchSource.value || physicianLocalCacheSourceValue) !== physicianLocalCacheSourceValue &&
             !hasPhysicianQueryFilters({
-              patient_id: physicianSearchPatientID.value.trim(),
+              patient_id: physicianSearchDicomID.value.trim(),
+              document_number: physicianSearchPatientID.value.trim(),
               patient_name: physicianSearchPatient.value.trim(),
               date_from: physicianDateFilter.from,
               date_to: physicianDateFilter.to || physicianDateFilter.from,
