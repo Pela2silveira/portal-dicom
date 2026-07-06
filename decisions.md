@@ -225,6 +225,7 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - Reusing `patient_identifiers` means correlations learned by the patient portal are leveraged automatically, and DNI searches that hit the HIS write the mapping back for reuse. No new `identifier_type` or migration was required.
 - Pure helpers (`normalizePatientIDSource`, `patientIDSourceNeedsMongo`, `effectivePatientIDForNode`, `candidateLocalCachePatientIDs`) are covered by Tier 1 tests in `physician_patient_id_test.go`.
 - UI: the professional filter block now exposes a **DNI del paciente** field (mapped to `document_number`) and a separate **ID DICOM (directo)** field (mapped to `patient_id`).
+- (v0.7.1) UI field order fixed: in the 2-column patient-lookup grid the fields render as `DNI | Nombre` on the first row and `ID DICOM (directo)` on the second, so the name (wide column) sits next to the DNI and the direct ID goes below. The previous 0.7.0 order put the direct ID in the wide column and pushed the name to its own row, which was visually confusing and led operators to type identifiers into the name field.
 
 ### Deferred
 - The `"otro_campo"` mapping for other HIS providers is not implemented yet (only `dni` and `mongo_id`); the enum leaves the hook.
