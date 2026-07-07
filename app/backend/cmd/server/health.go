@@ -220,6 +220,10 @@ func (a *App) collectComponentHealth(ctx context.Context) []ComponentHealth {
 		components = append(components, mongoComponent)
 	}
 
+	if legacyComponent, ok := a.legacyHISComponent(ctx); ok {
+		components = append(components, legacyComponent)
+	}
+
 	components = append(components, a.remotePACSComponents(ctx)...)
 
 	return components
