@@ -198,6 +198,41 @@ func (c *LegacyHISClient) LookupCodigoByDocument(ctx context.Context, documentNu
 	return legacyCodigoToString(raw), nil
 }
 
+// legacyHISComponent reports the legacy HIS dependency health. It is only
+// present when the feature is enabled in config, and is always optional
+// severity: an unreachable legacy HIS degrades the system but must never mark it
+// unavailable (i.e. never take the app down).
+func (a *App) legacyHISComponent(ctx context.Context) (ComponentHealth, bool) {
+	if a.externalConfig == nil || !a.externalConfig.LegacyHIS.Enabled {
+		return ComponentHealth{}, false
+	}
+
+	status := ComponentStatusHealthy
+	message := "legacy HIS reachable"
+	switch {
+	case a.legacyHIS == nil:
+		status = ComponentStatusUnavailable
+		message = "legacy HIS not initialized (check host/credentials)"
+	default:
+		if err := a.legacyHIS.Ping(ctx); err != nil {
+			status = ComponentStatusUnavailable
+			message = "legacy HIS unreachable"
+			a.log("warn", "legacy_his_health_unreachable", map[string]any{
+				"error": err.Error(),
+			})
+		}
+	}
+
+	return ComponentHealth{
+		Name:        "legacy_his",
+		DisplayName: "HIS legacy (MSSQL)",
+		Category:    "optional",
+		Severity:    ComponentSeverityOptional,
+		Status:      status,
+		Message:     message,
+	}, true
+}
+
 func (c *LegacyHISClient) Close() error {
 	if c == nil || c.db == nil {
 		return nil
