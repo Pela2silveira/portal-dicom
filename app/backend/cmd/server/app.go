@@ -33,6 +33,7 @@ type App struct {
 	identitySource             PatientIdentitySource
 	professionalIdentitySource ProfessionalIdentitySource
 	prestacionLookup           PrestacionLookupSource
+	legacyHIS                  *LegacyHISClient
 	patientSearchQueue         chan string
 	retrieveQueue              chan string
 	scheduledRetrieveQueue     chan string

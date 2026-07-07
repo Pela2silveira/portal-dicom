@@ -1697,7 +1697,7 @@ func (a *App) listPhysicianResults(ctx context.Context, physicianID string, filt
 
 	if searchByDNI {
 		source := node.Resolved().PatientIDSource
-		ids := a.resolvePatientSearchIdentifiers(ctx, filters.DocumentNumber, patientIDSourceNeedsMongo(source))
+		ids := a.resolvePatientSearchIdentifiers(ctx, filters.DocumentNumber, patientIdentifierNeedsForSources([]string{source}))
 		effective := effectivePatientIDForNode(source, ids)
 		if effective == "" {
 			a.log("info", "physician_search_dni_unmapped", map[string]any{
@@ -1719,14 +1719,7 @@ func (a *App) listPhysicianResults(ctx context.Context, physicianID string, filt
 // DNI may need several probes.
 func (a *App) searchPhysicianLocalCacheByDNI(ctx context.Context, physician PhysicianSummary, filters PhysicianSearchFilters, useInitialCachePeriod bool) ([]PhysicianResult, error) {
 	sources := a.distinctConfiguredPatientIDSources()
-	needMongo := false
-	for _, source := range sources {
-		if patientIDSourceNeedsMongo(source) {
-			needMongo = true
-			break
-		}
-	}
-	ids := a.resolvePatientSearchIdentifiers(ctx, filters.DocumentNumber, needMongo)
+	ids := a.resolvePatientSearchIdentifiers(ctx, filters.DocumentNumber, patientIdentifierNeedsForSources(sources))
 	candidates := candidateLocalCachePatientIDs(ids, sources)
 	if len(candidates) == 0 {
 		return []PhysicianResult{}, nil

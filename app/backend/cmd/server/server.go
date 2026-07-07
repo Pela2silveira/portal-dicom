@@ -104,6 +104,7 @@ func main() {
 		err:      errors.New("external config not loaded"),
 	})
 	prestacionLookup := PrestacionLookupSource(&NoopPrestacionLookupSource{})
+	var legacyHIS *LegacyHISClient
 	if externalConfig != nil {
 		identitySource = buildPatientIdentitySource(*externalConfig, logger)
 		professionalIdentitySource = buildProfessionalIdentitySource(*externalConfig, logger)
@@ -112,6 +113,7 @@ func main() {
 		} else {
 			recordStartupIssue("prestaciones_lookup", err)
 		}
+		legacyHIS = buildLegacyHISClient(externalConfig.LegacyHIS, logger, recordStartupIssue)
 	}
 
 	app := &App{
@@ -131,6 +133,7 @@ func main() {
 		identitySource:             identitySource,
 		professionalIdentitySource: professionalIdentitySource,
 		prestacionLookup:           prestacionLookup,
+		legacyHIS:                  legacyHIS,
 		patientSearchQueue:         make(chan string, 32),
 		retrieveQueue:              make(chan string, 32),
 		scheduledRetrieveQueue:     make(chan string, 32),

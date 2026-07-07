@@ -5,6 +5,7 @@ go 1.22
 require (
 	github.com/go-ldap/ldap/v3 v3.4.8
 	github.com/jackc/pgx/v5 v5.7.2
+	github.com/microsoft/go-mssqldb v1.7.2
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	go.mongodb.org/mongo-driver v1.17.6
 )
@@ -12,6 +13,8 @@ require (
 require (
 	github.com/Azure/go-ntlmssp v0.0.0-20221128193559-754e69321358 // indirect
 	github.com/go-asn1-ber/asn1-ber v1.5.7 // indirect
+	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
+	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

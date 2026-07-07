@@ -1133,3 +1133,81 @@ func (a *App) loadCachedMongoObjectIDByDocument(ctx context.Context, documentNum
 	}
 	return normalizeMongoObjectIDCandidate(mongoObjectID), nil
 }
+
+const (
+	legacyHISSourceSystem   = "legacy_his"
+	legacyHISIdentifierType = "legacy_his_code"
+)
+
+// loadCachedLegacyHISCodeByDocument returns the legacy HIS patient code cached in
+// patient_identifiers for a DNI, or an empty string when not cached.
+func (a *App) loadCachedLegacyHISCodeByDocument(ctx context.Context, documentNumber string) (string, error) {
+	documentNumber = normalizeDocumentNumberCandidate(documentNumber)
+	if documentNumber == "" {
+		return "", nil
+	}
+
+	var code string
+	err := a.db.QueryRowContext(ctx, `
+		SELECT legacy.identifier_value
+		FROM patient_identifiers AS doc
+		JOIN patient_identifiers AS legacy
+			ON legacy.patient_id = doc.patient_id
+			AND legacy.source_system = $2
+			AND legacy.identifier_type = $3
+		WHERE doc.identifier_type = 'document_number'
+		  AND doc.identifier_value = $1
+		ORDER BY legacy.last_verified_at DESC, legacy.updated_at DESC
+		LIMIT 1
+	`, documentNumber, legacyHISSourceSystem, legacyHISIdentifierType).Scan(&code)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("load cached legacy his code by document: %w", err)
+	}
+	return strings.TrimSpace(code), nil
+}
+
+// persistLegacyHISCode caches a DNI->Codigo mapping in patient_identifiers. It is
+// best-effort and only attaches the code to a patient row that already exists
+// (created by the patient portal flow); when the patient is unknown locally the
+// mapping is skipped and callers keep the live-resolved value.
+func (a *App) persistLegacyHISCode(ctx context.Context, documentNumber, code string) error {
+	documentNumber = normalizeDocumentNumberCandidate(documentNumber)
+	code = strings.TrimSpace(code)
+	if documentNumber == "" || code == "" || a.db == nil {
+		return nil
+	}
+
+	var patientID string
+	err := a.db.QueryRowContext(ctx, `
+		SELECT patient_id::text
+		FROM patient_identifiers
+		WHERE identifier_type = 'document_number'
+		  AND identifier_value = $1
+		ORDER BY is_primary DESC, last_verified_at DESC, updated_at DESC
+		LIMIT 1
+	`, documentNumber).Scan(&patientID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("lookup patient for legacy his code: %w", err)
+	}
+
+	if _, err := a.db.ExecContext(ctx, `
+		INSERT INTO patient_identifiers (
+			patient_id, source_system, identifier_type, identifier_value, is_primary, last_verified_at, metadata_json, updated_at
+		) VALUES (
+			$1::uuid, $2, $3, $4, false, now(), '{}'::jsonb, now()
+		)
+		ON CONFLICT (source_system, identifier_type, identifier_value) DO UPDATE SET
+			patient_id = EXCLUDED.patient_id,
+			last_verified_at = now(),
+			updated_at = now()
+	`, patientID, legacyHISSourceSystem, legacyHISIdentifierType, code); err != nil {
+		return fmt.Errorf("upsert legacy his code: %w", err)
+	}
+	return nil
+}

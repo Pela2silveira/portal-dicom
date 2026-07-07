@@ -51,6 +51,7 @@ type RuntimePortalConfigResponse struct {
 type ExternalConfig struct {
 	PACSNodes     []PACSNodeConfig    `json:"pacs_nodes"`
 	HIS           HISConfig           `json:"his"`
+	LegacyHIS     LegacyHISConfig     `json:"legacy_his"`
 	Portal        PortalConfig        `json:"portal"`
 	Patient       PatientConfig       `json:"patient"`
 	Professional  ProfessionalConfig  `json:"professional"`
@@ -134,6 +135,23 @@ type ProfessionalConfig struct {
 	InitialCachePeriod  string   `json:"initial_cache_period"`
 	WeeklyDownloadLimit int      `json:"weekly_download_limit"`
 	LicenseExceptions   []string `json:"license_exceptions"`
+}
+
+// LegacyHISConfig configures the optional legacy HIS (Microsoft SQL Server)
+// lookup used to map a DNI to the internal patient code that some PACS nodes use
+// as the DICOM PatientID (see the "legacy_his" patient_id_source). Credentials
+// are never stored here: the password is read from the PasswordEnv environment
+// variable.
+type LegacyHISConfig struct {
+	Enabled          bool   `json:"enabled"`
+	Host             string `json:"host"`
+	Port             int    `json:"port"`
+	Database         string `json:"database"`
+	User             string `json:"user"`
+	PasswordEnv      string `json:"password_env"`
+	Encrypt          string `json:"encrypt,omitempty"`
+	ConnectTimeoutMS int    `json:"connect_timeout_ms,omitempty"`
+	QueryTimeoutMS   int    `json:"query_timeout_ms,omitempty"`
 }
 
 type PACSNodeResolvedConfig struct {

@@ -229,7 +229,21 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - (v0.7.1) Static asset caching fixed: `/portal-assets/portal.js` and `portal.css` were served without `Cache-Control`, so after a deploy browsers kept a stale `portal.js` while loading the new `index.html`. A mismatched pair (new HTML with the ID field, old JS without its wiring) made the professional ID search send no `patient_id` at all, returning unfiltered results. Fix: nginx now sends `expires -1` (revalidate) for `/portal-assets/` and the HTML routes, and the asset URLs carry a `?v=<version>` query. `expires` is used instead of `add_header Cache-Control` so the inherited security headers are preserved.
 
 ### Deferred
-- The `"otro_campo"` mapping for other HIS providers is not implemented yet (only `dni` and `mongo_id`); the enum leaves the hook.
+- Other HIS-provider mappings beyond `dni`, `mongo_id` and `legacy_his` are not implemented yet; unknown `patient_id_source` values are accepted and leave the hook.
+
+## Physician Search: legacy HIS (MSSQL) DNI→Codigo (implemented v0.8.0)
+
+### Context
+- The `hpnsyn` node (Hospital Provincial Neuquén / Synapse) keys studies by an internal HIS patient code (`Historias_Clinicas.Codigo`), not the DNI or Mongo id. This is the concrete "other HIS-provider field" case the `patient_id_source` enum left as a hook.
+- The mapping DNI→Codigo lives in a legacy Microsoft SQL Server database (`Hospital.dbo.Historias_Clinicas`, filter `HC_Documento`). It applies **only** to `hpnsyn`.
+
+### Design
+- New `patient_id_source: "legacy_his"` (aliases `mssql_codigo`/`codigo`). When a professional searches by DNI against a node with this rule, the DNI is mapped to `Codigo` and sent as the DICOM `PatientID`. Direct ID search is unaffected.
+- New optional top-level `legacy_his` config block: `host`, `port` (default 1433), `database` (default `Hospital`), `user`, `password_env` (default `LEGACY_HIS_PASSWORD`), `encrypt` (default `disable` — legacy internal server without a valid cert), and timeouts. Credentials never live in JSON: the password is read from the env var named by `password_env`.
+- Client (`legacy_his.go`): pooled `database/sql` + `github.com/microsoft/go-mssqldb` (pinned `v1.7.2`, the last release compatible with Go 1.22). Parameterized query `SELECT TOP 1 [Codigo] FROM [<db>].[dbo].[Historias_Clinicas] WHERE HC_Documento = @dni`. Startup is resilient: a build/ping failure records a startup issue and leaves a nil client (legacy_his DNI searches just don't map), so a down MSSQL never blocks boot.
+- Resolution reuses `patient_identifiers`: `resolveLegacyHISCode` reads the cached `legacy_his_code` identifier first and, on a miss, queries MSSQL live and **best-effort persists** the mapping (`source_system='legacy_his'`, `identifier_type='legacy_his_code'`). Persistence only attaches to an already-existing patient row (created by the patient portal flow); unknown patients are resolved live without creating spurious `patients` rows (avoids polluting `last_login_at`). No migration needed (existing table/columns).
+- `resolvePatientSearchIdentifiers` now takes a `patientIdentifierNeeds{Mongo, LegacyHIS}` struct instead of a single `needMongo` bool, so each lookup (Mongo / MSSQL) only runs when a configured node's rule requires it. Local-cache DNI search aggregates the needs across all configured nodes.
+- Pure helpers (`legacyCodigoToString`, `buildLegacyHISDSN`, `legacyHISLookupQuery`, `patientIDSourceNeedsLegacyHIS`, `patientIdentifierNeedsForSources`, `effectivePatientIDForNode` legacy case) covered by Tier 1 tests. The live MSSQL query itself is not unit-tested (no infra).
 
 
 ## Pending: Backend modularization (Phase 2) + tests

@@ -52,6 +52,17 @@
     "andes_rest_concurrency": 2,
     "andes_rest_request_timeout_ms": 3000
   },
+  "legacy_his": {
+    "enabled": false,
+    "host": "pending-mssql-host",
+    "port": 1433,
+    "database": "Hospital",
+    "user": "aplicaciones_portalImg",
+    "password_env": "LEGACY_HIS_PASSWORD",
+    "encrypt": "disable",
+    "connect_timeout_ms": 5000,
+    "query_timeout_ms": 5000
+  },
   "portal": {
     "session_timeout_minutes": 10,
     "show_demo_ribbon": true,
