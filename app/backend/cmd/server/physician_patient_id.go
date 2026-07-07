@@ -200,6 +200,9 @@ func (a *App) resolveLegacyHISCode(ctx context.Context, documentNumber string) s
 	}
 
 	if a.legacyHIS == nil {
+		a.log("warn", "legacy_his_not_configured", map[string]any{
+			"hint": "legacy_his disabled or client failed to init; check config.legacy_his.enabled/host and LEGACY_HIS_PASSWORD (see startup_dependency_unavailable at boot)",
+		})
 		return ""
 	}
 
@@ -211,6 +214,7 @@ func (a *App) resolveLegacyHISCode(ctx context.Context, documentNumber string) s
 		return ""
 	}
 	if code == "" {
+		a.log("info", "legacy_his_no_match", map[string]any{})
 		return ""
 	}
 
