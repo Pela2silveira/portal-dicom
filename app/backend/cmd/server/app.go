@@ -405,22 +405,32 @@ func (a *App) getStudyOperationalState(ctx context.Context, studyUID string, fal
 		}
 	}
 
+	// A retrieve job that is queued/running (and not stale) is still pulling
+	// instances into Orthanc. In that case we must not treat the study as
+	// finished just because some instances already landed locally.
+	retrieveInFlight := retrieveStatus == "queued" || retrieveStatus == "running"
+
 	isLocal, _, err := a.findOrthancStudy(ctx, studyUID)
 	if err != nil {
 		return "", "", "", 0, "", "", err
 	}
 	if isLocal {
-		// A partial/unverified study is present and viewable; keep its flag
-		// rather than masking it as complete so callers/UI can surface
-		// remediation and the scheduled worker can re-verify.
-		if cacheStatus != cacheStatusLocalPartial && cacheStatus != cacheStatusLocalUnverified {
-			cacheStatus = cacheStatusLocalComplete
-		}
-		retrieveStatus = "done"
-		retrievePhase = "done"
-		retrieveProgress = 100
+		// The study is at least partially present, so it is viewable even
+		// mid-retrieve (partial viewing is allowed).
 		viewerURL = buildStoneViewerURL(studyUID)
 		ohifViewerURL = buildOHIFViewerURL(studyUID)
+
+		if !retrieveInFlight {
+			// A partial/unverified study is present and viewable; keep its flag
+			// rather than masking it as complete so callers/UI can surface
+			// remediation and the scheduled worker can re-verify.
+			if cacheStatus != cacheStatusLocalPartial && cacheStatus != cacheStatusLocalUnverified {
+				cacheStatus = cacheStatusLocalComplete
+			}
+			retrieveStatus = "done"
+			retrievePhase = "done"
+			retrieveProgress = 100
+		}
 	}
 
 	return cacheStatus, retrieveStatus, retrievePhase, retrieveProgress, viewerURL, ohifViewerURL, nil
