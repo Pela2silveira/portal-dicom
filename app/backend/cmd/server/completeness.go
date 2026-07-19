@@ -220,7 +220,80 @@ func (a *App) sourceStudySeriesCountsCFind(ctx context.Context, node PACSNodeCon
 		}
 		counts[uid] = dicomFirstInt(item, "00201209")
 	}
+
+	// Synapse (and other Fuji sources) frequently omit
+	// NumberOfSeriesRelatedInstances at series-level C-FIND, which would reduce
+	// completeness to mere series presence. When that tag is missing/zero, count
+	// instances directly via an IMAGE-level C-FIND so partially transferred
+	// series are detected. A per-series probe failure leaves that series count
+	// unknown (0) rather than aborting the whole evaluation.
+	if a.retrieveVerifyInstanceCounts() {
+		for seriesUID, count := range counts {
+			if count > 0 {
+				continue
+			}
+			instanceCount, err := a.sourceSeriesInstanceCountCFind(ctx, node, studyUID, seriesUID)
+			if err != nil {
+				a.log("warn", "source_series_instance_count_failed", map[string]any{
+					"study_instance_uid":  strings.TrimSpace(studyUID),
+					"series_instance_uid": seriesUID,
+					"source_node_id":      node.ID,
+					"error":               err.Error(),
+				})
+				continue
+			}
+			counts[seriesUID] = instanceCount
+		}
+	}
+
 	return counts, nil
+}
+
+// sourceSeriesInstanceCountCFind counts the instances the source PACS reports
+// for a single series via an IMAGE-level C-FIND. It returns the number of
+// answers, which equals the stored SOP instances for that series.
+func (a *App) sourceSeriesInstanceCountCFind(ctx context.Context, node PACSNodeConfig, studyUID, seriesUID string) (int, error) {
+	resolved := node.Resolved()
+
+	queryPayload, err := json.Marshal(map[string]any{
+		"Level": "Image",
+		"Query": map[string]string{
+			"StudyInstanceUID":  strings.TrimSpace(studyUID),
+			"SeriesInstanceUID": strings.TrimSpace(seriesUID),
+			"SOPInstanceUID":    "",
+		},
+		"Timeout": 60,
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(a.cfg.OrthancURL, "/")+"/modalities/"+url.PathEscape(resolved.ID)+"/query", strings.NewReader(string(queryPayload)))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	a.applyOrthancInternalRequestAuth(req)
+
+	res, err := a.httpClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		errBody, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+		return 0, fmt.Errorf("orthanc image c-find bad status %d: %s", res.StatusCode, strings.TrimSpace(string(errBody)))
+	}
+
+	queryID, err := decodeOrthancQueryID(res.Body)
+	if err != nil {
+		return 0, err
+	}
+	answerIDs, err := a.fetchOrthancQueryAnswerIDs(ctx, queryID)
+	if err != nil {
+		return 0, err
+	}
+	return len(answerIDs), nil
 }
 
 func (a *App) sourceStudySeriesCountsQIDO(ctx context.Context, node PACSNodeConfig, studyUID string) (seriesCounts, error) {

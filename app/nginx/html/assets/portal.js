@@ -1665,6 +1665,7 @@
       function labelForCacheStatus(status) {
         if (status === "local_complete") return "Completo";
         if (status === "local_partial") return "Parcial";
+        if (status === "local_unverified") return "Sin verificar";
         if (status === "not_local") return "No disponible localmente";
         return status || "Desconocido";
       }
