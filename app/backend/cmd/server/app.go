@@ -409,6 +409,10 @@ func (a *App) getStudyOperationalState(ctx context.Context, studyUID string, fal
 	// instances into Orthanc. In that case we must not treat the study as
 	// finished just because some instances already landed locally.
 	retrieveInFlight := retrieveStatus == "queued" || retrieveStatus == "running"
+	// A prior job that failed or stalled (idle) must stay visible so the UI can
+	// offer a retry instead of masking it as complete just because some
+	// instances already landed locally.
+	retrieveNeedsRetry := retrieveStatus == "failed" || retrieveStatus == "idle"
 
 	isLocal, _, err := a.findOrthancStudy(ctx, studyUID)
 	if err != nil {
@@ -416,11 +420,11 @@ func (a *App) getStudyOperationalState(ctx context.Context, studyUID string, fal
 	}
 	if isLocal {
 		// The study is at least partially present, so it is viewable even
-		// mid-retrieve (partial viewing is allowed).
+		// mid-retrieve or after a failed attempt (partial viewing is allowed).
 		viewerURL = buildStoneViewerURL(studyUID)
 		ohifViewerURL = buildOHIFViewerURL(studyUID)
 
-		if !retrieveInFlight {
+		if !retrieveInFlight && !retrieveNeedsRetry {
 			// A partial/unverified study is present and viewable; keep its flag
 			// rather than masking it as complete so callers/UI can surface
 			// remediation and the scheduled worker can re-verify.
