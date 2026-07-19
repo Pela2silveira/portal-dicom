@@ -265,10 +265,20 @@ func (a *App) processRetrieveJob(jobID string) {
 		})
 	}
 
-	orthancStudyID, err := a.monitorOrthancRetrieveJob(ctx, jobID, orthancJobID, studyInstanceUID)
+	orthancStudyID, cgetStatus, err := a.monitorOrthancRetrieveJob(ctx, jobID, orthancJobID, studyInstanceUID)
 	if err != nil {
 		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", "retrieving", 0, err.Error(), orthancJobID, "", 0, false)
 		return
+	}
+	if cgetStatus.FailedInstancesCount > 0 || cgetStatus.RemainingInstancesCount > 0 {
+		a.log("warn", "retrieve_cget_suboperations_incomplete", map[string]any{
+			"job_id":                    jobID,
+			"study_instance_uid":        studyInstanceUID,
+			"source_node_id":            sourceNodeCode,
+			"instances_count":           cgetStatus.InstancesCount,
+			"failed_instances_count":    cgetStatus.FailedInstancesCount,
+			"remaining_instances_count": cgetStatus.RemainingInstancesCount,
+		})
 	}
 
 	if err := a.updateRetrieveJobStatus(ctx, jobID, "running", "verifying", 100, "", orthancJobID, orthancStudyID, 0, false); err != nil {
@@ -278,8 +288,12 @@ func (a *App) processRetrieveJob(jobID string) {
 		})
 	}
 
-	// Completeness is best-effort: a lookup failure must not fail an otherwise
-	// successful retrieve, it only means we cannot assert local_partial.
+	// Completeness verification never fails the retrieve on its own. But an
+	// unverifiable result must NOT be treated as complete: when the source
+	// counts cannot be obtained (a frequent Synapse failure mode, and precisely
+	// the situation that leaves studies partial), we keep the study as
+	// local_unverified so the UI and the scheduled worker can re-check it,
+	// instead of silently asserting local_complete.
 	report, cerr := a.verifyRetrievedStudyCompleteness(ctx, node, studyInstanceUID)
 	if cerr != nil {
 		a.log("warn", "retrieve_completeness_check_failed", map[string]any{
@@ -302,7 +316,18 @@ func (a *App) processRetrieveJob(jobID string) {
 		report = a.remediateIncompleteRetrieve(ctx, jobID, node, studyInstanceUID, orthancJobID, report)
 	}
 
-	if err := a.completeRetrieveSuccess(ctx, jobID, studyInstanceUID, orthancStudyID, sourceNodeCode, report); err != nil {
+	cacheStatus := resolveRetrieveCacheStatus(report, cgetStatus)
+	if cacheStatus == cacheStatusLocalUnverified {
+		a.log("warn", "retrieve_study_unverified", map[string]any{
+			"job_id":                    jobID,
+			"study_instance_uid":        studyInstanceUID,
+			"source_node_id":            sourceNodeCode,
+			"failed_instances_count":    cgetStatus.FailedInstancesCount,
+			"remaining_instances_count": cgetStatus.RemainingInstancesCount,
+		})
+	}
+
+	if err := a.completeRetrieveSuccess(ctx, jobID, studyInstanceUID, orthancStudyID, sourceNodeCode, report, cacheStatus); err != nil {
 		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", "verifying", 100, err.Error(), orthancJobID, orthancStudyID, 0, false)
 		a.log("error", "retrieve_job_mark_done_failed", map[string]any{
 			"job_id": jobID,
@@ -318,8 +343,36 @@ func (a *App) processRetrieveJob(jobID string) {
 		"actor_type":         actorType,
 		"actor_id":           actorID,
 		"orthanc_study_id":   orthancStudyID,
+		"cache_status":       cacheStatus,
 		"duration_ms":        time.Since(startedAt).Milliseconds(),
 	})
+}
+
+// Cache status values persisted in cached_studies.cache_status.
+const (
+	cacheStatusNotLocal        = "not_local"
+	cacheStatusLocalComplete   = "local_complete"
+	cacheStatusLocalPartial    = "local_partial"
+	cacheStatusLocalUnverified = "local_unverified"
+)
+
+// resolveRetrieveCacheStatus maps a completeness report plus the C-GET job
+// counters to a cache status. It never asserts local_complete unless the study
+// was actually evaluated against the source and found complete; an
+// unverifiable result degrades to local_unverified (or local_partial when the
+// C-GET itself reported dropped/remaining instances) so the study is re-checked
+// later rather than trusted blindly.
+func resolveRetrieveCacheStatus(report studyCompletenessReport, cget orthancRetrieveStatus) string {
+	if report.Evaluated {
+		if report.Complete {
+			return cacheStatusLocalComplete
+		}
+		return cacheStatusLocalPartial
+	}
+	if cget.FailedInstancesCount > 0 || cget.RemainingInstancesCount > 0 {
+		return cacheStatusLocalPartial
+	}
+	return cacheStatusLocalUnverified
 }
 
 // remediateIncompleteRetrieve retries only the missing series of a partial study,
@@ -367,7 +420,7 @@ func (a *App) remediateIncompleteRetrieve(ctx context.Context, jobID string, nod
 			continue
 		}
 
-		if _, err := a.monitorOrthancRetrieveJob(ctx, jobID, retryJobID, studyUID); err != nil {
+		if _, _, err := a.monitorOrthancRetrieveJob(ctx, jobID, retryJobID, studyUID); err != nil {
 			a.log("warn", "retrieve_remediation_monitor_failed", map[string]any{
 				"job_id":             jobID,
 				"study_instance_uid": studyUID,
@@ -607,6 +660,16 @@ func (a *App) retrieveRetryBackoff() time.Duration {
 	return time.Duration(a.externalConfig.Portal.RetrieveRetryBackoffSeconds) * time.Second
 }
 
+// retrieveVerifyInstanceCounts reports whether the completeness check should
+// fall back to an IMAGE-level C-FIND to count instances per series when the
+// source omits NumberOfSeriesRelatedInstances. Defaults to true.
+func (a *App) retrieveVerifyInstanceCounts() bool {
+	if a.externalConfig == nil || a.externalConfig.Portal.RetrieveVerifyInstanceCounts == nil {
+		return true
+	}
+	return *a.externalConfig.Portal.RetrieveVerifyInstanceCounts
+}
+
 // retrieveTimeout bounds the whole retrieve job (initial C-GET plus remediation).
 func (a *App) retrieveTimeout() time.Duration {
 	if a.externalConfig == nil || a.externalConfig.Portal.RetrieveTimeoutMinutes <= 0 {
@@ -734,12 +797,12 @@ func (a *App) listScheduledRetrieveCandidates(ctx context.Context, maxStudyAgeDa
 	return candidates, rows.Err()
 }
 
-func (a *App) completeRetrieveSuccess(ctx context.Context, jobID, studyUID, orthancStudyID, sourceNodeID string, report studyCompletenessReport) error {
-	// A partial study is still viewable (the present series open fine); we only
-	// stop asserting local_complete so the UI and background remediation can act.
-	cacheStatus := "local_complete"
-	if report.Evaluated && !report.Complete {
-		cacheStatus = "local_partial"
+func (a *App) completeRetrieveSuccess(ctx context.Context, jobID, studyUID, orthancStudyID, sourceNodeID string, report studyCompletenessReport, cacheStatus string) error {
+	// A partial/unverified study is still viewable (the present series open
+	// fine); the caller resolved cacheStatus so the UI and background worker can
+	// act without us ever asserting local_complete on unverified data.
+	if cacheStatus == "" {
+		cacheStatus = cacheStatusLocalComplete
 	}
 
 	missingSeriesJSON, err := json.Marshal(report.MissingSeries)

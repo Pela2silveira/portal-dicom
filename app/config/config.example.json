@@ -75,7 +75,8 @@
     "scheduled_retrieve_batch_size": 5,
     "retrieve_max_attempts": 3,
     "retrieve_retry_backoff_seconds": 10,
-    "retrieve_timeout_minutes": 30
+    "retrieve_timeout_minutes": 30,
+    "retrieve_verify_instance_counts": true
   },
   "patient": {
     "auth_mode": "mail",

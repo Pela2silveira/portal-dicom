@@ -77,6 +77,56 @@ func TestEvaluateStudyCompleteness(t *testing.T) {
 	})
 }
 
+func TestResolveRetrieveCacheStatus(t *testing.T) {
+	cases := []struct {
+		name   string
+		report studyCompletenessReport
+		cget   orthancRetrieveStatus
+		want   string
+	}{
+		{
+			name:   "evaluated and complete is local_complete",
+			report: studyCompletenessReport{Evaluated: true, Complete: true},
+			want:   cacheStatusLocalComplete,
+		},
+		{
+			name:   "evaluated and incomplete is local_partial",
+			report: studyCompletenessReport{Evaluated: true, Complete: false},
+			want:   cacheStatusLocalPartial,
+		},
+		{
+			name:   "unevaluated with clean c-get is local_unverified",
+			report: studyCompletenessReport{Evaluated: false},
+			want:   cacheStatusLocalUnverified,
+		},
+		{
+			name:   "unevaluated but c-get had failed instances is local_partial",
+			report: studyCompletenessReport{Evaluated: false},
+			cget:   orthancRetrieveStatus{FailedInstancesCount: 3},
+			want:   cacheStatusLocalPartial,
+		},
+		{
+			name:   "unevaluated but c-get had remaining instances is local_partial",
+			report: studyCompletenessReport{Evaluated: false},
+			cget:   orthancRetrieveStatus{RemainingInstancesCount: 2},
+			want:   cacheStatusLocalPartial,
+		},
+		{
+			name:   "evaluated-complete is not overridden by stale c-get counters",
+			report: studyCompletenessReport{Evaluated: true, Complete: true},
+			cget:   orthancRetrieveStatus{FailedInstancesCount: 1},
+			want:   cacheStatusLocalComplete,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resolveRetrieveCacheStatus(tc.report, tc.cget); got != tc.want {
+				t.Errorf("resolveRetrieveCacheStatus() = %q want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestStudyCompletenessCompletionPercent(t *testing.T) {
 	cases := []struct {
 		name   string

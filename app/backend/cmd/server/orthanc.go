@@ -1437,11 +1437,27 @@ type orthancJobResponse struct {
 	Content          json.RawMessage `json:"Content"`
 }
 
+// orthancJobContent holds the sub-operation counters a retrieve (C-GET/C-MOVE)
+// job exposes in its Content. Fields are optional: Orthanc may omit them
+// depending on the job type, so absence is treated as zero (best-effort).
+type orthancJobContent struct {
+	InstancesCount          int `json:"InstancesCount"`
+	FailedInstancesCount    int `json:"FailedInstancesCount"`
+	RemainingInstancesCount int `json:"RemainingInstancesCount"`
+}
+
 type orthancRetrieveStatus struct {
 	State    string
 	Phase    string
 	Progress int
 	Error    string
+	// InstancesCount/FailedInstancesCount/RemainingInstancesCount mirror the
+	// retrieve job's sub-operation counters when Orthanc reports them. A
+	// non-zero Failed/Remaining count on an otherwise "Success" job is a
+	// definite partial-transfer signal, independent of any source count lookup.
+	InstancesCount          int
+	FailedInstancesCount    int
+	RemainingInstancesCount int
 }
 
 func mapOrthancJobStateToRetrievePhase(state string) string {
@@ -1491,25 +1507,38 @@ func (a *App) fetchOrthancJobStatus(ctx context.Context, orthancJobID string) (o
 		progress = 100
 	}
 
+	var content orthancJobContent
+	if len(payload.Content) > 0 {
+		// Best-effort: a Content shape we cannot decode must not fail the poll.
+		_ = json.Unmarshal(payload.Content, &content)
+	}
+
 	return orthancRetrieveStatus{
-		State:    strings.TrimSpace(payload.State),
-		Phase:    mapOrthancJobStateToRetrievePhase(payload.State),
-		Progress: progress,
-		Error:    strings.TrimSpace(payload.ErrorDescription),
+		State:                   strings.TrimSpace(payload.State),
+		Phase:                   mapOrthancJobStateToRetrievePhase(payload.State),
+		Progress:                progress,
+		Error:                   strings.TrimSpace(payload.ErrorDescription),
+		InstancesCount:          content.InstancesCount,
+		FailedInstancesCount:    content.FailedInstancesCount,
+		RemainingInstancesCount: content.RemainingInstancesCount,
 	}, nil
 }
 
-func (a *App) monitorOrthancRetrieveJob(ctx context.Context, jobID, orthancJobID, studyUID string) (string, error) {
+// monitorOrthancRetrieveJob polls the Orthanc retrieve job until it succeeds or
+// fails. On success it returns the local Orthanc study id together with the
+// job's final status, so the caller can inspect sub-operation counters
+// (Failed/Remaining instances) that reveal a partial transfer.
+func (a *App) monitorOrthancRetrieveJob(ctx context.Context, jobID, orthancJobID, studyUID string) (string, orthancRetrieveStatus, error) {
 	ticker := time.NewTicker(a.retrieveProgressPollInterval())
 	defer ticker.Stop()
 
 	lastState := ""
 	lastProgress := -1
 
-	checkOnce := func() (string, bool, error) {
+	checkOnce := func() (string, orthancRetrieveStatus, bool, error) {
 		status, err := a.fetchOrthancJobStatus(ctx, orthancJobID)
 		if err != nil {
-			return "", false, err
+			return "", orthancRetrieveStatus{}, false, err
 		}
 
 		if status.State != lastState || status.Progress != lastProgress {
@@ -1528,34 +1557,34 @@ func (a *App) monitorOrthancRetrieveJob(ctx context.Context, jobID, orthancJobID
 		case "Success":
 			localReady, orthancStudyID, err := a.waitForStudyInOrthanc(ctx, studyUID, 2*time.Second, 20*time.Second)
 			if err != nil {
-				return "", false, err
+				return "", status, false, err
 			}
 			if !localReady {
-				return "", false, errors.New("study not available in orthanc after c-get")
+				return "", status, false, errors.New("study not available in orthanc after c-get")
 			}
-			return orthancStudyID, true, nil
+			return orthancStudyID, status, true, nil
 		case "Failure":
 			if status.Error == "" {
 				status.Error = "orthanc retrieve job failed"
 			}
-			return "", false, errors.New(status.Error)
+			return "", status, false, errors.New(status.Error)
 		}
 
-		return "", false, nil
+		return "", status, false, nil
 	}
 
 	for {
-		orthancStudyID, done, err := checkOnce()
+		orthancStudyID, status, done, err := checkOnce()
 		if err != nil {
-			return "", err
+			return "", status, err
 		}
 		if done {
-			return orthancStudyID, nil
+			return orthancStudyID, status, nil
 		}
 
 		select {
 		case <-ctx.Done():
-			return "", ctx.Err()
+			return "", orthancRetrieveStatus{}, ctx.Err()
 		case <-ticker.C:
 		}
 	}

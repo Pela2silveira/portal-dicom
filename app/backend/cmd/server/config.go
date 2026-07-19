@@ -205,6 +205,11 @@ type PortalConfig struct {
 	RetrieveMaxAttempts              int      `json:"retrieve_max_attempts"`
 	RetrieveRetryBackoffSeconds      int      `json:"retrieve_retry_backoff_seconds"`
 	RetrieveTimeoutMinutes           int      `json:"retrieve_timeout_minutes"`
+	// RetrieveVerifyInstanceCounts, when true (default), falls back to an
+	// IMAGE-level C-FIND to count instances per series for c_find sources that
+	// omit NumberOfSeriesRelatedInstances (e.g. Synapse), so completeness is not
+	// reduced to mere series presence. Set false to disable the extra queries.
+	RetrieveVerifyInstanceCounts *bool `json:"retrieve_verify_instance_counts"`
 }
 
 func (a *App) handleConfig(appliedMigrations []string) http.HandlerFunc {
