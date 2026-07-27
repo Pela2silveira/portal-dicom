@@ -12,6 +12,10 @@ This includes, when applicable:
 - `artifacts/02_agent_debate.md`
 - `artifacts/03_implementation_plan.md`
 - `artifacts/04_qa_checklist.md`
+- `artifacts/05_ui_contracts.md`
+- `artifacts/06_data_model.md`
+
+Updating `decisions.md` alone does **not** satisfy this rule. `decisions.md` records *why* a choice was made; when the behavior described by a spec file changes (API, retrieve/cache lifecycle, data model, UI contracts, security posture), that spec file must be corrected in the same iteration so it never contradicts the code. If a spec section is now wrong, fix the section — do not just append a decision that silently overrides it.
 
 ## Project Rule: Tests For New Functionality
 
@@ -53,6 +57,8 @@ This includes, when applicable:
 - `artifacts/02_agent_debate.md`: design review and decision framing.
 - `artifacts/03_implementation_plan.md`: milestone plan.
 - `artifacts/04_qa_checklist.md`: readiness and QA checklist.
+- `artifacts/05_ui_contracts.md`: UI contracts (states, labels, flows) between backend and portal.
+- `artifacts/06_data_model.md`: data model reference (tables, columns, relationships).
 
 ## Practical Rule Of Thumb
 

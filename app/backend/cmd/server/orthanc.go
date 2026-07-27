@@ -1397,6 +1397,20 @@ func (a *App) getOrthancJSON(ctx context.Context, path string, out any) error {
 	return json.NewDecoder(res.Body).Decode(out)
 }
 
+// orthancStudyInstanceCount returns how many instances of the study are
+// currently stored locally in Orthanc. It is used to derive real retrieve
+// progress during a C-GET from a source (e.g. Synapse) that does not report
+// the total number of sub-operations, so Orthanc's own job counters stay at 0.
+func (a *App) orthancStudyInstanceCount(ctx context.Context, orthancStudyID string) (int, error) {
+	var stats struct {
+		CountInstances int `json:"CountInstances"`
+	}
+	if err := a.getOrthancJSON(ctx, "/studies/"+url.PathEscape(orthancStudyID)+"/statistics", &stats); err != nil {
+		return 0, err
+	}
+	return stats.CountInstances, nil
+}
+
 func (a *App) getOrthancPreviewDataURL(ctx context.Context, instanceID string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(a.cfg.OrthancURL, "/")+"/instances/"+url.PathEscape(instanceID)+"/preview", nil)
 	if err != nil {
@@ -1552,6 +1566,22 @@ func retrieveEffectiveProgress(status orthancRetrieveStatus) int {
 // fails. On success it returns the local Orthanc study id together with the
 // job's final status, so the caller can inspect sub-operation counters
 // (Failed/Remaining instances) that reveal a partial transfer.
+// retrieveLocalInstanceCount best-effort counts the instances of the study
+// currently stored in Orthanc. It never fails the caller: a lookup timeout
+// (Orthanc is under C-GET write load) just yields 0 so progress falls back to
+// whatever Orthanc's own counters report.
+func (a *App) retrieveLocalInstanceCount(ctx context.Context, studyUID string) int {
+	isLocal, orthancStudyID, err := a.findOrthancStudy(ctx, studyUID)
+	if err != nil || !isLocal {
+		return 0
+	}
+	count, err := a.orthancStudyInstanceCount(ctx, orthancStudyID)
+	if err != nil {
+		return 0
+	}
+	return count
+}
+
 func (a *App) monitorOrthancRetrieveJob(ctx context.Context, jobID, orthancJobID, studyUID string) (string, orthancRetrieveStatus, error) {
 	ticker := time.NewTicker(a.retrieveProgressPollInterval())
 	defer ticker.Stop()
@@ -1567,11 +1597,19 @@ func (a *App) monitorOrthancRetrieveJob(ctx context.Context, jobID, orthancJobID
 		}
 
 		// Persist the number of instances received so far even when Orthanc
-		// cannot compute a percentage: the UI falls back to the count so the
-		// physician still sees the transfer advancing.
+		// cannot compute a percentage: the UI falls back to the count (and the
+		// local/total proportion) so the physician still sees the transfer
+		// advancing. Orthanc's own job counters (InstancesCount) stay at 0 for a
+		// C-GET from a source like Synapse that never reports the total number of
+		// sub-operations, so we count the instances actually stored locally.
+		instancesReceived := status.InstancesCount
+		if localCount := a.retrieveLocalInstanceCount(ctx, studyUID); localCount > instancesReceived {
+			instancesReceived = localCount
+		}
+
 		effectiveProgress := retrieveEffectiveProgress(status)
-		if status.State != lastState || effectiveProgress != lastProgress || status.InstancesCount != lastInstances {
-			if err := a.updateRetrieveJobStatus(ctx, jobID, "running", status.Phase, effectiveProgress, "", orthancJobID, "", status.InstancesCount, false); err != nil {
+		if status.State != lastState || effectiveProgress != lastProgress || instancesReceived != lastInstances {
+			if err := a.updateRetrieveJobStatus(ctx, jobID, "running", status.Phase, effectiveProgress, "", orthancJobID, "", instancesReceived, false); err != nil {
 				a.log("error", "retrieve_job_progress_update_failed", map[string]any{
 					"job_id":         jobID,
 					"orthanc_job_id": orthancJobID,
@@ -1580,7 +1618,7 @@ func (a *App) monitorOrthancRetrieveJob(ctx context.Context, jobID, orthancJobID
 			}
 			lastState = status.State
 			lastProgress = effectiveProgress
-			lastInstances = status.InstancesCount
+			lastInstances = instancesReceived
 		}
 
 		switch status.State {
