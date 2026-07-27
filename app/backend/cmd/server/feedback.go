@@ -34,6 +34,13 @@ type feedbackComment struct {
 	ActorID   string    `json:"actor_id,omitempty"`
 	ActorRole string    `json:"actor_role,omitempty"`
 	ActorName string    `json:"actor_name,omitempty"`
+	// DNI is the author's document number (patients.document_number or
+	// physicians.dni), resolved from actor_id at list time.
+	DNI string `json:"dni,omitempty"`
+	// Contact is the author's email when known (patient email from
+	// patient_identifiers) or the physician login (physicians.username) as a
+	// fallback, since physicians have no email column.
+	Contact   string    `json:"contact,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -153,16 +160,32 @@ func (a *App) handleFeedbackList(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
 
+	// actor_id is compared as text (p.id::text = fc.actor_id) to avoid a uuid
+	// cast on any malformed/empty actor_id. Email is patient-only (physicians
+	// have no email column), so physicians fall back to their login username.
 	rows, err := a.db.QueryContext(ctx, `
-		SELECT id,
-		       message,
-		       actor_kind,
-		       COALESCE(actor_id, '')   AS actor_id,
-		       COALESCE(actor_role, '') AS actor_role,
-		       COALESCE(actor_name, '') AS actor_name,
-		       created_at
-		FROM feedback_comments
-		ORDER BY created_at DESC, id DESC
+		SELECT fc.id,
+		       fc.message,
+		       fc.actor_kind,
+		       COALESCE(fc.actor_id, '')   AS actor_id,
+		       COALESCE(fc.actor_role, '') AS actor_role,
+		       COALESCE(fc.actor_name, '') AS actor_name,
+		       COALESCE(p.document_number, ph.dni, '')        AS dni,
+		       COALESCE(pi.identifier_value, ph.username, '') AS contact,
+		       fc.created_at
+		FROM feedback_comments fc
+		LEFT JOIN patients p
+		  ON fc.actor_kind = 'patient' AND p.id::text = fc.actor_id
+		LEFT JOIN physicians ph
+		  ON fc.actor_kind = 'physician' AND ph.id::text = fc.actor_id
+		LEFT JOIN LATERAL (
+		  SELECT identifier_value
+		  FROM patient_identifiers
+		  WHERE patient_id = p.id AND identifier_type = 'email'
+		  ORDER BY is_primary DESC, last_verified_at DESC NULLS LAST, updated_at DESC
+		  LIMIT 1
+		) pi ON fc.actor_kind = 'patient'
+		ORDER BY fc.created_at DESC, fc.id DESC
 		LIMIT $1
 	`, limit)
 	if err != nil {
@@ -175,7 +198,7 @@ func (a *App) handleFeedbackList(w http.ResponseWriter, r *http.Request) {
 	comments := []feedbackComment{}
 	for rows.Next() {
 		var c feedbackComment
-		if err := rows.Scan(&c.ID, &c.Message, &c.ActorKind, &c.ActorID, &c.ActorRole, &c.ActorName, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.Message, &c.ActorKind, &c.ActorID, &c.ActorRole, &c.ActorName, &c.DNI, &c.Contact, &c.CreatedAt); err != nil {
 			a.log("error", "feedback_list_scan_failed", map[string]any{"error": err.Error()})
 			http.Error(w, "failed to load comments", http.StatusInternalServerError)
 			return

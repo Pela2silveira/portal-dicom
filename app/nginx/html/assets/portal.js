@@ -1316,6 +1316,8 @@
         const kindLabels = { patient: "Paciente", physician: "Profesional", public: "Anónimo" };
         const kind = kindLabels[comment.actor_kind] || comment.actor_kind || "Anónimo";
         const role = String(comment.actor_role || "").trim();
+        const dni = String(comment.dni || "").trim();
+        const contact = String(comment.contact || "").trim();
         let label = name || kind;
         const suffix = name ? kind : "";
         const parts = [label];
@@ -1324,6 +1326,12 @@
         }
         if (role && role !== "public") {
           parts.push(role);
+        }
+        if (dni) {
+          parts.push("DNI " + dni);
+        }
+        if (contact) {
+          parts.push(contact);
         }
         return parts.join(" · ");
       }
