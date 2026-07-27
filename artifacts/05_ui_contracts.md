@@ -257,6 +257,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - Search execution status
 - The PACS health summary must behave as an explicit popover, not as a hover-only tooltip: click toggles open/close, `Escape` closes it, and clicking outside closes it.
 - The PACS health popover must not be clipped by the results container when the result list is empty; it should render fully outside the card bounds if needed.
+- The detailed PACS health panel is refreshed on **explicit** professional loads (manual search / initial load) and reactively via the health SSE (`refreshPhysicianPACSHealth` on `health_status_changed`). It is **not** re-fetched on silent refreshes (ANDES auto-refresh, retrieve-driven terminal refreshes); pairing `/api/health` with every silent results cycle doubled backend/Orthanc load without changing what the user sees.
 - Federated results table as the primary visual element
 - Per-study actions
 - Optional retrieve job activity summary
