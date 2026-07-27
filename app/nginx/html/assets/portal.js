@@ -134,6 +134,7 @@
       let patientRetrieveEventSource = null;
       let patientAutoRetrieveActiveStudyUID = "";
       let patientAutoRetrieveQueue = [];
+      const patientAutoRetrieveAttempted = new Set();
       const patientStudyModalityByUID = new Map();
       let physicianRetrieveEventSource = null;
       let physicianAndesRefreshTimer = null;
@@ -202,10 +203,15 @@
       }
 
       async function logoutPortalSession(kind) {
+        // A user only ever holds one active session kind, so log out just that
+        // one. Hitting both endpoints unconditionally produced phantom logout
+        // calls (e.g. a patient logout logged for a physician session) that
+        // polluted the access log and the usage audit/metrics. Fall back to
+        // both only when the active kind is unknown.
         const endpoints = kind === "patient"
-          ? ["/api/patient/logout", "/api/physician/logout"]
+          ? ["/api/patient/logout"]
           : kind === "physician"
-            ? ["/api/physician/logout", "/api/patient/logout"]
+            ? ["/api/physician/logout"]
             : ["/api/patient/logout", "/api/physician/logout"];
         for (const endpoint of endpoints) {
           try {
@@ -220,13 +226,19 @@
         }
       }
 
-      async function resetLanding() {
+      async function resetLanding(options = {}) {
         const activeKind = activeWorkspaceKind;
-        await logoutPortalSession(activeKind);
+        // When the server session is already gone (e.g. a 401 on a data
+        // request), skip the logout call: it is redundant and only adds noise
+        // to the access log and usage audit.
+        if (!options.skipServerLogout) {
+          await logoutPortalSession(activeKind);
+        }
         clearPatientSyncPoll();
         clearPatientRetrievePoll();
         patientAutoRetrieveActiveStudyUID = "";
         patientAutoRetrieveQueue = [];
+        patientAutoRetrieveAttempted.clear();
         clearPhysicianRetrievePoll();
         clearPhysicianAndesRefresh();
         setOperatorAccess(false);
@@ -375,8 +387,15 @@
         }, remainingMs);
       }
 
-      function startPortalSession() {
-        portalSessionExpiresAt = new Date(Date.now() + portalSessionDurationMs).toISOString();
+      function startPortalSession(serverExpiresAt) {
+        // Prefer the authoritative expiry from the server session cookie so the
+        // client timer stays in sync with the real session instead of drifting
+        // with the local clock. Fall back to the configured duration only when
+        // the server did not provide a usable value.
+        const parsed = serverExpiresAt ? new Date(serverExpiresAt).getTime() : NaN;
+        portalSessionExpiresAt = Number.isFinite(parsed) && parsed > Date.now()
+          ? new Date(parsed).toISOString()
+          : new Date(Date.now() + portalSessionDurationMs).toISOString();
         armPortalSessionTimeout();
       }
 
@@ -421,9 +440,25 @@
         patientMailCode.autocomplete = useMaskedInput ? "off" : "one-time-code";
       }
 
-      async function returnToLandingSoft() {
-        await resetLanding();
+      async function returnToLandingSoft(options = {}) {
+        await resetLanding(options);
         focusActiveRoleButton();
+      }
+
+      // Called when a session-scoped request returns 401: the server session
+      // has expired or was invalidated, so drop back to the landing screen
+      // without issuing a redundant server logout.
+      let portalSessionExpiredHandled = false;
+      function handlePortalSessionExpired() {
+        if (portalSessionExpiredHandled || activeScreen !== "workspace") {
+          return;
+        }
+        portalSessionExpiredHandled = true;
+        returnToLandingSoft({ skipServerLogout: true })
+          .catch(() => {})
+          .finally(() => {
+            portalSessionExpiredHandled = false;
+          });
       }
 
       function focusActiveRoleButton() {
@@ -751,7 +786,10 @@
             return;
           }
           const studyUID = String(study.study_instance_uid || "");
-          if (!studyUID || known.has(studyUID)) {
+          // Skip studies already auto-retrieved this session so silent
+          // refreshes (triggered by retrieve-job SSE events) do not re-fire the
+          // same retrieve over and over.
+          if (!studyUID || known.has(studyUID) || patientAutoRetrieveAttempted.has(studyUID)) {
             return;
           }
           patientAutoRetrieveQueue.push(studyUID);
@@ -770,6 +808,7 @@
           return;
         }
 
+        patientAutoRetrieveAttempted.add(nextStudyUID);
         patientAutoRetrieveActiveStudyUID = nextStudyUID;
         try {
           const payload = await triggerPatientRetrieve(nextStudyUID, patientStudyModalityByUID.get(nextStudyUID) || "");
@@ -1959,6 +1998,9 @@
       }
 
       async function loadPatientStudies(documentNumber, options = {}) {
+        if (documentNumber !== activePatientDocument) {
+          patientAutoRetrieveAttempted.clear();
+        }
         activePatientDocument = documentNumber;
         updateFeedbackAccess();
         const silentRefresh = Boolean(options.silentRefresh);
@@ -1984,6 +2026,10 @@
           headers: { Accept: "application/json" }
         });
 
+        if (response.status === 401) {
+          handlePortalSessionExpired();
+          throw new Error("patient session expired");
+        }
         if (!response.ok) {
           throw new Error("patient studies request failed");
         }
@@ -2158,6 +2204,12 @@
           fetchDetailedHealth().catch(() => ({ components: [] }))
         ]);
 
+        if (resultsResponse.status === 401) {
+          handlePortalSessionExpired();
+          const error = new Error("physician session expired");
+          error.status = 401;
+          throw error;
+        }
         if (!resultsResponse.ok) {
           const errorPayload = await resultsResponse.json().catch(() => ({}));
           const error = new Error(errorPayload.message || "physician results request failed");
@@ -2479,21 +2531,20 @@
         systemHealthEventSource = new EventSource("/api/system/events");
         systemHealthEventSource.addEventListener("health_status_changed", event => {
           const payload = JSON.parse(event.data);
-          if (payload.status === "unavailable") {
-            returnToLandingSoft();
-            return;
-          }
+          // A transient backend/PACS health blip must not tear down an active
+          // user session. Surface the degraded state in the physician health
+          // panel and let per-request 401 handling end the session only when
+          // the server session is actually gone.
           if (activeWorkspaceKind === "physician") {
             refreshPhysicianPACSHealth();
           }
         });
-        systemHealthEventSource.onerror = async () => {
-          try {
-            const response = await fetch("/api/health", { cache: "no-store" });
-            if (response.status === 503) {
-              returnToLandingSoft();
-            }
-          } catch (_error) {
+        systemHealthEventSource.onerror = () => {
+          // EventSource errors fire on ordinary reconnects/stream closes and are
+          // not evidence that the user session ended. Refresh the health panel
+          // instead of logging the user out.
+          if (activeWorkspaceKind === "physician") {
+            refreshPhysicianPACSHealth();
           }
         };
       }
@@ -3061,8 +3112,9 @@
         patientValidateButton.disabled = true;
         patientValidateButton.textContent = "Validando...";
 
+        let patientLoginPayload;
         try {
-          await loginPatient(documentValue, mailCodeValue);
+          patientLoginPayload = await loginPatient(documentValue, mailCodeValue);
         } catch (error) {
           patientValidateButton.textContent = "Continuar";
           syncPatientContinueState();
@@ -3073,7 +3125,7 @@
         setMailCodeFeedback("Acceso validado. Estamos cargando sus estudios.");
 
         window.setTimeout(async () => {
-          startPortalSession();
+          startPortalSession(patientLoginPayload?.expires_at);
           showWorkspace("patient");
           try {
             const [_, sync] = await Promise.all([
@@ -3116,7 +3168,7 @@
 
         try {
           const payload = await loginPhysician(dniValue, passwordValue);
-          startPortalSession();
+          startPortalSession(payload?.expires_at);
           showWorkspace("physician");
           physicianFullNameValue.textContent = payload.physician?.full_name || "-";
           physicianDniValue.textContent = payload.physician?.dni || dniValue;

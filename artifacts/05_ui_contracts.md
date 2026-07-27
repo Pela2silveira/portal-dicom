@@ -48,8 +48,10 @@ Allow a patient to see only their authorized studies and open one selected study
 - The patient `Continuar` step must still validate against backend before opening the workspace; in `master_key` mode the entered code is checked against the configured shared key, but the visible UI remains unchanged.
 - `patient.auth_mode = "mail"` is the final production path; `master_key` is only a temporary operational fallback while real mail delivery and one-time-code verification are still incomplete.
 - Returning to the public landing, whether by explicit `Salir` or by a session/workspace reset, must clear both patient and professional login forms instead of preserving previous credentials or codes in the browser-rendered inputs.
-- If the portal UI is already open and system health falls to `unavailable`, or the health SSE fails and `/api/health` confirms `503`, the app must return to the public landing through an in-place UI reset instead of forcing a full browser reload.
-- Patient and professional portal sessions must expire after the configured `portal.session_timeout_minutes`; when that happens, the UI returns to the landing and clears the stored workspace state.
+- A transient backend/PACS health change (`health_status_changed = unavailable`) or a health SSE reconnection must **not** tear down an active session. The health SSE fires `onerror` on ordinary reconnects/stream closes, so treating those as logouts kicked users out mid-session. The UI keeps the session and only reflects the degraded state in the physician PACS health panel. Ending the session and returning to the landing (always via in-place SPA reset, never a full browser reload) happens only when a session-scoped request actually returns `401`.
+- When a session-scoped request returns `401` (server session expired or invalidated), the UI must reconcile by returning to the landing instead of leaving a logged-in workspace with stale data. Because the server session is already gone, it must not issue a redundant logout call.
+- Patient and professional portal sessions must expire in line with the backend session. The login responses (`POST /api/patient/login`, `POST /api/physician/login`) return `expires_at`, and the UI arms its inactivity timeout from that authoritative value, using `portal.session_timeout_minutes` only as a fallback when the server value is missing or invalid. When the timeout fires, the UI returns to the landing and clears the stored workspace state.
+- Logout must target only the active session role (`POST /api/patient/logout` **or** `POST /api/physician/logout`); it must not call both endpoints unconditionally. Fanning out to both produced phantom logout events (e.g. a patient logout recorded for a physician session) that polluted the access log and the usage audit/metrics. Both endpoints are called only when the active role is unknown.
 - The main UI may obtain `portal.session_timeout_minutes` from a minimal public runtime endpoint, but it must not depend on public exposure of the full `/api/config` payload.
 - Required patient outcomes:
   - `ready_to_send`: proceed with mail-code UX
@@ -192,6 +194,7 @@ Allow a patient to see only their authorized studies and open one selected study
   - in the current patient UX this route is orchestrated automatically for visible non-local studies instead of being exposed as a manual button
   - intermediate SSE events may expose `phase` and `progress` for the active retrieve, but should stay low-frequency and change-driven
   - the patient list should refresh on retrieve terminal events (`done|failed`) without unmounting the current grid or showing an intermediate loading placeholder
+  - each visible study is auto-retrieved at most once per session/patient: the retrieve-driven silent refreshes must not re-trigger a retrieve for a study already attempted. The attempted-study memory is reset on logout and when the active patient changes.
   - updates local availability before the patient can open OHIF
 - `GET /api/patient/studies/:studyInstanceUID/access`
   - returns whether the session can open the study and the viewer route or token material needed by the final design

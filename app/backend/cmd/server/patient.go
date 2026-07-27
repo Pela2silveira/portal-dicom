@@ -155,6 +155,7 @@ type PatientLoginResponse struct {
 	Message      string         `json:"message"`
 	Patient      PatientSummary `json:"patient,omitempty"`
 	SessionToken string         `json:"session_token,omitempty"`
+	ExpiresAt    string         `json:"expires_at,omitempty"`
 }
 
 type patientSessionSnapshot struct {
@@ -468,7 +469,12 @@ func (a *App) handlePatientLogin(w http.ResponseWriter, r *http.Request) {
 
 	setActionDim(r.Context(), "patient_id", patient.ID)
 	setActionDim(r.Context(), "auth_mode", patientAuthMode)
-	writePatientLoginResponse(w, http.StatusOK, "ok", "Acceso validado.", patient)
+	writeJSON(w, http.StatusOK, PatientLoginResponse{
+		Status:    "ok",
+		Message:   "Acceso validado.",
+		Patient:   patient,
+		ExpiresAt: expiresAt.UTC().Format(time.RFC3339),
+	})
 }
 
 func patientMasterKey() string {
