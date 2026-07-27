@@ -202,10 +202,15 @@
       }
 
       async function logoutPortalSession(kind) {
+        // A user only ever holds one active session kind, so log out just that
+        // one. Hitting both endpoints unconditionally produced phantom logout
+        // calls (e.g. a patient logout logged for a physician session) that
+        // polluted the access log and the usage audit/metrics. Fall back to
+        // both only when the active kind is unknown.
         const endpoints = kind === "patient"
-          ? ["/api/patient/logout", "/api/physician/logout"]
+          ? ["/api/patient/logout"]
           : kind === "physician"
-            ? ["/api/physician/logout", "/api/patient/logout"]
+            ? ["/api/physician/logout"]
             : ["/api/patient/logout", "/api/physician/logout"];
         for (const endpoint of endpoints) {
           try {
