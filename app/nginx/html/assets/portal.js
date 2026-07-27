@@ -375,8 +375,15 @@
         }, remainingMs);
       }
 
-      function startPortalSession() {
-        portalSessionExpiresAt = new Date(Date.now() + portalSessionDurationMs).toISOString();
+      function startPortalSession(serverExpiresAt) {
+        // Prefer the authoritative expiry from the server session cookie so the
+        // client timer stays in sync with the real session instead of drifting
+        // with the local clock. Fall back to the configured duration only when
+        // the server did not provide a usable value.
+        const parsed = serverExpiresAt ? new Date(serverExpiresAt).getTime() : NaN;
+        portalSessionExpiresAt = Number.isFinite(parsed) && parsed > Date.now()
+          ? new Date(parsed).toISOString()
+          : new Date(Date.now() + portalSessionDurationMs).toISOString();
         armPortalSessionTimeout();
       }
 
@@ -3060,8 +3067,9 @@
         patientValidateButton.disabled = true;
         patientValidateButton.textContent = "Validando...";
 
+        let patientLoginPayload;
         try {
-          await loginPatient(documentValue, mailCodeValue);
+          patientLoginPayload = await loginPatient(documentValue, mailCodeValue);
         } catch (error) {
           patientValidateButton.textContent = "Continuar";
           syncPatientContinueState();
@@ -3072,7 +3080,7 @@
         setMailCodeFeedback("Acceso validado. Estamos cargando sus estudios.");
 
         window.setTimeout(async () => {
-          startPortalSession();
+          startPortalSession(patientLoginPayload?.expires_at);
           showWorkspace("patient");
           try {
             const [_, sync] = await Promise.all([
@@ -3115,7 +3123,7 @@
 
         try {
           const payload = await loginPhysician(dniValue, passwordValue);
-          startPortalSession();
+          startPortalSession(payload?.expires_at);
           showWorkspace("physician");
           physicianFullNameValue.textContent = payload.physician?.full_name || "-";
           physicianDniValue.textContent = payload.physician?.dni || dniValue;

@@ -36,6 +36,7 @@ type PhysicianLoginResponse struct {
 	SessionToken   string           `json:"session_token,omitempty"`
 	CanShare       bool             `json:"can_share"`
 	CanViewMetrics bool             `json:"can_view_metrics"`
+	ExpiresAt      string           `json:"expires_at,omitempty"`
 }
 
 type PhysicianResultsErrorResponse struct {
@@ -584,7 +585,14 @@ func (a *App) handlePhysicianLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	setPortalSessionCookie(w, r, physicianSessionCookieName, rawSessionToken, expiresAt)
 
-	a.writePhysicianLoginResponse(w, http.StatusOK, "ready", "Ingreso profesional validado.", physician)
+	writeJSON(w, http.StatusOK, PhysicianLoginResponse{
+		Status:         "ready",
+		Message:        "Ingreso profesional validado.",
+		Physician:      physician,
+		CanShare:       a.physicianCanShare(physician),
+		CanViewMetrics: a.physicianCanViewMetrics(physician),
+		ExpiresAt:      expiresAt.UTC().Format(time.RFC3339),
+	})
 }
 
 func (a *App) handlePhysicianLogout(w http.ResponseWriter, r *http.Request) {
