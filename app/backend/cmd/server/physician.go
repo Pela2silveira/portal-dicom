@@ -1218,16 +1218,25 @@ func (a *App) searchPhysicianResultsFromQIDONode(ctx context.Context, physician 
 
 		cacheStatus, retrieveStatus, retrievePhase, retrieveProgress, viewerURL, ohifViewerURL, err := a.getStudyOperationalState(ctx, studyUID, result.CacheStatus, result.RetrieveStatus)
 		if err != nil {
-			return nil, fmt.Errorf("resolve physician qido state for %s: %w", studyUID, err)
-		}
-		result.CacheStatus = cacheStatus
-		result.RetrieveStatus = retrieveStatus
-		result.RetrievePhase = retrievePhase
-		result.RetrieveProgress = retrieveProgress
-		result.ViewerURL = viewerURL
-		result.OHIFViewerURL = ohifViewerURL
-		if viewerURL != "" {
-			result.DownloadURL = buildPhysicianDownloadURL(studyUID)
+			// A single study's state resolution can time out (e.g. Orthanc
+			// /tools/find is slow under retrieve load). Degrade this study to
+			// its defaults instead of failing the whole search, otherwise one
+			// slow lookup collapses the entire result set to zero.
+			a.log("warn", "physician_study_state_degraded", map[string]any{
+				"study_instance_uid": studyUID,
+				"node_id":            node.ID,
+				"error":              err.Error(),
+			})
+		} else {
+			result.CacheStatus = cacheStatus
+			result.RetrieveStatus = retrieveStatus
+			result.RetrievePhase = retrievePhase
+			result.RetrieveProgress = retrieveProgress
+			result.ViewerURL = viewerURL
+			result.OHIFViewerURL = ohifViewerURL
+			if viewerURL != "" {
+				result.DownloadURL = buildPhysicianDownloadURL(studyUID)
+			}
 		}
 		results = append(results, result)
 	}
@@ -1306,16 +1315,25 @@ func (a *App) searchPhysicianResultsFromDIMSENode(ctx context.Context, physician
 
 		cacheStatus, retrieveStatus, retrievePhase, retrieveProgress, viewerURL, ohifViewerURL, err := a.getStudyOperationalState(ctx, studyUID, result.CacheStatus, result.RetrieveStatus)
 		if err != nil {
-			return nil, fmt.Errorf("resolve physician c-find state for %s: %w", studyUID, err)
-		}
-		result.CacheStatus = cacheStatus
-		result.RetrieveStatus = retrieveStatus
-		result.RetrievePhase = retrievePhase
-		result.RetrieveProgress = retrieveProgress
-		result.ViewerURL = viewerURL
-		result.OHIFViewerURL = ohifViewerURL
-		if viewerURL != "" {
-			result.DownloadURL = buildPhysicianDownloadURL(studyUID)
+			// A single study's state resolution can time out (e.g. Orthanc
+			// /tools/find is slow under retrieve load). Degrade this study to
+			// its defaults instead of failing the whole search, otherwise one
+			// slow lookup collapses the entire result set to zero.
+			a.log("warn", "physician_study_state_degraded", map[string]any{
+				"study_instance_uid": studyUID,
+				"node_id":            node.ID,
+				"error":              err.Error(),
+			})
+		} else {
+			result.CacheStatus = cacheStatus
+			result.RetrieveStatus = retrieveStatus
+			result.RetrievePhase = retrievePhase
+			result.RetrieveProgress = retrieveProgress
+			result.ViewerURL = viewerURL
+			result.OHIFViewerURL = ohifViewerURL
+			if viewerURL != "" {
+				result.DownloadURL = buildPhysicianDownloadURL(studyUID)
+			}
 		}
 		results = append(results, result)
 	}
@@ -1517,11 +1535,24 @@ func (a *App) searchPhysicianResultsFromLocalCache(ctx context.Context, physicia
 
 		cacheStatus, retrieveStatus, retrievePhase, retrieveProgress, viewerURL, ohifViewerURL, err := a.getStudyOperationalState(ctx, studyUID, "local_complete", "done")
 		if err != nil {
-			return nil, fmt.Errorf("resolve physician cached study state for %s: %w", studyUID, err)
+			// The study is already present in Orthanc (it came from this
+			// /tools/find), so a state-resolution timeout must not drop it from
+			// the local-cache listing. Degrade to the viewable defaults.
+			a.log("warn", "physician_cached_study_state_degraded", map[string]any{
+				"study_instance_uid": studyUID,
+				"error":              err.Error(),
+			})
+			cacheStatus, retrieveStatus, retrievePhase, retrieveProgress = "local_complete", "done", "done", 100
+			viewerURL = buildStoneViewerURL(studyUID)
+			ohifViewerURL = buildOHIFViewerURL(studyUID)
 		}
 		locations, err := a.cachedStudyLocations(ctx, studyUID)
 		if err != nil {
-			return nil, fmt.Errorf("load cached study locations for %s: %w", studyUID, err)
+			a.log("warn", "physician_cached_study_locations_degraded", map[string]any{
+				"study_instance_uid": studyUID,
+				"error":              err.Error(),
+			})
+			locations = nil
 		}
 		if len(locations) == 0 {
 			locations = []string{"Local"}

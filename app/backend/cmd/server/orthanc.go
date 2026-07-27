@@ -1524,6 +1524,30 @@ func (a *App) fetchOrthancJobStatus(ctx context.Context, orthancJobID string) (o
 	}, nil
 }
 
+// retrieveEffectiveProgress derives a progress percentage for a retrieve job.
+// Orthanc's own Progress is preferred, but for a C-GET from a source that does
+// not report the total number of sub-operations (e.g. Synapse), Orthanc's
+// Progress can stay pinned at 0 for the whole transfer. In that case we derive
+// a percentage from the instance counters when they are available, so the UI
+// can show real movement instead of a frozen 0%.
+func retrieveEffectiveProgress(status orthancRetrieveStatus) int {
+	if status.Progress > 0 {
+		return status.Progress
+	}
+	total := status.InstancesCount + status.RemainingInstancesCount
+	if total > 0 {
+		pct := status.InstancesCount * 100 / total
+		if pct < 0 {
+			pct = 0
+		}
+		if pct > 100 {
+			pct = 100
+		}
+		return pct
+	}
+	return status.Progress
+}
+
 // monitorOrthancRetrieveJob polls the Orthanc retrieve job until it succeeds or
 // fails. On success it returns the local Orthanc study id together with the
 // job's final status, so the caller can inspect sub-operation counters
@@ -1534,6 +1558,7 @@ func (a *App) monitorOrthancRetrieveJob(ctx context.Context, jobID, orthancJobID
 
 	lastState := ""
 	lastProgress := -1
+	lastInstances := -1
 
 	checkOnce := func() (string, orthancRetrieveStatus, bool, error) {
 		status, err := a.fetchOrthancJobStatus(ctx, orthancJobID)
@@ -1541,8 +1566,12 @@ func (a *App) monitorOrthancRetrieveJob(ctx context.Context, jobID, orthancJobID
 			return "", orthancRetrieveStatus{}, false, err
 		}
 
-		if status.State != lastState || status.Progress != lastProgress {
-			if err := a.updateRetrieveJobStatus(ctx, jobID, "running", status.Phase, status.Progress, "", orthancJobID, "", 0, false); err != nil {
+		// Persist the number of instances received so far even when Orthanc
+		// cannot compute a percentage: the UI falls back to the count so the
+		// physician still sees the transfer advancing.
+		effectiveProgress := retrieveEffectiveProgress(status)
+		if status.State != lastState || effectiveProgress != lastProgress || status.InstancesCount != lastInstances {
+			if err := a.updateRetrieveJobStatus(ctx, jobID, "running", status.Phase, effectiveProgress, "", orthancJobID, "", status.InstancesCount, false); err != nil {
 				a.log("error", "retrieve_job_progress_update_failed", map[string]any{
 					"job_id":         jobID,
 					"orthanc_job_id": orthancJobID,
@@ -1550,7 +1579,8 @@ func (a *App) monitorOrthancRetrieveJob(ctx context.Context, jobID, orthancJobID
 				})
 			}
 			lastState = status.State
-			lastProgress = status.Progress
+			lastProgress = effectiveProgress
+			lastInstances = status.InstancesCount
 		}
 
 		switch status.State {

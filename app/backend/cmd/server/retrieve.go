@@ -13,12 +13,13 @@ import (
 )
 
 type RetrieveJobEvent struct {
-	JobID            string `json:"job_id"`
-	StudyInstanceUID string `json:"study_instance_uid"`
-	Status           string `json:"status"`
-	Phase            string `json:"phase,omitempty"`
-	Progress         int    `json:"progress,omitempty"`
-	Error            string `json:"error,omitempty"`
+	JobID             string `json:"job_id"`
+	StudyInstanceUID  string `json:"study_instance_uid"`
+	Status            string `json:"status"`
+	Phase             string `json:"phase,omitempty"`
+	Progress          int    `json:"progress,omitempty"`
+	InstancesReceived int    `json:"instances_received,omitempty"`
+	Error             string `json:"error,omitempty"`
 }
 
 type retrieveJobSnapshot struct {
@@ -502,10 +503,10 @@ func (a *App) findActiveRetrieveJobByStudy(ctx context.Context, studyUID string)
 func (a *App) getRetrieveJobEvent(ctx context.Context, jobID string) (RetrieveJobEvent, error) {
 	var event RetrieveJobEvent
 	err := a.db.QueryRowContext(ctx, `
-		SELECT id::text, study_instance_uid, status, COALESCE(phase, ''), COALESCE(progress, 0), COALESCE(error, '')
+		SELECT id::text, study_instance_uid, status, COALESCE(phase, ''), COALESCE(progress, 0), COALESCE(instances_received, 0), COALESCE(error, '')
 		FROM retrieve_jobs
 		WHERE id = $1::uuid
-	`, jobID).Scan(&event.JobID, &event.StudyInstanceUID, &event.Status, &event.Phase, &event.Progress, &event.Error)
+	`, jobID).Scan(&event.JobID, &event.StudyInstanceUID, &event.Status, &event.Phase, &event.Progress, &event.InstancesReceived, &event.Error)
 	return event, err
 }
 
