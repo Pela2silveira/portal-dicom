@@ -220,9 +220,14 @@
         }
       }
 
-      async function resetLanding() {
+      async function resetLanding(options = {}) {
         const activeKind = activeWorkspaceKind;
-        await logoutPortalSession(activeKind);
+        // When the server session is already gone (e.g. a 401 on a data
+        // request), skip the logout call: it is redundant and only adds noise
+        // to the access log and usage audit.
+        if (!options.skipServerLogout) {
+          await logoutPortalSession(activeKind);
+        }
         clearPatientSyncPoll();
         clearPatientRetrievePoll();
         patientAutoRetrieveActiveStudyUID = "";
@@ -428,9 +433,25 @@
         patientMailCode.autocomplete = useMaskedInput ? "off" : "one-time-code";
       }
 
-      async function returnToLandingSoft() {
-        await resetLanding();
+      async function returnToLandingSoft(options = {}) {
+        await resetLanding(options);
         focusActiveRoleButton();
+      }
+
+      // Called when a session-scoped request returns 401: the server session
+      // has expired or was invalidated, so drop back to the landing screen
+      // without issuing a redundant server logout.
+      let portalSessionExpiredHandled = false;
+      function handlePortalSessionExpired() {
+        if (portalSessionExpiredHandled || activeScreen !== "workspace") {
+          return;
+        }
+        portalSessionExpiredHandled = true;
+        returnToLandingSoft({ skipServerLogout: true })
+          .catch(() => {})
+          .finally(() => {
+            portalSessionExpiredHandled = false;
+          });
       }
 
       function focusActiveRoleButton() {
@@ -1991,6 +2012,10 @@
           headers: { Accept: "application/json" }
         });
 
+        if (response.status === 401) {
+          handlePortalSessionExpired();
+          throw new Error("patient session expired");
+        }
         if (!response.ok) {
           throw new Error("patient studies request failed");
         }
@@ -2165,6 +2190,12 @@
           fetchDetailedHealth().catch(() => ({ components: [] }))
         ]);
 
+        if (resultsResponse.status === 401) {
+          handlePortalSessionExpired();
+          const error = new Error("physician session expired");
+          error.status = 401;
+          throw error;
+        }
         if (!resultsResponse.ok) {
           const errorPayload = await resultsResponse.json().catch(() => ({}));
           const error = new Error(errorPayload.message || "physician results request failed");
