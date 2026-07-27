@@ -2197,11 +2197,17 @@
             '<div class="empty-state">Buscando estudios...</div>';
         }
 
+        // Only refresh the detailed PACS health panel on explicit loads. Silent
+        // refreshes (ANDES auto-refresh, retrieve terminal refreshes) fired the
+        // health fetch on every cycle, doubling backend/Orthanc load for no
+        // visible benefit; the panel still updates via the health SSE and the
+        // next explicit search.
+        const includeHealth = !silentRefresh;
         const [resultsResponse, healthPayload] = await Promise.all([
           fetch("/api/physician/results?" + params.toString(), {
             headers: { Accept: "application/json" }
           }),
-          fetchDetailedHealth().catch(() => ({ components: [] }))
+          includeHealth ? fetchDetailedHealth().catch(() => ({ components: [] })) : Promise.resolve(null)
         ]);
 
         if (resultsResponse.status === 401) {
@@ -2219,7 +2225,9 @@
         }
 
         const payload = await resultsResponse.json();
-        renderPhysicianPACSHealth(healthPayload.components || []);
+        if (healthPayload) {
+          renderPhysicianPACSHealth(healthPayload.components || []);
+        }
         if ((payload.filters?.source || physicianLocalCacheSourceValue) !== physicianSearchSource.value) {
           physicianSearchSource.value = payload.filters?.source || physicianLocalCacheSourceValue;
         }

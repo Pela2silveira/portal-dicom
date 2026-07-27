@@ -349,7 +349,47 @@ func (a *App) listStudyPreviewItems(ctx context.Context, studyUID string, limit 
 	return items, totalAvailable, nil
 }
 
+// applyStudyLocalPresence resolves the viewer URLs and, when the study is
+// present locally and no retrieve is in flight or pending retry, the terminal
+// cache/retrieve state. It is pure so it can be unit-tested without Orthanc/DB.
+func applyStudyLocalPresence(studyUID, cacheStatus, retrieveStatus, retrievePhase string, retrieveProgress int, isLocal, retrieveInFlight, retrieveNeedsRetry bool) (string, string, string, int, string, string) {
+	viewerURL := ""
+	ohifViewerURL := ""
+	if isLocal {
+		// The study is at least partially present, so it is viewable even
+		// mid-retrieve or after a failed attempt (partial viewing is allowed).
+		viewerURL = buildStoneViewerURL(studyUID)
+		ohifViewerURL = buildOHIFViewerURL(studyUID)
+
+		if !retrieveInFlight && !retrieveNeedsRetry {
+			// A partial/unverified study is present and viewable; keep its flag
+			// rather than masking it as complete so callers/UI can surface
+			// remediation and the scheduled worker can re-verify.
+			if cacheStatus != cacheStatusLocalPartial && cacheStatus != cacheStatusLocalUnverified {
+				cacheStatus = cacheStatusLocalComplete
+			}
+			retrieveStatus = "done"
+			retrievePhase = "done"
+			retrieveProgress = 100
+		}
+	}
+	return cacheStatus, retrieveStatus, retrievePhase, retrieveProgress, viewerURL, ohifViewerURL
+}
+
 func (a *App) getStudyOperationalState(ctx context.Context, studyUID string, fallbackCacheStatus, fallbackRetrieveStatus string) (string, string, string, int, string, string, error) {
+	return a.resolveStudyOperationalState(ctx, studyUID, fallbackCacheStatus, fallbackRetrieveStatus, false)
+}
+
+// getLocalStudyOperationalState resolves the state for a study the caller has
+// already confirmed present in the local Orthanc (e.g. it came from a
+// /tools/find listing). It skips the redundant per-study Orthanc lookup, which
+// otherwise turns a single local-cache search into 1+N /tools/find calls and is
+// a primary source of Orthanc index contention.
+func (a *App) getLocalStudyOperationalState(ctx context.Context, studyUID string, fallbackCacheStatus, fallbackRetrieveStatus string) (string, string, string, int, string, string, error) {
+	return a.resolveStudyOperationalState(ctx, studyUID, fallbackCacheStatus, fallbackRetrieveStatus, true)
+}
+
+func (a *App) resolveStudyOperationalState(ctx context.Context, studyUID string, fallbackCacheStatus, fallbackRetrieveStatus string, assumeLocal bool) (string, string, string, int, string, string, error) {
 	cacheStatus := fallbackCacheStatus
 	retrieveStatus := fallbackRetrieveStatus
 	retrievePhase := ""
@@ -414,28 +454,18 @@ func (a *App) getStudyOperationalState(ctx context.Context, studyUID string, fal
 	// instances already landed locally.
 	retrieveNeedsRetry := retrieveStatus == "failed" || retrieveStatus == "idle"
 
-	isLocal, _, err := a.findOrthancStudy(ctx, studyUID)
-	if err != nil {
-		return "", "", "", 0, "", "", err
-	}
-	if isLocal {
-		// The study is at least partially present, so it is viewable even
-		// mid-retrieve or after a failed attempt (partial viewing is allowed).
-		viewerURL = buildStoneViewerURL(studyUID)
-		ohifViewerURL = buildOHIFViewerURL(studyUID)
-
-		if !retrieveInFlight && !retrieveNeedsRetry {
-			// A partial/unverified study is present and viewable; keep its flag
-			// rather than masking it as complete so callers/UI can surface
-			// remediation and the scheduled worker can re-verify.
-			if cacheStatus != cacheStatusLocalPartial && cacheStatus != cacheStatusLocalUnverified {
-				cacheStatus = cacheStatusLocalComplete
-			}
-			retrieveStatus = "done"
-			retrievePhase = "done"
-			retrieveProgress = 100
+	isLocal := true
+	if !assumeLocal {
+		var lookupErr error
+		isLocal, _, lookupErr = a.findOrthancStudy(ctx, studyUID)
+		if lookupErr != nil {
+			return "", "", "", 0, "", "", lookupErr
 		}
 	}
+
+	cacheStatus, retrieveStatus, retrievePhase, retrieveProgress, viewerURL, ohifViewerURL = applyStudyLocalPresence(
+		studyUID, cacheStatus, retrieveStatus, retrievePhase, retrieveProgress, isLocal, retrieveInFlight, retrieveNeedsRetry,
+	)
 
 	return cacheStatus, retrieveStatus, retrievePhase, retrieveProgress, viewerURL, ohifViewerURL, nil
 }
