@@ -2479,21 +2479,20 @@
         systemHealthEventSource = new EventSource("/api/system/events");
         systemHealthEventSource.addEventListener("health_status_changed", event => {
           const payload = JSON.parse(event.data);
-          if (payload.status === "unavailable") {
-            returnToLandingSoft();
-            return;
-          }
+          // A transient backend/PACS health blip must not tear down an active
+          // user session. Surface the degraded state in the physician health
+          // panel and let per-request 401 handling end the session only when
+          // the server session is actually gone.
           if (activeWorkspaceKind === "physician") {
             refreshPhysicianPACSHealth();
           }
         });
-        systemHealthEventSource.onerror = async () => {
-          try {
-            const response = await fetch("/api/health", { cache: "no-store" });
-            if (response.status === 503) {
-              returnToLandingSoft();
-            }
-          } catch (_error) {
+        systemHealthEventSource.onerror = () => {
+          // EventSource errors fire on ordinary reconnects/stream closes and are
+          // not evidence that the user session ended. Refresh the health panel
+          // instead of logging the user out.
+          if (activeWorkspaceKind === "physician") {
+            refreshPhysicianPACSHealth();
           }
         };
       }
