@@ -1541,7 +1541,10 @@ func (a *App) searchPhysicianResultsFromLocalCache(ctx context.Context, physicia
 		}
 		a.logAccessionNumberProbe("physician_local_cache_find", "orthanc", studyUID, strings.TrimSpace(item.MainDicomTags.AccessionNumber))
 
-		cacheStatus, retrieveStatus, retrievePhase, retrieveProgress, viewerURL, ohifViewerURL, err := a.getStudyOperationalState(ctx, studyUID, "local_complete", "done")
+		// The study just came from this /tools/find listing, so it is already
+		// present locally; resolve its state without a redundant per-study
+		// Orthanc lookup to avoid the 1+N /tools/find fan-out under load.
+		cacheStatus, retrieveStatus, retrievePhase, retrieveProgress, viewerURL, ohifViewerURL, err := a.getLocalStudyOperationalState(ctx, studyUID, "local_complete", "done")
 		if err != nil {
 			// The study is already present in Orthanc (it came from this
 			// /tools/find), so a state-resolution timeout must not drop it from
