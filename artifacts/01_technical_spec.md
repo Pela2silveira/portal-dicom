@@ -30,8 +30,8 @@
 - Si `patient.auth_mode` no está presente en `config.json`, el backend puede seguir resolviendo compatibilidad hacia atrás desde `patient.fake_auth`; con `true`, el modo efectivo es `fake_auth`.
 - El modo de auth profesional debe poder alternarse por config (`professional.fake_auth`) para desacoplar la validación transitoria actual del objetivo futuro `LDAP provincial + MFA`.
 - Si `professional.fake_auth` no está presente en `config.json`, el backend debe asumir `true` para preservar compatibilidad con el MVP actual.
-- La sesión del portal debe expirar tanto para paciente como para profesional según `portal.session_timeout_minutes`; el frontend no debe hardcodear ese valor fuera de un fallback por defecto.
-- Los endpoints protegidos de paciente y profesional deben autorizar por sesión backend activa y no por `document_number` / `username` provistos por el cliente.
+- La sesión del portal debe expirar tanto para paciente como para profesional en línea con la sesión del backend; los endpoints de login (`/api/patient/login`, `/api/physician/login`) devuelven `expires_at` y el frontend arma su timeout de inactividad a partir de ese valor autoritativo, usando `portal.session_timeout_minutes` solo como fallback y sin hardcodearlo.
+- Los endpoints protegidos de paciente y profesional deben autorizar por sesión backend activa y no por `document_number` / `username` provistos por el cliente. Cuando un request con sesión devuelve `401`, la UI ya abierta debe reconciliar volviendo a la landing en lugar de mostrar datos obsoletos, y no debe emitir un logout redundante porque la sesión del servidor ya no existe.
 - Las rutas browser-backed con cookies y método inseguro (`POST`/`PUT`/`PATCH`/`DELETE`) deben exigir same-origin básico mediante `Origin` o `Referer` antes de ejecutar la acción.
 - La UI pública debe obtener ese valor desde un endpoint mínimo de runtime (`/api/runtime-config`) y no desde `/api/config`.
 - La misma carga mínima de runtime puede exponer flags visuales no sensibles del portal, por ejemplo `portal.show_demo_ribbon`, para mantener consistencia entre landing y workspaces.
@@ -51,7 +51,7 @@
 - La salud operativa del provider Mongo debe evaluarse también después del arranque; si pierde conectividad luego de estar disponible, `/api/health` debe volver a `503`.
 - El detalle completo de `/api/health` debe reservarse al subrequest interno de Nginx; la respuesta pública de `/api/health` debe limitarse al estado agregado y timestamp.
 - `/api/health` debe responder desde el último snapshot de salud calculado por el watcher en background, evitando recalcular inline los checks de PACS remotos en cada request.
-- Si una UI ya abierta recibe `unavailable` por SSE de salud del sistema, o confirma `503` al consultar `/api/health` tras un error del stream, debe volver a la landing propia del portal mediante reset suave de la SPA y no mediante recarga completa del navegador.
+- Un cambio transitorio de salud del sistema (`unavailable` por SSE) o una reconexión del stream de salud **no** debe cerrar la sesión activa: el `onerror` del `EventSource` dispara en reconexiones/cierres normales, así que tratarlo como logout expulsaba usuarios en medio de la sesión. La UI mantiene la sesión y solo refleja el estado degradado en el panel de salud del profesional. El cierre de sesión hacia la landing (siempre por reset suave de la SPA, nunca recarga completa) ocurre únicamente cuando un request con sesión devuelve `401`.
 - El backend debe publicar `GET /api/system/events` como SSE de salud del sistema, pero el payload público debe limitarse al estado agregado y timestamp.
 - `/api/config` debe considerarse endpoint interno/operativo y no debe quedar publicado por la superficie pública de Nginx.
 - `/api/runtime-config` puede quedar publicado solo para exponer configuración no sensible estrictamente necesaria para la shell del portal.
