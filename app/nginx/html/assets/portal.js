@@ -1644,38 +1644,70 @@
         return "";
       }
 
-      function labelForRetrieveStatus(status, phase, progress, instancesReceived) {
+      // A study that is viewable but not fully present locally (and has no active
+      // retrieve job) is "incomplete", not "pending": the physician can already
+      // open it while the rest is being fetched or needs to be re-fetched.
+      function isViewableIncompleteCache(cacheStatus) {
+        return cacheStatus === "local_partial" || cacheStatus === "local_unverified";
+      }
+
+      function isIdleRetrieveStatus(status) {
+        return status === "idle" || !status;
+      }
+
+      // retrieveProgressText prefers Orthanc's own percentage; when it is pinned
+      // at 0 (C-GET from a source that never reports the total, e.g. Synapse) it
+      // derives the local/total proportion from the received image count and the
+      // study's expected image count, falling back to a bare count when the total
+      // is unknown.
+      function retrieveProgressText(progress, instancesReceived, expectedInstances) {
+        if (typeof progress === "number" && progress > 0 && progress < 100) {
+          return progress + "%";
+        }
+        if (typeof instancesReceived === "number" && instancesReceived > 0) {
+          const total = Number(expectedInstances || 0);
+          if (total > 0) {
+            let pct = Math.round((instancesReceived / total) * 100);
+            if (pct < 1) pct = 1;
+            if (pct > 99) pct = 99;
+            return instancesReceived + "/" + total + " (" + pct + "%)";
+          }
+          return instancesReceived + " img";
+        }
+        return "";
+      }
+
+      function labelForRetrieveStatus(status, phase, progress, instancesReceived, expectedInstances, cacheStatus) {
+        if (isIdleRetrieveStatus(status) && isViewableIncompleteCache(cacheStatus)) {
+          return "Recuperación incompleta";
+        }
         if (status === "idle") return "Recuperación pendiente";
         if (status === "done") return "Recuperación completa";
         if (status === "running") {
           const phaseLabel = retrievePhaseLabel(phase);
-          if (typeof progress === "number" && progress > 0 && progress < 100) {
-            return (phaseLabel || "Recuperación en curso") + " (" + progress + "%)";
-          }
-          if (typeof instancesReceived === "number" && instancesReceived > 0) {
-            return (phaseLabel || "Recuperación en curso") + " (" + instancesReceived + " img)";
-          }
-          return phaseLabel || "Recuperación en curso";
+          const txt = retrieveProgressText(progress, instancesReceived, expectedInstances);
+          return (phaseLabel || "Recuperación en curso") + (txt ? " (" + txt + ")" : "");
         }
         if (status === "queued") return retrievePhaseLabel(phase) || "Recuperación en cola";
         if (status === "failed") return "Recuperación con error";
         return status || "Estado desconocido";
       }
 
-      function chipClassForRetrieve(status) {
+      function chipClassForRetrieve(status, cacheStatus) {
+        if (isIdleRetrieveStatus(status) && isViewableIncompleteCache(cacheStatus)) {
+          return "chip danger";
+        }
         if (status === "done") return "chip success";
         if (status === "running" || status === "queued") return "chip warn";
-        if (status === "failed") return "chip";
+        if (status === "failed") return "chip danger";
         return "chip";
       }
 
-      function retrieveActionLabel(status, phase, progress, instancesReceived) {
+      function retrieveActionLabel(status, phase, progress, instancesReceived, expectedInstances) {
         if (status === "running" || status === "queued") {
-          if (typeof progress === "number" && progress > 0 && progress < 100) {
-            return "Recuperando " + progress + "%";
-          }
-          if (typeof instancesReceived === "number" && instancesReceived > 0) {
-            return "Recuperando (" + instancesReceived + " img)";
+          const txt = retrieveProgressText(progress, instancesReceived, expectedInstances);
+          if (txt) {
+            return "Recuperando " + txt;
           }
           return retrievePhaseLabel(phase) || "Recuperando";
         }
@@ -1866,7 +1898,7 @@
             } else if (result.source_node_available === false) {
               retrieveAction = '<button class="action action-secondary" type="button" disabled>Origen no disponible</button>';
             } else if (result.retrieve_status === "running" || result.retrieve_status === "queued") {
-              retrieveAction = '<button class="action action-secondary" type="button" disabled data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">' + escapeHTML(retrieveActionLabel(result.retrieve_status, result.retrieve_phase, result.retrieve_progress)) + '</button>';
+              retrieveAction = '<button class="action action-secondary" type="button" disabled data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '" data-physician-retrieve-total="' + imageCount + '">' + escapeHTML(retrieveActionLabel(result.retrieve_status, result.retrieve_phase, result.retrieve_progress, result.instances_received, imageCount)) + '</button>';
             } else if (result.retrieve_status === "failed") {
               retrieveAction = '<button class="action action-secondary" type="button" data-physician-retrieve="' + escapeHTML(result.study_instance_uid) + '"' + retrieveAttrs + ' data-physician-retrieve-button="' + escapeHTML(result.study_instance_uid) + '">Reintentar recuperación</button>';
             }
@@ -1888,8 +1920,8 @@
                   '<div><span>Imágenes</span><strong>' + escapeHTML(imageCountLabel) + '</strong></div>' +
                 '</div>' +
                 '<div class="chip-row">' +
-                  '<div class="' + chipClassForRetrieve(result.retrieve_status) + '" data-physician-retrieve-chip="' + escapeHTML(result.study_instance_uid) + '">' +
-                    escapeHTML(labelForRetrieveStatus(result.retrieve_status, result.retrieve_phase, result.retrieve_progress)) +
+                  '<div class="' + chipClassForRetrieve(result.retrieve_status, result.cache_status) + '" data-physician-retrieve-chip="' + escapeHTML(result.study_instance_uid) + '" data-physician-retrieve-total="' + imageCount + '">' +
+                    escapeHTML(labelForRetrieveStatus(result.retrieve_status, result.retrieve_phase, result.retrieve_progress, result.instances_received, imageCount, result.cache_status)) +
                   '</div>' +
                   (result.locations || []).map(location => '<div class="chip success">Hospital: ' + escapeHTML(location) + '</div>').join("") +
                   modalities +
@@ -2066,9 +2098,10 @@
 
         const chip = physicianResultList.querySelector('[data-physician-retrieve-chip="' + cssEscape(studyUID) + '"]');
         if (chip) {
+          const chipTotal = Number(chip.getAttribute("data-physician-retrieve-total") || 0);
           chip.className = chipClassForRetrieve(payload.status);
           chip.setAttribute("data-physician-retrieve-chip", studyUID);
-          chip.textContent = labelForRetrieveStatus(payload.status, payload.phase, payload.progress, payload.instances_received);
+          chip.textContent = labelForRetrieveStatus(payload.status, payload.phase, payload.progress, payload.instances_received, chipTotal);
         }
 
         const button = physicianResultList.querySelector('[data-physician-retrieve-button="' + cssEscape(studyUID) + '"]');
@@ -2076,7 +2109,8 @@
           return;
         }
 
-        button.textContent = retrieveActionLabel(payload.status, payload.phase, payload.progress, payload.instances_received);
+        const buttonTotal = Number(button.getAttribute("data-physician-retrieve-total") || 0);
+        button.textContent = retrieveActionLabel(payload.status, payload.phase, payload.progress, payload.instances_received, buttonTotal);
         if (payload.status === "running" || payload.status === "queued" || payload.status === "done") {
           button.disabled = true;
           button.removeAttribute("data-physician-retrieve");

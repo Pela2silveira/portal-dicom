@@ -28,12 +28,12 @@ type feedbackCreateRequest struct {
 }
 
 type feedbackComment struct {
-	ID        int64     `json:"id"`
-	Message   string    `json:"message"`
-	ActorKind string    `json:"actor_kind"`
-	ActorID   string    `json:"actor_id,omitempty"`
-	ActorRole string    `json:"actor_role,omitempty"`
-	ActorName string    `json:"actor_name,omitempty"`
+	ID        int64  `json:"id"`
+	Message   string `json:"message"`
+	ActorKind string `json:"actor_kind"`
+	ActorID   string `json:"actor_id,omitempty"`
+	ActorRole string `json:"actor_role,omitempty"`
+	ActorName string `json:"actor_name,omitempty"`
 	// DNI is the author's document number (patients.document_number or
 	// physicians.dni), resolved from actor_id at list time.
 	DNI string `json:"dni,omitempty"`

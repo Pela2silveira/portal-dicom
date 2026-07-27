@@ -321,6 +321,8 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 ### Retrieve State Labels
 
 - `idle` must never surface literally in the UI; the visible label should be in Spanish, for example `Recuperación pendiente`
+- when the retrieve is `idle`/none **but** the study is viewable and not complete (`cache_status` in `local_partial|local_unverified`), the chip must read `Recuperación incompleta` in red (`.chip.danger`), not `Recuperación pendiente` — the study can be opened while the rest is fetched/retried, so "pending" is semantically wrong. `failed` also renders red.
+- while `running`, the label/action show live progress as `N/total (P%)` derived from `instances_received` and the study's expected `number_of_images`, falling back to `N img` when the total is unknown and to the phase label when neither is available. `instances_received` is delivered by the retrieve SSE so the row updates without a manual reload.
 
 ### Allowed Actions
 

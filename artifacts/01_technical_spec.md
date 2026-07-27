@@ -402,23 +402,40 @@ Proveer un portal operativo mínimo capaz de:
 - La verdad de “existe localmente” es Orthanc.
 - Postgres mantiene un **índice operativo**:
   - `cached_studies` con timestamps y referencias para acelerar UI y jobs.
+- `cached_studies.cache_status` usa un vocabulario cerrado (constantes en `retrieve.go`):
+  - `not_local`: el estudio no está en Orthanc.
+  - `local_complete`: presente y verificado como completo contra el conteo esperado del origen.
+  - `local_partial`: presente pero faltan series/instancias respecto al conteo esperado (visualizable, pero se debe remediar/reintentar).
+  - `local_unverified`: presente, pero **no se pudo** obtener un conteo esperado confiable del origen (p. ej. Synapse no reporta `NumberOfSeriesRelatedInstances`), así que no se puede afirmar completitud. Visualizable; nunca se enmascara como `local_complete`.
+- Regla clave: la ausencia de datos de completitud degrada a `local_unverified` (o `local_partial` si hay señal de faltantes), **nunca** a `local_complete`. Un `local_complete` falso oculta estudios incompletos y es el bug histórico de Synapse.
 
 ---
 
-## 8) Detección de completitud de retrieve (MVP)
-Problema: Orthanc puede recibir instancias progresivamente.
+## 8) Detección de completitud de retrieve
 
-### Estrategia MVP (determinística y simple)
-- Tras iniciar retrieve:
-  - Poll cada N segundos el Orthanc REST:
-    - Buscar Study por `StudyInstanceUID` (si ya existe).
-    - Consultar `Instances` count actual.
-  - Considerar “completo” cuando:
-    - La cuenta de instancias no cambia durante `stable_window` (p. ej. 30–60s), **o**
-    - Se alcanza un timeout máximo (configurable, p. ej. 20 min) ⇒ `failed_timeout`.
-- Guardar métricas: duración, instancias recibidas.
+Problema: Orthanc recibe instancias progresivamente y algunos orígenes (Synapse) reportan estados/contadores poco fiables. La antigua heurística de “ventana de estabilidad” (declarar completo cuando el conteo deja de crecer) se descartó porque marca completo a estudios truncados. La estrategia vigente compara contra el **conteo esperado del origen**.
 
-**Nota:** en fases futuras puede integrarse con logs DICOM del remoto o eventos de Orthanc.
+### Estrategia vigente (conteo esperado vs. presente)
+- El job de retrieve monitorea el job C-GET de Orthanc (`monitorOrthancRetrieveJob`) hasta `Success`/`Failure`, no por ventana de estabilidad.
+- Tras `Success` y presencia del estudio, se evalúa completitud a nivel serie/instancia:
+  - **Esperado (origen):** para nodos `c_find`, C-FIND serie con `NumberOfSeriesRelatedInstances` (0020,1209); para `qido_rs`, QIDO `/series`. Si el origen omite el conteo por serie, y `portal.retrieve_verify_instance_counts` está activo (default `true`), se hace un **C-FIND IMAGE-level por serie** para contar instancias.
+  - **Presente (local):** `POST /tools/find` Series+Expand contando `Instances` en Orthanc.
+- Resolución de `cache_status` (`resolveRetrieveCacheStatus`): completo verificado ⇒ `local_complete`; faltantes ⇒ `local_partial`; sin conteo esperado confiable ⇒ `local_unverified`. También se fuerza `local_partial` si el job de Orthanc reporta `FailedInstancesCount`/`RemainingInstancesCount` > 0.
+- La verificación **no** falla el retrieve ante errores de lookup: degrada al estado más conservador y sigue.
+
+### Progreso del C-GET (avance visible)
+- El campo `Progress` del job de Orthanc queda pinneado en `0` cuando el origen no reporta el total de sub-operaciones (típico de Synapse). Para no mostrar “0%” congelado:
+  - `retrieveEffectiveProgress` usa el `Progress` de Orthanc si es `>0`.
+  - En cada poll se cuenta además las instancias ya almacenadas localmente (`GET /studies/{id}/statistics` → `CountInstances`) y se persiste como `instances_received` (best-effort: un timeout devuelve 0 y no rompe el monitor). Al cambiar dispara el evento SSE, refrescando la UI en vivo.
+  - El front deriva la proporción `instances_received / number_of_images` esperado y muestra `"N/total (P%)"`, o `"N img"` si no hay total.
+
+### Remediación y reintentos
+- Un estudio `local_partial` reintenta **solo las series faltantes** (C-GET `Level: "Series"`), re-verificando entre intentos (fase `completing`, sigue visualizable).
+- Configurable en `portal`: `retrieve_max_attempts` (default 3), `retrieve_retry_backoff_seconds` (default 10, backoff lineal), `retrieve_timeout_minutes` (default 30), `retrieve_progress_poll_seconds`, `retrieve_verify_instance_counts`.
+- El worker programado (`scheduled_retrieve_enabled`) re-procesa periódicamente estudios que no estén `local_complete`.
+
+### Contención de índice (SQLite → PostgreSQL, opcional)
+- Bajo la carga de escritura del C-GET, el índice **SQLite** de Orthanc serializa el acceso y los `POST /tools/find` pueden superar el deadline (`context deadline exceeded`), lo que colapsaba búsquedas. Mitigación de raíz: plugin `postgresql-index` de Orthanc, configurable por env en `docker-compose.yml`, **gated** por `ORTHANC_PG_INDEX_ENABLED` (default `false`). Ver runbook de migración en `decisions.md` (el índice PG arranca vacío; el cache se repuebla on-demand, no hay pérdida de datos).
 
 ---
 
@@ -677,9 +694,15 @@ Problema: Orthanc puede recibir instancias progresivamente.
 - Remediación: un estudio `local_partial` reintenta **solo las series faltantes** (C-GET `Level: "Series"`), re-verificando completitud entre intentos. Configurable en `portal`: `retrieve_max_attempts` (default 3), `retrieve_retry_backoff_seconds` (default 10, backoff lineal) y `retrieve_timeout_minutes` (default 30, reemplaza el timeout duro de 15 min). Durante la remediación el job pasa a fase `completing` y el estudio sigue siendo visualizable.
 - El backend no debe cortar artificialmente el `C-GET` a Orthanc con el timeout corto general del cliente HTTP.
 - El proxy Nginx frente a `/api/` debe tolerar retrieves largos y no cancelar `POST /api/patient/retrieve` ni `POST /api/physician/retrieve` con timeouts cortos de upstream.
+- Estado `local_unverified`: cuando el origen no da un conteo esperado confiable, el estudio queda `local_unverified` (no `local_complete`). Controlado por `portal.retrieve_verify_instance_counts` (default `true`), que habilita el fallback C-FIND IMAGE-level por serie.
+- Estado en la UI mientras hay job: `getStudyOperationalState` no reporta `done`/`local_complete` mientras un job está `queued`/`running` (in-flight) ni cuando quedó `failed`/`idle` con faltantes; así la UI muestra el progreso real y ofrece **reintentar** en lugar de enmascarar como completo.
+- Semántica de labels (portal): un estudio visualizable pero incompleto (`local_partial`/`local_unverified`) sin job activo se rotula **“Recuperación incompleta”** (chip rojo), no “Recuperación pendiente”. Un job `running` muestra la proporción `instances_received/number_of_images` como `"N/total (P%)"` (o `"N img"` sin total), actualizada en vivo por SSE.
+- Búsqueda resiliente: en los loops de resultados (QIDO, C-FIND remoto y caché local) la resolución de estado por estudio (`getStudyOperationalState`, un `POST /tools/find` por resultado) es **no fatal**; un timeout degrada ese estudio (log `physician_study_state_degraded` / `physician_cached_study_state_degraded`) y la búsqueda continúa, en vez de colapsar toda la lista a vacío.
 
 ### Visualización
 - OHIF consume exclusivamente `/dicomweb`/`/dicom-web` (Orthanc local).
+- Nginx cachea las respuestas **inmutables** de píxeles WADO-RS (`/dicom-web/studies/.../instances/.../frames|rendered|bulkdata`) en `proxy_cache` (zona `dicomweb_cache`), para acelerar la re-visualización dentro de una sesión. La clave de caché incluye la cookie `portal_viewer_grants` para no servir píxeles cacheados a sesiones no autorizadas; metadata (QIDO) y rutas no inmutables no se cachean.
+- OHIF corre con `enableStudyLazyLoad` desactivado para tomos, de modo que las imágenes se precargan en vez de recuperarse solo al entrar al viewport (mejora la experiencia en estudios grandes).
 - No existe configuración en OHIF que apunte directamente a PACS remotos.
 - El handoff del portal a OHIF usa un `StudyInstanceUID` explícito, no la study list general.
 - La apertura del visor desde el portal ocurre en una pestaña nueva.

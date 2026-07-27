@@ -332,13 +332,16 @@ Key fields:
 - `source_node_id`
 - `requested_by_actor_type`
 - `requested_by_actor_id`
-- `status`
+- `status` (`queued|running|done|failed|idle`)
+- `phase` (retrieve phase, e.g. `retrieving|verifying|completing|done`)
+- `progress` (0–100; may stay 0 when the source does not report totals)
 - `error`
 - `created_at`
 - `started_at`
 - `finished_at`
+- `orthanc_job_id`
 - `orthanc_study_id`
-- `instances_received`
+- `instances_received` (instances stored locally so far; used to derive live progress when `progress` is 0)
 
 ### `cached_studies`
 
@@ -351,7 +354,8 @@ Key fields:
 - `first_seen_at`
 - `last_verified_at`
 - `expires_at`
-- `cache_status`
+- `cache_status` — closed vocabulary: `not_local | local_complete | local_partial | local_unverified`. Missing completeness data degrades to `local_unverified` (or `local_partial` when there is a missing-instances signal), never to `local_complete`.
+- `expected_series_count`, `present_series_count`, `missing_series_json`, `last_completeness_checked_at` — completeness bookkeeping (migration `013`) written by the retrieve completeness check.
 - `locations_json`
 
 ## Audit
