@@ -134,6 +134,7 @@
       let patientRetrieveEventSource = null;
       let patientAutoRetrieveActiveStudyUID = "";
       let patientAutoRetrieveQueue = [];
+      const patientAutoRetrieveAttempted = new Set();
       const patientStudyModalityByUID = new Map();
       let physicianRetrieveEventSource = null;
       let physicianAndesRefreshTimer = null;
@@ -237,6 +238,7 @@
         clearPatientRetrievePoll();
         patientAutoRetrieveActiveStudyUID = "";
         patientAutoRetrieveQueue = [];
+        patientAutoRetrieveAttempted.clear();
         clearPhysicianRetrievePoll();
         clearPhysicianAndesRefresh();
         setOperatorAccess(false);
@@ -784,7 +786,10 @@
             return;
           }
           const studyUID = String(study.study_instance_uid || "");
-          if (!studyUID || known.has(studyUID)) {
+          // Skip studies already auto-retrieved this session so silent
+          // refreshes (triggered by retrieve-job SSE events) do not re-fire the
+          // same retrieve over and over.
+          if (!studyUID || known.has(studyUID) || patientAutoRetrieveAttempted.has(studyUID)) {
             return;
           }
           patientAutoRetrieveQueue.push(studyUID);
@@ -803,6 +808,7 @@
           return;
         }
 
+        patientAutoRetrieveAttempted.add(nextStudyUID);
         patientAutoRetrieveActiveStudyUID = nextStudyUID;
         try {
           const payload = await triggerPatientRetrieve(nextStudyUID, patientStudyModalityByUID.get(nextStudyUID) || "");
@@ -1992,6 +1998,9 @@
       }
 
       async function loadPatientStudies(documentNumber, options = {}) {
+        if (documentNumber !== activePatientDocument) {
+          patientAutoRetrieveAttempted.clear();
+        }
         activePatientDocument = documentNumber;
         updateFeedbackAccess();
         const silentRefresh = Boolean(options.silentRefresh);
