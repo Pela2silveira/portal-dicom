@@ -17,7 +17,7 @@ window.config = {
         supportsReject: false,
         imageRendering: 'wadors',
         thumbnailRendering: 'wadors',
-        enableStudyLazyLoad: true
+        enableStudyLazyLoad: false
       }
     }
   ],

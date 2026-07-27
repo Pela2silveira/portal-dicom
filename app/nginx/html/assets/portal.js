@@ -965,7 +965,15 @@
         const month = now.getMonth();
         const day = now.getDate();
 
-        const formatDate = value => value.toISOString().slice(0, 10);
+        // Format using the local calendar date, not toISOString() (UTC): the
+        // latter shifts the day for timezones east of UTC and could turn a
+        // "today" preset into tomorrow/yesterday depending on the offset.
+        const formatDate = value => {
+          const y = value.getFullYear();
+          const m = String(value.getMonth() + 1).padStart(2, "0");
+          const d = String(value.getDate()).padStart(2, "0");
+          return y + "-" + m + "-" + d;
+        };
         let fromDate = null;
         let toDate = new Date(year, month, day);
 
@@ -1636,13 +1644,16 @@
         return "";
       }
 
-      function labelForRetrieveStatus(status, phase, progress) {
+      function labelForRetrieveStatus(status, phase, progress, instancesReceived) {
         if (status === "idle") return "Recuperación pendiente";
         if (status === "done") return "Recuperación completa";
         if (status === "running") {
           const phaseLabel = retrievePhaseLabel(phase);
           if (typeof progress === "number" && progress > 0 && progress < 100) {
             return (phaseLabel || "Recuperación en curso") + " (" + progress + "%)";
+          }
+          if (typeof instancesReceived === "number" && instancesReceived > 0) {
+            return (phaseLabel || "Recuperación en curso") + " (" + instancesReceived + " img)";
           }
           return phaseLabel || "Recuperación en curso";
         }
@@ -1658,10 +1669,13 @@
         return "chip";
       }
 
-      function retrieveActionLabel(status, phase, progress) {
+      function retrieveActionLabel(status, phase, progress, instancesReceived) {
         if (status === "running" || status === "queued") {
           if (typeof progress === "number" && progress > 0 && progress < 100) {
             return "Recuperando " + progress + "%";
+          }
+          if (typeof instancesReceived === "number" && instancesReceived > 0) {
+            return "Recuperando (" + instancesReceived + " img)";
           }
           return retrievePhaseLabel(phase) || "Recuperando";
         }
@@ -2054,7 +2068,7 @@
         if (chip) {
           chip.className = chipClassForRetrieve(payload.status);
           chip.setAttribute("data-physician-retrieve-chip", studyUID);
-          chip.textContent = labelForRetrieveStatus(payload.status, payload.phase, payload.progress);
+          chip.textContent = labelForRetrieveStatus(payload.status, payload.phase, payload.progress, payload.instances_received);
         }
 
         const button = physicianResultList.querySelector('[data-physician-retrieve-button="' + cssEscape(studyUID) + '"]');
@@ -2062,7 +2076,7 @@
           return;
         }
 
-        button.textContent = retrieveActionLabel(payload.status, payload.phase, payload.progress);
+        button.textContent = retrieveActionLabel(payload.status, payload.phase, payload.progress, payload.instances_received);
         if (payload.status === "running" || payload.status === "queued" || payload.status === "done") {
           button.disabled = true;
           button.removeAttribute("data-physician-retrieve");
