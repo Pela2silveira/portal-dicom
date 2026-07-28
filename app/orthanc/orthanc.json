@@ -10,6 +10,15 @@
   "DicomAet": "PORTALIMG",
   "DicomCheckCalledAet": false,
   "DicomAlwaysAllowEcho": true,
+  "PostgreSQL": {
+    "EnableIndex": true,
+    "EnableStorage": false,
+    "Host": "postgres",
+    "Port": 5432,
+    "Database": "orthanc",
+    "Username": "${POSTGRES_USER}",
+    "Password": "${POSTGRES_PASSWORD}"
+  },
   "Plugins": [
     "/usr/local/share/orthanc/plugins"
   ],
