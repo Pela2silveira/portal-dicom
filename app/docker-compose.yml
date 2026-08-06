@@ -81,6 +81,11 @@ services:
     image: jodogne/orthanc-plugins@sha256:fbd5e3747430fa478d5e1d68969017f75cabab76731d98e9e46f8f8e755c7d5c
     container_name: app-orthanc
     restart: unless-stopped
+    # Cap memory so an Orthanc leak triggers a contained cgroup OOM (only Orthanc
+    # recycles) instead of a host-global OOM that also kills postgres/backend.
+    # memswap_limit == mem_limit disables swap for the container (no thrashing).
+    mem_limit: ${ORTHANC_MEM_LIMIT:-8g}
+    memswap_limit: ${ORTHANC_MEMSWAP_LIMIT:-8g}
     env_file:
       - .env
     environment:
