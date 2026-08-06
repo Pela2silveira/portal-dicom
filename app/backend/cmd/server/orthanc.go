@@ -2109,8 +2109,11 @@ func (a *App) startOrthancCGetResources(ctx context.Context, node PACSNodeConfig
 	req.Header.Set("Content-Type", "application/json")
 	a.applyOrthancInternalRequestAuth(req)
 
-	orthancRetrieveClient := &http.Client{}
-	res, err := orthancRetrieveClient.Do(req)
+	// The C-GET enqueue is Asynchronous (Orthanc returns the job id immediately),
+	// so the shared client's timeout is a safety net against a hung modality
+	// endpoint; a per-call client with no timeout could leak a connection/goroutine
+	// when the remote PACS is unreachable.
+	res, err := a.httpClient.Do(req)
 	if err != nil {
 		return "", err
 	}
