@@ -253,7 +253,7 @@ func (a *App) processRetrieveJob(jobID string) {
 		return
 	}
 
-	orthancJobID, err := a.startOrthancCGet(ctx, node, studyInstanceUID)
+	orthancJobID, err := a.startOrthancRetrieve(ctx, node, studyInstanceUID)
 	if err != nil {
 		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", "preparing", 0, err.Error(), "", "", 0, false)
 		return
@@ -266,19 +266,19 @@ func (a *App) processRetrieveJob(jobID string) {
 		})
 	}
 
-	orthancStudyID, cgetStatus, err := a.monitorOrthancRetrieveJob(ctx, jobID, orthancJobID, studyInstanceUID)
+	orthancStudyID, retrieveStatus, err := a.monitorOrthancRetrieveJob(ctx, jobID, orthancJobID, studyInstanceUID)
 	if err != nil {
 		_ = a.updateRetrieveJobStatus(ctx, jobID, "failed", "retrieving", 0, err.Error(), orthancJobID, "", 0, false)
 		return
 	}
-	if cgetStatus.FailedInstancesCount > 0 || cgetStatus.RemainingInstancesCount > 0 {
-		a.log("warn", "retrieve_cget_suboperations_incomplete", map[string]any{
+	if retrieveStatus.FailedInstancesCount > 0 || retrieveStatus.RemainingInstancesCount > 0 {
+		a.log("warn", "retrieve_suboperations_incomplete", map[string]any{
 			"job_id":                    jobID,
 			"study_instance_uid":        studyInstanceUID,
 			"source_node_id":            sourceNodeCode,
-			"instances_count":           cgetStatus.InstancesCount,
-			"failed_instances_count":    cgetStatus.FailedInstancesCount,
-			"remaining_instances_count": cgetStatus.RemainingInstancesCount,
+			"instances_count":           retrieveStatus.InstancesCount,
+			"failed_instances_count":    retrieveStatus.FailedInstancesCount,
+			"remaining_instances_count": retrieveStatus.RemainingInstancesCount,
 		})
 	}
 
@@ -317,14 +317,14 @@ func (a *App) processRetrieveJob(jobID string) {
 		report = a.remediateIncompleteRetrieve(ctx, jobID, node, studyInstanceUID, orthancJobID, report)
 	}
 
-	cacheStatus := resolveRetrieveCacheStatus(report, cgetStatus)
+	cacheStatus := resolveRetrieveCacheStatus(report, retrieveStatus)
 	if cacheStatus == cacheStatusLocalUnverified {
 		a.log("warn", "retrieve_study_unverified", map[string]any{
 			"job_id":                    jobID,
 			"study_instance_uid":        studyInstanceUID,
 			"source_node_id":            sourceNodeCode,
-			"failed_instances_count":    cgetStatus.FailedInstancesCount,
-			"remaining_instances_count": cgetStatus.RemainingInstancesCount,
+			"failed_instances_count":    retrieveStatus.FailedInstancesCount,
+			"remaining_instances_count": retrieveStatus.RemainingInstancesCount,
 		})
 	}
 
@@ -357,20 +357,20 @@ const (
 	cacheStatusLocalUnverified = "local_unverified"
 )
 
-// resolveRetrieveCacheStatus maps a completeness report plus the C-GET job
+// resolveRetrieveCacheStatus maps a completeness report plus the retrieve job
 // counters to a cache status. It never asserts local_complete unless the study
 // was actually evaluated against the source and found complete; an
 // unverifiable result degrades to local_unverified (or local_partial when the
-// C-GET itself reported dropped/remaining instances) so the study is re-checked
+// retrieve itself reported dropped/remaining instances) so the study is re-checked
 // later rather than trusted blindly.
-func resolveRetrieveCacheStatus(report studyCompletenessReport, cget orthancRetrieveStatus) string {
+func resolveRetrieveCacheStatus(report studyCompletenessReport, retrieve orthancRetrieveStatus) string {
 	if report.Evaluated {
 		if report.Complete {
 			return cacheStatusLocalComplete
 		}
 		return cacheStatusLocalPartial
 	}
-	if cget.FailedInstancesCount > 0 || cget.RemainingInstancesCount > 0 {
+	if retrieve.FailedInstancesCount > 0 || retrieve.RemainingInstancesCount > 0 {
 		return cacheStatusLocalPartial
 	}
 	return cacheStatusLocalUnverified
@@ -409,9 +409,9 @@ func (a *App) remediateIncompleteRetrieve(ctx context.Context, jobID string, nod
 
 		_ = a.updateRetrieveJobStatus(ctx, jobID, "running", "completing", report.completionPercent(), "", orthancJobID, "", 0, false)
 
-		retryJobID, err := a.startOrthancCGetSeries(ctx, node, studyUID, report.MissingSeries)
+		retryJobID, err := a.startOrthancRetrieveSeries(ctx, node, studyUID, report.MissingSeries)
 		if err != nil {
-			a.log("warn", "retrieve_remediation_cget_failed", map[string]any{
+			a.log("warn", "retrieve_remediation_failed", map[string]any{
 				"job_id":             jobID,
 				"study_instance_uid": studyUID,
 				"source_node_id":     node.ID,
@@ -642,7 +642,7 @@ func (a *App) retrieveProgressPollInterval() time.Duration {
 	return time.Duration(a.externalConfig.Portal.RetrieveProgressPollSeconds) * time.Second
 }
 
-// retrieveMaxAttempts is the total number of C-GET attempts (1 initial + retries)
+// retrieveMaxAttempts is the total number of retrieve attempts (1 initial + retries)
 // used to remediate an incomplete study.
 func (a *App) retrieveMaxAttempts() int {
 	if a.externalConfig == nil || a.externalConfig.Portal.RetrieveMaxAttempts <= 0 {
@@ -671,7 +671,7 @@ func (a *App) retrieveVerifyInstanceCounts() bool {
 	return *a.externalConfig.Portal.RetrieveVerifyInstanceCounts
 }
 
-// retrieveTimeout bounds the whole retrieve job (initial C-GET plus remediation).
+// retrieveTimeout bounds the whole retrieve job (initial retrieve plus remediation).
 func (a *App) retrieveTimeout() time.Duration {
 	if a.externalConfig == nil || a.externalConfig.Portal.RetrieveTimeoutMinutes <= 0 {
 		return 30 * time.Minute

@@ -28,7 +28,7 @@
         }
       },
       "retrieve": {
-        "mode": "c_get",
+        "mode": "c_move",
         "aet": "PACSHPN",
         "dicom_host": "pending-host",
         "dicom_port": 11112,

@@ -51,7 +51,7 @@
       ["get", "^/studies/([A-Za-z0-9-]+)/archive$", "all"],
       ["get", "^/jobs/([A-Za-z0-9-]+)$", "all"],
       ["put", "^/modalities/([^/]+)$", "all"],
-      ["post", "^/modalities/([^/]+)/(echo|get|query)$", "all"],
+      ["post", "^/modalities/([^/]+)/(echo|get|move|query)$", "all"],
       ["get", "^/queries/([A-Za-z0-9-]+)/answers$", "all"],
       ["get", "^/queries/([A-Za-z0-9-]+)/answers/([A-Za-z0-9-]+)/content$", "all"]
     ],

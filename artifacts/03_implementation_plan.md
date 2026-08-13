@@ -167,9 +167,9 @@
   - `GET /api/cache/studies/{study_instance_uid}`
   - Paciente: `GET /api/patient/studies?document=<dni>` + `POST /api/patient/retrieve`
   - Profesional: `GET /api/physician/results?...` + `POST /api/physician/retrieve`
-- Orquestación C-GET:
-  - Backend configura modalidad en Orthanc (`PUT /modalities/{id}`) si corresponde
-  - Dispara retrieve `POST /modalities/{id}/get` con `StudyInstanceUID`
+- Orquestación retrieve por nodo:
+  - Backend configura la modalidad en Orthanc (`PUT /modalities/{id}`) con `RetrieveMethod` según `retrieve.mode`
+  - Dispara `POST /modalities/{id}/move` para `c_move` o `POST /modalities/{id}/get` para `c_get`, con `StudyInstanceUID`
   - Timeout específico para retrieve (no usar timeout HTTP corto global)
 - Polling completitud (MVP):
   - busca Study por `StudyInstanceUID`
@@ -184,7 +184,7 @@
 **What is already working**
 - Paciente:
   - `GET /api/patient/studies?document=<dni>` con QIDO real al nodo configurado
-  - `POST /api/patient/retrieve` con `C-GET` vía Orthanc REST
+  - `POST /api/patient/retrieve` con retrieve DIMSE vía Orthanc REST según el modo del nodo
   - actualización a `available_local`
 - Profesional:
   - `POST /api/physician/retrieve`
@@ -194,7 +194,7 @@
 - Límites de concurrencia de retrieve por nodo/global
 - Timeouts operativos explícitos por job
 - Mejor diferenciación de estados `failed/running/retryable`
-- Formalizar la preferencia `C-MOVE` vs `C-GET` por nodo
+- Validar operativamente la matriz de capacidades y routing C-MOVE por entorno
 
 **Exit criteria (testable)**
 - `POST /api/patient/retrieve` crea `retrieve_job` en DB.
@@ -203,7 +203,7 @@
 - Comportamiento de timeout: si no completa a tiempo → `failed_timeout` (o `failed` con error).
 
 **Blocked by open decisions?**
-- **Sí, parcialmente** por conectividad DIMSE real si se quiere mover a `C-MOVE` por defecto en ciertos nodos.
+- **Sí, parcialmente** para validar C-MOVE real: la selección por nodo ya está implementada, pero requiere conectividad DIMSE entrante al Orthanc local.
 
 ---
 
@@ -218,7 +218,7 @@
   - lista propia del portal con estudios autorizados
   - apertura puntual en OHIF
   - primer slice funcional con QIDO `PatientID=<dni>` contra el único nodo PACS configurado y sincronización en `patient_study_access`
-  - primer retrieve funcional con botón `Retrieve`, `POST /api/patient/retrieve` y orquestación `C-GET` vía Orthanc REST
+  - primer retrieve funcional con botón `Retrieve`, `POST /api/patient/retrieve` y orquestación DIMSE según `retrieve.mode`
   - observabilidad estructurada del sync paciente: token, QIDO, duración y conteos
   - sin persistir métricas de observabilidad en Postgres; sólo logs y futuros stats en memoria
 - Physician surface:
@@ -315,7 +315,7 @@
 
 ## Blockers Summary (Milestones blocked by open human inputs/decisions)
 - **Milestone 4 (parcialmente bloqueado)**: requiere ≥2 nodos para validar búsqueda federada real; se puede destrabar con nodo mock/lab o Orthanc remoto simulado.
-- **Milestone 5 (dependiente del entorno)**: requiere conectividad DIMSE real si se quiere validar `C-MOVE` en vez de `C-GET`.
+- **Milestone 5 (dependiente del entorno)**: la selección `C-MOVE`/`C-GET` por nodo está implementada; validar HPN con `c_move` requiere conectividad DIMSE hacia `PACSHPN` y routing de retorno al AET local.
 - **Milestone 6 (parcialmente bloqueado)**: requiere definir estrategia de identificador paciente (`PatientID == DNI` vs configurable/HIS).
 - **Desbloqueo táctico aceptado**: hasta disponer de la API REST del HIS, se permite un adapter backend-only `his_mongo_direct` para lectura de identidad de paciente, siempre que sea read-only, performante y reemplazable por el provider REST futuro.
 - **Claves candidatas ya acordadas para PACS**: `documento` y string de `_id` provenientes del documento `paciente` de Mongo.
@@ -335,7 +335,7 @@ El slice mínimo **ya implementado** que demuestra valor real hoy es:
 3. **Landing pública + superficies paciente/profesional**.
 4. **Paciente**:
    - QIDO real al único nodo remoto configurado
-   - retrieve real con `C-GET` vía Orthanc REST
+   - retrieve real vía Orthanc REST respetando `retrieve.mode` por nodo
    - handoff a OHIF por `StudyInstanceUID`
 5. **Profesional**:
    - estudios locales de la semana actual sin filtros

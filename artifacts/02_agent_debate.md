@@ -196,6 +196,7 @@
    **Alternatives to consider:**  
    - Only C-MOVE in MVP (simplest; may fail in some sites).  
    - Only C-GET (avoids inbound connectivity to Orthanc but changes networking assumptions).
+   **Resolution (2026-08-13):** Implemented. The backend now maps `retrieve.mode` to Orthanc `/move` or `/get` for both initial retrieve and series remediation. HPN is the C-MOVE validation target; environment connectivity remains an operational prerequisite.
 
 5. **Decision name:** Retrieve Completion Criteria  
    **Recommended option:** Use **polling with “stable window”** + global timeout, but also record a “possibly_incomplete” terminal state if stability is reached too quickly or instance count is very low.  

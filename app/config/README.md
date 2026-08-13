@@ -65,6 +65,8 @@ Required fields per node:
 - `supports_cmove`: whether the node supports C-MOVE
 - `supports_cget`: whether the node supports C-GET
 
+At runtime, `c_move` registers the Orthanc modality with `RetrieveMethod: "C-MOVE"` and calls `POST /modalities/{id}/move`; `c_get` uses `"C-GET"` and `POST /modalities/{id}/get`. Series-level remediation uses the same mode configured for the node.
+
 `health` fields:
 
 - `mode`: `http`, `auth_qido`, or `dimse_c_echo`
@@ -96,7 +98,7 @@ Example:
     }
   },
   "retrieve": {
-    "mode": "c_get",
+    "mode": "c_move",
     "aet": "PACSHPN",
     "dicom_host": "172.16.1.205",
     "dicom_port": 11112,

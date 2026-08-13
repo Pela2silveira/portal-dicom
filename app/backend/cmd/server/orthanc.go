@@ -701,11 +701,15 @@ func (a *App) checkRemotePACSViaOrthancEcho(parent context.Context, node PACSNod
 
 func (a *App) orthancModalityPayload(node PACSNodeConfig) ([]byte, string, error) {
 	resolved := node.Resolved()
+	retrieveMethod := "C-GET"
+	if resolved.RetrieveMode == "c_move" {
+		retrieveMethod = "C-MOVE"
+	}
 	payload, err := json.Marshal(orthancModalityRequest{
 		AET:            resolved.AET,
 		Host:           resolved.DICOMHost,
 		Port:           resolved.DICOMPort,
-		RetrieveMethod: "C-GET",
+		RetrieveMethod: retrieveMethod,
 	})
 	if err != nil {
 		return nil, "", err
@@ -1741,8 +1745,8 @@ func (a *App) executeOrthancEcho(ctx context.Context, node PACSNodeConfig, resol
 	return false
 }
 
-func (a *App) startOrthancCGet(ctx context.Context, node PACSNodeConfig, studyInstanceUID string) (string, error) {
-	return a.startOrthancCGetWithRefresh(ctx, node, studyInstanceUID, true)
+func (a *App) startOrthancRetrieve(ctx context.Context, node PACSNodeConfig, studyInstanceUID string) (string, error) {
+	return a.startOrthancRetrieveWithRefresh(ctx, node, studyInstanceUID, true)
 }
 
 func (a *App) runOrthancStudyCFind(ctx context.Context, node PACSNodeConfig, filters PhysicianSearchFilters) ([]qidoResponseItem, error) {
@@ -2064,15 +2068,15 @@ func assignOrthancQueryAnswerNestedValue(target qidoResponseItem, tag string, pa
 	}
 }
 
-func (a *App) startOrthancCGetWithRefresh(ctx context.Context, node PACSNodeConfig, studyInstanceUID string, allowRefresh bool) (string, error) {
-	return a.startOrthancCGetResources(ctx, node, "Study", []map[string]string{
+func (a *App) startOrthancRetrieveWithRefresh(ctx context.Context, node PACSNodeConfig, studyInstanceUID string, allowRefresh bool) (string, error) {
+	return a.startOrthancRetrieveResources(ctx, node, "Study", []map[string]string{
 		{"StudyInstanceUID": studyInstanceUID},
 	}, allowRefresh)
 }
 
-// startOrthancCGetSeries issues a C-GET for a specific set of series of a study,
+// startOrthancRetrieveSeries retrieves a specific set of series of a study,
 // used to remediate a partial retrieve without re-pulling series already stored.
-func (a *App) startOrthancCGetSeries(ctx context.Context, node PACSNodeConfig, studyInstanceUID string, seriesInstanceUIDs []string) (string, error) {
+func (a *App) startOrthancRetrieveSeries(ctx context.Context, node PACSNodeConfig, studyInstanceUID string, seriesInstanceUIDs []string) (string, error) {
 	resources := make([]map[string]string, 0, len(seriesInstanceUIDs))
 	for _, seriesUID := range seriesInstanceUIDs {
 		seriesUID = strings.TrimSpace(seriesUID)
@@ -2087,11 +2091,17 @@ func (a *App) startOrthancCGetSeries(ctx context.Context, node PACSNodeConfig, s
 	if len(resources) == 0 {
 		return "", errors.New("no series to retrieve")
 	}
-	return a.startOrthancCGetResources(ctx, node, "Series", resources, true)
+	return a.startOrthancRetrieveResources(ctx, node, "Series", resources, true)
 }
 
-func (a *App) startOrthancCGetResources(ctx context.Context, node PACSNodeConfig, level string, resources []map[string]string, allowRefresh bool) (string, error) {
+func (a *App) startOrthancRetrieveResources(ctx context.Context, node PACSNodeConfig, level string, resources []map[string]string, allowRefresh bool) (string, error) {
 	resolved := node.Resolved()
+	operation := "get"
+	if resolved.RetrieveMode == "c_move" {
+		operation = "move"
+		// Omitting TargetAet makes Orthanc use its own DicomAet, so the remote
+		// PACS sends the instances back to this local Orthanc.
+	}
 	payload, err := json.Marshal(map[string]any{
 		"Asynchronous": true,
 		"Level":        level,
@@ -2102,14 +2112,14 @@ func (a *App) startOrthancCGetResources(ctx context.Context, node PACSNodeConfig
 		return "", err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(a.cfg.OrthancURL, "/")+"/modalities/"+url.PathEscape(resolved.ID)+"/get", strings.NewReader(string(payload)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(a.cfg.OrthancURL, "/")+"/modalities/"+url.PathEscape(resolved.ID)+"/"+operation, strings.NewReader(string(payload)))
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	a.applyOrthancInternalRequestAuth(req)
 
-	// The C-GET enqueue is Asynchronous (Orthanc returns the job id immediately),
+	// The retrieve enqueue is asynchronous (Orthanc returns the job id immediately),
 	// so the shared client's timeout is a safety net against a hung modality
 	// endpoint; a per-call client with no timeout could leak a connection/goroutine
 	// when the remote PACS is unreachable.
@@ -2124,21 +2134,21 @@ func (a *App) startOrthancCGetResources(ctx context.Context, node PACSNodeConfig
 		if allowRefresh && orthancModalityMissing(res.StatusCode, bodyText) {
 			a.invalidateOrthancModality(node.ID)
 			if err := a.ensureOrthancModality(ctx, node); err != nil {
-				return "", fmt.Errorf("orthanc c-get modality refresh failed: %w", err)
+				return "", fmt.Errorf("orthanc %s modality refresh failed: %w", resolved.RetrieveMode, err)
 			}
-			return a.startOrthancCGetResources(ctx, node, level, resources, false)
+			return a.startOrthancRetrieveResources(ctx, node, level, resources, false)
 		}
-		return "", fmt.Errorf("orthanc c-get bad status %d: %s", res.StatusCode, bodyText)
+		return "", fmt.Errorf("orthanc %s bad status %d: %s", resolved.RetrieveMode, res.StatusCode, bodyText)
 	}
 
 	var payloadResponse struct {
 		ID string `json:"ID"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&payloadResponse); err != nil {
-		return "", fmt.Errorf("decode orthanc c-get response: %w", err)
+		return "", fmt.Errorf("decode orthanc %s response: %w", resolved.RetrieveMode, err)
 	}
 	if strings.TrimSpace(payloadResponse.ID) == "" {
-		return "", errors.New("orthanc c-get did not return job id")
+		return "", fmt.Errorf("orthanc %s did not return job id", resolved.RetrieveMode)
 	}
 	return payloadResponse.ID, nil
 }

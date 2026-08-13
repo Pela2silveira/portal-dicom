@@ -140,7 +140,7 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 * **Principio de implementación:** el intercambio real de estudios debe ocurrir entre PACS, con Orthanc actuando como PACS local y par DICOM/DICOMweb de los nodos remotos.
 * **Backend:** coordina, dispara y monitorea el retrieve, pero no debe transformarse en proxy del payload DICOM como camino normal de transferencia.
 * **Legacy o REST:** mientras no aparezca una limitación concreta, los intercambios de estudios deben resolverse como comunicación PACS↔PACS entre Orthanc y los remotos, ya sea por DIMSE legacy o por mecanismos DICOM REST del producto remoto.
-* **Primer retrieve funcional de paciente:** el portal expone `POST /api/patient/retrieve` y, por ahora, dispara `C-GET` sobre Orthanc REST contra el único nodo remoto configurado para estudios marcados como `pending_retrieve`.
+* **Retrieve funcional de paciente:** el portal expone `POST /api/patient/retrieve` y dispara el retrieve DIMSE configurado en el nodo origen: `c_move` usa `POST /modalities/{id}/move` y `c_get` usa `POST /modalities/{id}/get` sobre Orthanc REST.
 
 ### 5.2 PACS Local (Caché)
 * **Tecnología:** Orthanc (Ligero, API REST potente).
@@ -167,7 +167,7 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 * **TO-DO de PDFs ANDES por API:** queda pendiente investigar y definir la recuperación de PDFs asociados a prestaciones ANDES por API, incluyendo endpoint, autenticación, contrato binario/URL y criterios de exposición en los flujos de paciente y profesional.
 * **TO-DO de invalidación:** queda pendiente definir el mecanismo funcional y operativo para invalidar o purgar elementos de esa cache cuando un estudio deje de estar disponible en un PACS o cuando el enriquecimiento ANDES requiera refresco.
 * **Transacción de disponibilidad local:** el cambio de `pending_retrieve` a `available_local` debe ocurrir únicamente después de que Orthanc confirme la presencia local del estudio, y debe persistirse en la misma transacción que el cierre exitoso del retrieve y la actualización de cache local.
-* **Verificación de completitud del retrieve:** tras un C-GET exitoso, el backend no debe marcar `local_complete` solo por la presencia del estudio en Orthanc; debe verificar la completitud comparando, a nivel serie, las series/instancias esperadas por el PACS de origen contra las presentes localmente. Si faltan series o instancias, el estudio debe marcarse `local_partial`. Cuando el origen no informe conteos confiables, la verificación degrada a best-effort (se mantiene el comportamiento previo). La verificación es best-effort: su fallo no debe hacer fallar un retrieve por lo demás exitoso.
+* **Verificación de completitud del retrieve:** tras un retrieve Orthanc exitoso (`C-MOVE` o `C-GET` según el nodo), el backend no debe marcar `local_complete` solo por la presencia del estudio en Orthanc; debe verificar la completitud comparando, a nivel serie, las series/instancias esperadas por el PACS de origen contra las presentes localmente. Si faltan series o instancias, el estudio debe marcarse `local_partial`. Cuando el origen no informe conteos confiables, la verificación degrada a best-effort. La verificación es best-effort: su fallo no debe hacer fallar un retrieve por lo demás exitoso.
 * **No bloquear estudios incompletos:** un estudio `local_partial` debe seguir siendo visualizable y descargable (se abre lo que ya está presente); el estado parcial habilita la remediación en background y su señalización en la UI, pero no bloquea las operaciones.
 * **Remediación de estudios parciales:** ante un `local_partial`, el backend debe reintentar automáticamente **solo las series faltantes** (sin retrabajar lo ya traído), re-verificando completitud entre intentos. La cantidad de intentos, el backoff entre reintentos y el timeout total del retrieve deben ser configurables en `config.json` (`portal.retrieve_max_attempts` con valor inicial 3, `portal.retrieve_retry_backoff_seconds`, `portal.retrieve_timeout_minutes`).
 * **TO-DO de contrato multiorigen:** cuando profesional evolucione a multiselect de PACS, el contrato lógico de resultados debería exponer `source_node_ids[]` como array agregado por `StudyInstanceUID`, manteniendo la persistencia física por `StudyInstanceUID + nodo PACS`.
@@ -211,7 +211,7 @@ Se implementa una interfaz `DICOMHandler` para abstraer la complejidad de cada n
 * El contrato explícito de esta superficie queda definido en `artifacts/05_ui_contracts.md`.
 * En el mock actual del portal, el ingreso profesional debe aterrizar primero en esta superficie y no redirigir directamente a la home general de OHIF.
 * La primera implementación funcional de esta superficie consume `GET /api/physician/results?username=<dni>` y, sin filtros, debe mostrar siempre los estudios locales en cache consultando Orthanc local en vivo para la ventana relativa definida por `professional.initial_cache_period`.
-* El primer avance operativo de esta superficie expone `POST /api/physician/retrieve`, reutiliza Orthanc REST para `C-GET` y recalcula `cache_status` / `retrieve_status` desde Postgres y Orthanc local antes de habilitar las acciones de visualización.
+* El primer avance operativo de esta superficie expone `POST /api/physician/retrieve`, reutiliza Orthanc REST con el `retrieve.mode` del nodo origen (`c_move` o `c_get`) y recalcula `cache_status` / `retrieve_status` desde Postgres y Orthanc local antes de habilitar las acciones de visualización.
 * Cuando un retrieve profesional llega a estado terminal, la grilla debe refrescarse de manera silenciosa: sin vaciar la lista, sin mostrar placeholders intermedios y preservando scroll/foco para evitar parpadeo o pérdida de contexto.
 * Tanto en paciente como en profesional, si el PACS origen del estudio está offline según la salud actual del sistema, la acción `Recuperar estudio` debe quedar deshabilitada con la leyenda `Origen no disponible`, y el backend debe rechazar igualmente el enqueue si recibe el POST.
 * Con filtros cargados, `GET /api/physician/results` debe consultar QIDO-RS del nodo remoto configurado y persistir esa búsqueda como reciente para reutilización posterior.
@@ -332,7 +332,7 @@ Para el MVP, la integración con PACS remotos dcm4chee debe tomar como contrato 
 El MVP debe apoyarse en estas capacidades del PACS remoto:
 * **QIDO-RS** para búsqueda de estudios.
 * **WADO-RS** para consultas de validación o compatibilidad si hiciera falta, aunque OHIF seguirá consumiendo desde Orthanc local.
-* **MOVE / C-MOVE** para recuperar estudios hacia el Orthanc local.
+* **Retrieve DIMSE hacia Orthanc local:** `C-MOVE` mediante `POST /modalities/{id}/move` cuando el nodo tenga `retrieve.mode = "c_move"`, o `C-GET` mediante `POST /modalities/{id}/get` cuando tenga `retrieve.mode = "c_get"`.
 
 ### 10.3 Capacidades fuera del primer slice
 Estas capacidades del Swagger de dcm4chee no son prioridad del primer slice:

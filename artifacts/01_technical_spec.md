@@ -262,11 +262,11 @@ Proveer un portal operativo mínimo capaz de:
 
 **Primer slice implementado (paciente)**
 - La superficie paciente expone `POST /api/patient/retrieve`.
-- El backend registra el `retrieve_job` y responde `queued`; luego un worker Go asegura la modalidad remota en Orthanc y dispara `POST /modalities/{id}/get`.
-- Orthanc ejecuta `C-GET` contra el PACS remoto configurado.
+- El backend registra el `retrieve_job` y responde `queued`; luego un worker Go asegura la modalidad remota en Orthanc con `RetrieveMethod` alineado a `retrieve.mode` y dispara `POST /modalities/{id}/move` para `c_move` o `POST /modalities/{id}/get` para `c_get`.
+- Orthanc ejecuta `C-MOVE` o `C-GET` contra el PACS remoto según la configuración del nodo.
 - El worker hace polling sobre Orthanc hasta encontrar el `StudyInstanceUID`, marca `patient_study_access.availability_status=available_local` y recién entonces habilita OHIF.
-- La llamada HTTP a Orthanc para disparar `C-GET` no debe usar el timeout corto general del backend; debe respetar el deadline específico del request de retrieve.
-- `GET /api/patient/studies` debe devolver `retrieve_status` por estudio para que la UI diferencie un QIDO en curso de una recuperación `C-GET` en curso.
+- La llamada HTTP a Orthanc para disparar el retrieve no debe usar el timeout corto general del backend; debe respetar el deadline específico del request.
+- `GET /api/patient/studies` debe devolver `retrieve_status` por estudio para que la UI diferencie un QIDO en curso de un retrieve DIMSE en curso.
 
 ### 5.3 Visualizar (OHIF)
 1. UI abre URL de OHIF con `StudyInstanceUID` o con route de OHIF configurada.
@@ -314,7 +314,7 @@ Proveer un portal operativo mínimo capaz de:
 4. El profesional dispara retrieve bajo demanda cuando corresponda.
 5. El portal abre OHIF sobre el estudio puntual seleccionado.
 6. La primera implementación funcional expone `GET /api/physician/results?username=<dni>` como contrato inicial del panel del profesional.
-7. El primer avance operativo expone `POST /api/physician/retrieve` para disparar `C-GET` vía Orthanc REST desde la misma grilla.
+7. El primer avance operativo expone `POST /api/physician/retrieve` para disparar el retrieve configurado en el nodo origen (`C-MOVE` o `C-GET`) vía Orthanc REST desde la misma grilla.
 8. La grilla del profesional debe recalcular `cacheStatus`, `retrieveStatus` y `viewer_url` a partir de `cached_studies`, `retrieve_jobs` y verificación real en Orthanc.
 9. La carga inicial del panel profesional sin filtros, con `source=local_cache`, debe consultar Orthanc local en vivo y devolver los estudios en cache para la ventana relativa configurada en `professional.initial_cache_period`.
 10. El card de resultados del panel profesional debe mostrar un resumen `PACS en línea X/Y` basado en los componentes `remote_pacs:*` de `/api/health`, con tooltip/hover que detalle nodos online y offline usando el nombre visible del PACS.
@@ -417,26 +417,26 @@ Proveer un portal operativo mínimo capaz de:
 Problema: Orthanc recibe instancias progresivamente y algunos orígenes (Synapse) reportan estados/contadores poco fiables. La antigua heurística de “ventana de estabilidad” (declarar completo cuando el conteo deja de crecer) se descartó porque marca completo a estudios truncados. La estrategia vigente compara contra el **conteo esperado del origen**.
 
 ### Estrategia vigente (conteo esperado vs. presente)
-- El job de retrieve monitorea el job C-GET de Orthanc (`monitorOrthancRetrieveJob`) hasta `Success`/`Failure`, no por ventana de estabilidad.
+- El job de retrieve monitorea el job Orthanc (`C-MOVE` o `C-GET`) mediante `monitorOrthancRetrieveJob` hasta `Success`/`Failure`, no por ventana de estabilidad.
 - Tras `Success` y presencia del estudio, se evalúa completitud a nivel serie/instancia:
   - **Esperado (origen):** para nodos `c_find`, C-FIND serie con `NumberOfSeriesRelatedInstances` (0020,1209); para `qido_rs`, QIDO `/series`. Si el origen omite el conteo por serie, y `portal.retrieve_verify_instance_counts` está activo (default `true`), se hace un **C-FIND IMAGE-level por serie** para contar instancias.
   - **Presente (local):** `POST /tools/find` Series+Expand contando `Instances` en Orthanc.
 - Resolución de `cache_status` (`resolveRetrieveCacheStatus`): completo verificado ⇒ `local_complete`; faltantes ⇒ `local_partial`; sin conteo esperado confiable ⇒ `local_unverified`. También se fuerza `local_partial` si el job de Orthanc reporta `FailedInstancesCount`/`RemainingInstancesCount` > 0.
 - La verificación **no** falla el retrieve ante errores de lookup: degrada al estado más conservador y sigue.
 
-### Progreso del C-GET (avance visible)
+### Progreso del retrieve DIMSE (avance visible)
 - El campo `Progress` del job de Orthanc queda pinneado en `0` cuando el origen no reporta el total de sub-operaciones (típico de Synapse). Para no mostrar “0%” congelado:
   - `retrieveEffectiveProgress` usa el `Progress` de Orthanc si es `>0`.
   - En cada poll se cuenta además las instancias ya almacenadas localmente (`GET /studies/{id}/statistics` → `CountInstances`) y se persiste como `instances_received` (best-effort: un timeout devuelve 0 y no rompe el monitor). Al cambiar dispara el evento SSE, refrescando la UI en vivo.
   - El front deriva la proporción `instances_received / number_of_images` esperado y muestra `"N/total (P%)"`, o `"N img"` si no hay total.
 
 ### Remediación y reintentos
-- Un estudio `local_partial` reintenta **solo las series faltantes** (C-GET `Level: "Series"`), re-verificando entre intentos (fase `completing`, sigue visualizable).
+- Un estudio `local_partial` reintenta **solo las series faltantes** (`Level: "Series"`) mediante el mismo endpoint `/move` o `/get` seleccionado por `retrieve.mode`, re-verificando entre intentos (fase `completing`, sigue visualizable).
 - Configurable en `portal`: `retrieve_max_attempts` (default 3), `retrieve_retry_backoff_seconds` (default 10, backoff lineal), `retrieve_timeout_minutes` (default 30), `retrieve_progress_poll_seconds`, `retrieve_verify_instance_counts`.
 - El worker programado (`scheduled_retrieve_enabled`) re-procesa periódicamente estudios que no estén `local_complete`.
 
 ### Contención de índice (SQLite → PostgreSQL, opcional)
-- Bajo la carga de escritura del C-GET, el índice **SQLite** de Orthanc serializa el acceso y los `POST /tools/find` pueden superar el deadline (`context deadline exceeded`), lo que colapsaba búsquedas. Mitigación de raíz: plugin `postgresql-index` de Orthanc, configurable por env en `docker-compose.yml`, **gated** por `ORTHANC_PG_INDEX_ENABLED` (default `false`). Ver runbook de migración en `decisions.md` (el índice PG arranca vacío; el cache se repuebla on-demand, no hay pérdida de datos).
+- Bajo la carga de escritura del retrieve, el índice **SQLite** de Orthanc serializa el acceso y los `POST /tools/find` pueden superar el deadline (`context deadline exceeded`), lo que colapsaba búsquedas. Mitigación de raíz: plugin `postgresql-index` de Orthanc, configurable por env en `docker-compose.yml`, **gated** por `ORTHANC_PG_INDEX_ENABLED` (default `false`). Ver runbook de migración en `decisions.md` (el índice PG arranca vacío; el cache se repuebla on-demand, no hay pérdida de datos).
 
 ---
 
@@ -690,10 +690,10 @@ Problema: Orthanc recibe instancias progresivamente y algunos orígenes (Synapse
 - Botón/endpoint `retrieve` crea job persistente.
 - El job transiciona `queued → running → done/failed`.
 - Al completar, el estudio queda disponible en Orthanc y OHIF puede abrirlo desde el caché local.
-- Verificación de completitud (PR A): tras `Success` del job C-GET y presencia del estudio, el backend compara a nivel serie las series/instancias esperadas por el origen (C-FIND `NumberOfSeriesRelatedInstances` para nodos `c_find`; QIDO `/series` para `qido_rs`) contra las presentes en Orthanc local (`POST /tools/find` Series+Expand, contando `Instances`). Si faltan, marca `local_partial` en `cached_studies` (columnas `expected_series_count`, `present_series_count`, `missing_series_json`, `last_completeness_checked_at`, migración `013`); si el origen no da conteos, degrada a best-effort y mantiene `local_complete`. La verificación no falla el retrieve ante errores de lookup.
+- Verificación de completitud: tras `Success` del job Orthanc y presencia del estudio, el backend compara a nivel serie las series/instancias esperadas por el origen (C-FIND `NumberOfSeriesRelatedInstances` para nodos `c_find`; QIDO `/series` para `qido_rs`) contra las presentes en Orthanc local (`POST /tools/find` Series+Expand, contando `Instances`). Si faltan, marca `local_partial`; si el origen no da conteos confiables, usa `local_unverified`. La verificación no falla el retrieve ante errores de lookup.
 - `local_partial` no bloquea: `getStudyOperationalState` conserva las URLs de visor para estudios presentes aunque estén parciales; solo deja de enmascararlos como `local_complete`.
-- Remediación: un estudio `local_partial` reintenta **solo las series faltantes** (C-GET `Level: "Series"`), re-verificando completitud entre intentos. Configurable en `portal`: `retrieve_max_attempts` (default 3), `retrieve_retry_backoff_seconds` (default 10, backoff lineal) y `retrieve_timeout_minutes` (default 30, reemplaza el timeout duro de 15 min). Durante la remediación el job pasa a fase `completing` y el estudio sigue siendo visualizable.
-- El backend no debe cortar artificialmente el `C-GET` a Orthanc con el timeout corto general del cliente HTTP.
+- Remediación: un estudio `local_partial` reintenta **solo las series faltantes** (`Level: "Series"`) usando el mismo modo `/move` o `/get` del nodo, re-verificando completitud entre intentos. Configurable en `portal`: `retrieve_max_attempts` (default 3), `retrieve_retry_backoff_seconds` (default 10, backoff lineal) y `retrieve_timeout_minutes` (default 30, reemplaza el timeout duro de 15 min). Durante la remediación el job pasa a fase `completing` y el estudio sigue siendo visualizable.
+- El backend no debe cortar artificialmente el retrieve a Orthanc con el timeout corto general del cliente HTTP.
 - El proxy Nginx frente a `/api/` debe tolerar retrieves largos y no cancelar `POST /api/patient/retrieve` ni `POST /api/physician/retrieve` con timeouts cortos de upstream.
 - Estado `local_unverified`: cuando el origen no da un conteo esperado confiable, el estudio queda `local_unverified` (no `local_complete`). Controlado por `portal.retrieve_verify_instance_counts` (default `true`), que habilita el fallback C-FIND IMAGE-level por serie.
 - Estado en la UI mientras hay job: `getStudyOperationalState` no reporta `done`/`local_complete` mientras un job está `queued`/`running` (in-flight) ni cuando quedó `failed`/`idle` con faltantes; así la UI muestra el progreso real y ofrece **reintentar** en lugar de enmascarar como completo.
