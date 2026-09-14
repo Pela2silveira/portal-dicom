@@ -543,10 +543,6 @@ func validateExternalConfig(cfg ExternalConfig) error {
 		return fmt.Errorf("invalid patient auth mode %q", cfg.Patient.AuthMode)
 	}
 
-	if cfg.Patient.PasswordLoginEnabled && strings.TrimSpace(os.Getenv("ANDES_MOBILE_API_BASE_URL")) == "" {
-		return errors.New(`ANDES_MOBILE_API_BASE_URL env var is required when patient.password_login_enabled = true`)
-	}
-
 	if len(cfg.PACSNodes) == 0 {
 		return errors.New("config must include at least one PACS node")
 	}

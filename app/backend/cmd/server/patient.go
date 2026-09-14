@@ -184,7 +184,7 @@ type PatientConfig struct {
 	// PasswordLoginEnabled enables the optional patient password login that
 	// delegates to the Andes account API (see patient_andes.go). It is an
 	// additive method: the email-code flow keeps working regardless of this
-	// flag. Requires ANDES_MOBILE_API_BASE_URL when true.
+	// flag. Uses the shared HIS_BASE_URL (Andes API base).
 	PasswordLoginEnabled bool `json:"password_login_enabled,omitempty"`
 }
 

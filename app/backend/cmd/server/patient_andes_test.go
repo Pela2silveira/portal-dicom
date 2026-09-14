@@ -198,35 +198,3 @@ func TestAndesPatientLogin_EmptyCredentials(t *testing.T) {
 		t.Error("server should not be called for empty credentials")
 	}
 }
-
-func TestValidateExternalConfig_PasswordLoginRequiresAndesBaseURL(t *testing.T) {
-	base := ExternalConfig{
-		Portal: PortalConfig{
-			SessionTimeoutMinutes:            10,
-			RetrieveProgressPollSeconds:      2,
-			RetrieveWorkerConcurrency:        1,
-			ScheduledRetrieveIntervalMinutes: 30,
-			ScheduledRetrieveMaxStudyAgeDays: 30,
-			ScheduledRetrieveBatchSize:       10,
-		},
-		Patient: PatientConfig{AuthMode: PatientAuthModeMail, PasswordLoginEnabled: true},
-	}
-
-	t.Run("missing base URL fails", func(t *testing.T) {
-		t.Setenv("ANDES_MOBILE_API_BASE_URL", "")
-		err := validateExternalConfig(base)
-		if err == nil || !strings.Contains(err.Error(), "ANDES_MOBILE_API_BASE_URL") {
-			t.Fatalf("err = %v want ANDES_MOBILE_API_BASE_URL requirement", err)
-		}
-	})
-
-	t.Run("with base URL passes patient block", func(t *testing.T) {
-		t.Setenv("ANDES_MOBILE_API_BASE_URL", "https://api.andes.test")
-		err := validateExternalConfig(base)
-		// The patient/password check now passes; validation advances to the
-		// next requirement (at least one PACS node), proving the branch cleared.
-		if err == nil || strings.Contains(err.Error(), "ANDES_MOBILE_API_BASE_URL") {
-			t.Fatalf("err = %v want to advance past the ANDES check", err)
-		}
-	})
-}

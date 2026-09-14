@@ -28,12 +28,13 @@ type andesPatientLoginResult struct {
 
 // authenticatePatientAndes delegates patient email/password authentication to
 // the Andes mobile API, mirroring the professional LDAP delegation seam. The
-// base URL is read from the environment so credentials/endpoints never live in
-// tracked config. Returns the resolved document number on success.
+// base URL is the shared Andes API base (HIS_BASE_URL), the same one used by the
+// REST prestaciones provider, so endpoints never live in tracked config.
+// Returns the resolved document number on success.
 func (a *App) authenticatePatientAndes(ctx context.Context, email, password string) (andesPatientLoginResult, error) {
-	baseURL := strings.TrimSpace(os.Getenv("ANDES_MOBILE_API_BASE_URL"))
+	baseURL := strings.TrimSpace(os.Getenv("HIS_BASE_URL"))
 	if baseURL == "" {
-		return andesPatientLoginResult{}, fmt.Errorf("%w: missing ANDES_MOBILE_API_BASE_URL", ErrPatientAuthUnavailable)
+		baseURL = "https://app.andes.gob.ar/api"
 	}
 	client := http.DefaultClient
 	if a != nil && a.httpClient != nil {
