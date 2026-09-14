@@ -266,6 +266,10 @@
         margin-bottom: 18px;
       }
 
+      .role-switch-method {
+        background: rgba(255, 255, 255, 0.06);
+      }
+
       .role-button {
         appearance: none;
         border: 0;

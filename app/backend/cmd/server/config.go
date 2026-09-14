@@ -316,7 +316,8 @@ func (a *App) handleRuntimeConfig(w http.ResponseWriter, r *http.Request) {
 			ShowDemoRibbon:        a.externalConfig.Portal.ShowDemoRibbon,
 		},
 		Patient: RuntimePatientConfigResponse{
-			AuthMode: a.externalConfig.Patient.ResolvedAuthMode(),
+			AuthMode:             a.externalConfig.Patient.ResolvedAuthMode(),
+			PasswordLoginEnabled: a.externalConfig.Patient.PasswordLoginEnabled,
 		},
 	})
 }
@@ -540,6 +541,10 @@ func validateExternalConfig(cfg ExternalConfig) error {
 		}
 	default:
 		return fmt.Errorf("invalid patient auth mode %q", cfg.Patient.AuthMode)
+	}
+
+	if cfg.Patient.PasswordLoginEnabled && strings.TrimSpace(os.Getenv("ANDES_MOBILE_API_BASE_URL")) == "" {
+		return errors.New(`ANDES_MOBILE_API_BASE_URL env var is required when patient.password_login_enabled = true`)
 	}
 
 	if len(cfg.PACSNodes) == 0 {

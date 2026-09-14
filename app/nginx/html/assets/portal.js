@@ -25,6 +25,14 @@
       const patientMailCode = document.getElementById("patient-mail-code");
       const patientDocumentError = document.getElementById("patient-document-error");
       const patientMailCodeError = document.getElementById("patient-mail-code-error");
+      const patientMethodSwitch = document.querySelector("[data-patient-method-switch]");
+      const patientMethodButtons = document.querySelectorAll("[data-patient-method]");
+      const patientMethodFlows = document.querySelectorAll("[data-patient-method-flow]");
+      const patientPasswordEmail = document.getElementById("patient-password-email");
+      const patientPasswordInput = document.getElementById("patient-password");
+      const patientPasswordEmailError = document.getElementById("patient-password-email-error");
+      const patientPasswordError = document.getElementById("patient-password-error");
+      const patientPasswordButton = document.getElementById("patient-password-continue");
       const patientFilterPeriod = document.getElementById("patient-filter-period");
       const patientFilterModality = document.getElementById("patient-filter-modality");
       const patientDateDropdown = document.getElementById("patient-date-dropdown");
@@ -146,6 +154,8 @@
       let portalSessionDurationMs = 10 * 60 * 1000;
       let portalShowDemoRibbon = false;
       let patientAuthMode = "mail";
+      let patientPasswordLoginEnabled = false;
+      let patientLoginMethod = "email";
       const patientDateFilter = (() => {
         const now = new Date();
         return {
@@ -182,6 +192,30 @@
           button.classList.toggle("active", button.dataset.role === role);
         });
         setActiveRoleFlow(role);
+      }
+
+      function setPatientLoginMethod(method) {
+        patientLoginMethod = method === "password" ? "password" : "email";
+        patientMethodButtons.forEach(button => {
+          button.classList.toggle("active", button.dataset.patientMethod === patientLoginMethod);
+        });
+        patientMethodFlows.forEach(flow => {
+          const isActive = flow.dataset.patientMethodFlow === patientLoginMethod;
+          flow.hidden = !isActive;
+          flow.classList.toggle("active", isActive);
+        });
+        clearPatientLoginErrors();
+        clearPatientPasswordLoginErrors();
+      }
+
+      function applyPatientPasswordLoginVisibility() {
+        if (!patientMethodSwitch) {
+          return;
+        }
+        patientMethodSwitch.hidden = !patientPasswordLoginEnabled;
+        if (!patientPasswordLoginEnabled) {
+          setPatientLoginMethod("email");
+        }
       }
 
       function showWorkspace(kind) {
@@ -270,6 +304,15 @@
         clearMailCodeFeedback();
         clearPatientLoginErrors();
         syncPatientContinueState();
+
+        if (patientPasswordEmail) {
+          patientPasswordEmail.value = "";
+          patientPasswordInput.value = "";
+          clearPatientPasswordLoginErrors();
+          patientPasswordButton.disabled = false;
+          patientPasswordButton.textContent = "Ingresar";
+        }
+        setPatientLoginMethod("email");
 
         physicianDni.value = "";
         physicianPassword.value = "";
@@ -415,8 +458,10 @@
           }
           portalShowDemoRibbon = Boolean(payload?.portal?.show_demo_ribbon);
           patientAuthMode = String(payload?.patient?.auth_mode || "mail").trim().toLowerCase() || "mail";
+          patientPasswordLoginEnabled = Boolean(payload?.patient?.password_login_enabled);
           applyDemoRibbonVisibility();
           applyPatientCodeInputMode();
+          applyPatientPasswordLoginVisibility();
         } catch (_error) {
         }
       }
@@ -709,6 +754,14 @@
       function clearPatientLoginErrors() {
         clearFieldError(patientDocument, patientDocumentError);
         clearFieldError(patientMailCode, patientMailCodeError);
+      }
+
+      function clearPatientPasswordLoginErrors() {
+        if (!patientPasswordEmail) {
+          return;
+        }
+        clearFieldError(patientPasswordEmail, patientPasswordEmailError);
+        clearFieldError(patientPasswordInput, patientPasswordError);
       }
 
       function clearPhysicianLoginErrors() {
@@ -2386,6 +2439,30 @@
         return payload;
       }
 
+      async function loginPatientPassword(email, password) {
+        const response = await fetch("/api/patient/password-login", {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            email,
+            password
+          })
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const error = new Error(payload.message || "patient password login request failed");
+          error.status = response.status;
+          error.payload = payload;
+          throw error;
+        }
+
+        return payload;
+      }
+
       async function fetchViewerAccessURL(role, studyInstanceUID, viewerKind) {
         const basePath = role === "patient" ? "/api/patient/studies/" : "/api/physician/studies/";
         const response = await fetch(basePath + encodeURIComponent(studyInstanceUID) + "/access?viewer=" + encodeURIComponent(viewerKind), {
@@ -3151,6 +3228,81 @@
           }
         }, 700);
       });
+
+      patientMethodButtons.forEach(button => {
+        button.addEventListener("click", () => {
+          setPatientLoginMethod(button.dataset.patientMethod);
+          window.requestAnimationFrame(() => {
+            if (activeScreen !== "hero" || activeRole !== "patient") {
+              return;
+            }
+            if (patientLoginMethod === "password") {
+              patientPasswordEmail.focus({ preventScroll: true });
+            } else {
+              patientDocument.focus({ preventScroll: true });
+            }
+          });
+        });
+      });
+
+      if (patientPasswordButton) {
+        patientPasswordButton.addEventListener("click", async () => {
+          const emailValue = patientPasswordEmail.value.trim();
+          patientPasswordEmail.value = emailValue;
+          const passwordValue = patientPasswordInput.value;
+          clearPatientPasswordLoginErrors();
+
+          if (!emailValue) {
+            setFieldError(patientPasswordEmail, patientPasswordEmailError, "Ingrese su correo para continuar.");
+            return;
+          }
+          if (!passwordValue) {
+            setFieldError(patientPasswordInput, patientPasswordError, "Ingrese su contraseña para continuar.");
+            return;
+          }
+
+          patientPasswordButton.disabled = true;
+          patientPasswordButton.textContent = "Validando...";
+
+          let patientLoginPayload;
+          try {
+            patientLoginPayload = await loginPatientPassword(emailValue, passwordValue);
+          } catch (error) {
+            patientPasswordButton.disabled = false;
+            patientPasswordButton.textContent = "Ingresar";
+            const message = error?.payload?.message || "No se pudo validar el acceso del paciente.";
+            if (/correo|email|usuario/i.test(message)) {
+              setFieldError(patientPasswordEmail, patientPasswordEmailError, message);
+            } else {
+              setFieldError(patientPasswordInput, patientPasswordError, message);
+            }
+            return;
+          }
+
+          const documentValue = patientLoginPayload?.patient?.document_number || "";
+          patientDocument.value = documentValue;
+
+          window.setTimeout(async () => {
+            startPortalSession(patientLoginPayload?.expires_at);
+            showWorkspace("patient");
+            try {
+              const [_, sync] = await Promise.all([
+                loadPatientStudies(documentValue),
+                startPatientSearch(documentValue)
+              ]);
+              renderPatientSyncStatus(sync);
+            } catch (error) {
+              patientSummary.textContent = "Paciente " + documentValue;
+              patientStudyList.innerHTML =
+                '<div class="empty-state">No se pudieron cargar los estudios disponibles.</div>';
+            } finally {
+              patientPasswordButton.disabled = false;
+              patientPasswordButton.textContent = "Ingresar";
+              patientPasswordInput.value = "";
+            }
+          }, 400);
+        });
+      }
 
       physicianLoginButton.addEventListener("click", async () => {
         const dniValue = normalizePhysicianDocumentInput(physicianDni.value);

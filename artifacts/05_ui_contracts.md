@@ -47,6 +47,15 @@ Allow a patient to see only their authorized studies and open one selected study
 - Once the patient input flow starts, `Tab` from `Documento` moves to `Enviar código`, successful `Enviar código` moves focus to `Código por mail`, and `Tab`/`Enter` from `Código por mail` moves focus to `Continuar`.
 - The patient `Continuar` step must still validate against backend before opening the workspace; in `master_key` mode the entered code is checked against the configured shared key, but the visible UI remains unchanged.
 - `patient.auth_mode = "mail"` is the final production path; `master_key` is only a temporary operational fallback while real mail delivery and one-time-code verification are still incomplete.
+
+#### Patient login method sub-switch (email code vs. Andes password)
+
+- When `runtime-config.patient.password_login_enabled` is `true`, the patient flow shows a secondary selector with two methods: `Entrar con correo` (the email-code flow above) and `Usuario y contraseña` (Andes account). When the flag is `false` the selector is hidden and only the email-code flow is shown, so the default contract is unchanged.
+- The professional flow is unaffected by this flag; only the patient card gains the sub-switch.
+- The email method keeps its full contract (document + `Enviar código` + `Código por mail` + `Continuar`). The password method shows `Correo electrónico` + `Contraseña` + `Ingresar`.
+- The password method authenticates against the Andes account API server-side (`POST /api/patient/password-login` with `{ email, password }`). On success the backend resolves the patient by the returned document number and issues the same patient session as the email flow, returning the same `PatientLoginResponse` (`patient`, `expires_at`). The Andes JWT never reaches the browser.
+- Password-method error mapping: `401 invalid_credentials` → `Usuario o contraseña inválidos.`; `409 account_action_required` → message directing the citizen to complete their account in Mi Salud; `404 patient_not_found` → no records; `502 provider_unavailable` → retry later.
+- Switching methods and returning to the landing (`Salir`/reset) must clear the password inputs and default the selector back to `Entrar con correo`.
 - Returning to the public landing, whether by explicit `Salir` or by a session/workspace reset, must clear both patient and professional login forms instead of preserving previous credentials or codes in the browser-rendered inputs.
 - A transient backend/PACS health change (`health_status_changed = unavailable`) or a health SSE reconnection must **not** tear down an active session. The health SSE fires `onerror` on ordinary reconnects/stream closes, so treating those as logouts kicked users out mid-session. The UI keeps the session and only reflects the degraded state in the physician PACS health panel. Ending the session and returning to the landing (always via in-place SPA reset, never a full browser reload) happens only when a session-scoped request actually returns `401`.
 - When a session-scoped request returns `401` (server session expired or invalidated), the UI must reconcile by returning to the landing instead of leaving a logged-in workspace with stale data. Because the server session is already gone, it must not issue a redundant logout call.
@@ -182,8 +191,9 @@ Allow a patient to see only their authorized studies and open one selected study
 - `POST /api/patient/search`
   - receives `document_number` plus the current patient filters
   - enqueues background QIDO work and returns `request_id`
-- `POST /api/patient/send-code` and `POST /api/patient/login`
+- `POST /api/patient/send-code`, `POST /api/patient/login` and `POST /api/patient/password-login`
   - may return `429` with a neutral retry message when backend login rate limits are exceeded
+  - `POST /api/patient/password-login` is only active when `patient.password_login_enabled = true`; otherwise it returns `404 not_available`
 - `GET /api/patient/search?request_id=...`
   - returns the current worker status for the patient search
 - `POST /api/patient/retrieve`

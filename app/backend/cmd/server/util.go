@@ -36,6 +36,12 @@ type LoginRateLimitPolicy struct {
 var ErrProfessionalNotLicensed = errors.New("professional not licensed")
 var ErrProfessionalInvalidCredentials = errors.New("professional invalid credentials")
 
+// Patient password login (Andes account) sentinel errors, mirroring the
+// professional LDAP delegation contract.
+var ErrPatientInvalidCredentials = errors.New("patient invalid credentials")
+var ErrPatientAuthUnavailable = errors.New("patient auth unavailable")
+var ErrPatientAccountActionRequired = errors.New("patient account action required")
+
 func activeProfessionalLicenseNumber(doc MongoProfesionalDocument) string {
 	for _, formacion := range doc.FormacionGrado {
 		for _, matriculacion := range formacion.Matriculacion {

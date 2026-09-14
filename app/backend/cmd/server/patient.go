@@ -158,6 +158,11 @@ type PatientLoginResponse struct {
 	ExpiresAt    string         `json:"expires_at,omitempty"`
 }
 
+type PatientPasswordLoginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
 type patientSessionSnapshot struct {
 	SessionID string
 	PatientID string
@@ -167,12 +172,20 @@ type patientSessionSnapshot struct {
 
 type RuntimePatientConfigResponse struct {
 	AuthMode string `json:"auth_mode"`
+	// PasswordLoginEnabled tells the portal whether to offer the additional
+	// "usuario y contraseña" method (Andes account) alongside the email code.
+	PasswordLoginEnabled bool `json:"password_login_enabled"`
 }
 
 type PatientConfig struct {
 	AuthMode        string   `json:"auth_mode"`
 	FakeAuth        bool     `json:"fake_auth,omitempty"`
 	MatchDebugNodes []string `json:"match_debug_nodes,omitempty"`
+	// PasswordLoginEnabled enables the optional patient password login that
+	// delegates to the Andes account API (see patient_andes.go). It is an
+	// additive method: the email-code flow keeps working regardless of this
+	// flag. Requires ANDES_MOBILE_API_BASE_URL when true.
+	PasswordLoginEnabled bool `json:"password_login_enabled,omitempty"`
 }
 
 const (
@@ -469,6 +482,98 @@ func (a *App) handlePatientLogin(w http.ResponseWriter, r *http.Request) {
 
 	setActionDim(r.Context(), "patient_id", patient.ID)
 	setActionDim(r.Context(), "auth_mode", patientAuthMode)
+	writeJSON(w, http.StatusOK, PatientLoginResponse{
+		Status:    "ok",
+		Message:   "Acceso validado.",
+		Patient:   patient,
+		ExpiresAt: expiresAt.UTC().Format(time.RFC3339),
+	})
+}
+
+// handlePatientPasswordLogin authenticates a patient with their Andes account
+// (email + password), delegating to the Andes mobile API exactly like the
+// professional flow delegates to LDAP. The Andes JWT never reaches the browser:
+// we only use the returned document number to resolve the patient and mint our
+// own patient_sessions cookie. Gated by patient.password_login_enabled.
+func (a *App) handlePatientPasswordLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if a.externalConfig == nil || !a.externalConfig.Patient.PasswordLoginEnabled {
+		writePatientLoginResponse(w, http.StatusNotFound, "not_available", "El ingreso con usuario y contraseña no está habilitado.", PatientSummary{})
+		return
+	}
+
+	var reqBody PatientPasswordLoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		writePatientLoginResponse(w, http.StatusBadRequest, "invalid_request", "JSON inválido.", PatientSummary{})
+		return
+	}
+
+	reqBody.Email = strings.TrimSpace(reqBody.Email)
+	if reqBody.Email == "" {
+		writePatientLoginResponse(w, http.StatusBadRequest, "invalid_request", "email es requerido.", PatientSummary{})
+		return
+	}
+	if strings.TrimSpace(reqBody.Password) == "" {
+		writePatientLoginResponse(w, http.StatusBadRequest, "invalid_request", "password es requerido.", PatientSummary{})
+		return
+	}
+
+	rateLimitKey := strings.ToLower(reqBody.Email)
+	setActionDim(r.Context(), "identifier", rateLimitKey)
+	if !a.enforceLoginRateLimit(w, r, patientLoginRateLimitPolicy("patient_password_login"), rateLimitKey) {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	andesResult, err := a.authenticatePatientAndes(ctx, reqBody.Email, reqBody.Password)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrPatientInvalidCredentials):
+			writePatientLoginResponse(w, http.StatusUnauthorized, "invalid_credentials", "Usuario o contraseña inválidos.", PatientSummary{})
+		case errors.Is(err, ErrPatientAccountActionRequired):
+			writePatientLoginResponse(w, http.StatusConflict, "account_action_required", "Su cuenta requiere una acción adicional. Ingrese a la app Mi Salud para completarla y vuelva a intentar.", PatientSummary{})
+		default:
+			a.log("error", "patient_password_login_provider_failed", map[string]any{
+				"error": err.Error(),
+			})
+			writePatientLoginResponse(w, http.StatusBadGateway, "provider_unavailable", "No se pudo validar el acceso. Intente nuevamente más tarde.", PatientSummary{})
+		}
+		return
+	}
+
+	if err := validateDocumentNumber(andesResult.DocumentNumber); err != nil {
+		a.log("error", "patient_password_login_invalid_document", map[string]any{
+			"error": err.Error(),
+		})
+		writePatientLoginResponse(w, http.StatusBadGateway, "provider_unavailable", "No se pudo validar el acceso.", PatientSummary{})
+		return
+	}
+	setActionDim(r.Context(), "identifier", andesResult.DocumentNumber)
+
+	patient, _, err := a.ensurePatientRecordWithIdentity(ctx, andesResult.DocumentNumber)
+	if err != nil {
+		if errors.Is(err, ErrPatientIdentityNotFound) {
+			writePatientLoginResponse(w, http.StatusNotFound, "patient_not_found", "El paciente no cuenta con registros.", PatientSummary{})
+			return
+		}
+		writePatientLoginResponse(w, http.StatusBadGateway, "provider_unavailable", "No se pudo validar el paciente.", PatientSummary{})
+		return
+	}
+
+	_, rawSessionToken, expiresAt, err := a.createPatientSession(ctx, patient.ID, r)
+	if err != nil {
+		writePatientLoginResponse(w, http.StatusInternalServerError, "internal_error", "No se pudo crear la sesión del paciente.", PatientSummary{})
+		return
+	}
+	setPortalSessionCookie(w, r, patientSessionCookieName, rawSessionToken, expiresAt)
+
+	setActionDim(r.Context(), "patient_id", patient.ID)
+	setActionDim(r.Context(), "auth_mode", "password")
 	writeJSON(w, http.StatusOK, PatientLoginResponse{
 		Status:    "ok",
 		Message:   "Acceso validado.",
@@ -1193,6 +1298,14 @@ func patientLoginRateLimitPolicy(endpoint string) LoginRateLimitPolicy {
 			},
 		}
 	case "patient_login":
+		return LoginRateLimitPolicy{
+			Endpoint: endpoint,
+			Rules: []LoginRateLimitRule{
+				{Scope: "ip", Limit: 20, Window: time.Minute},
+				{Scope: "identifier", Limit: 5, Window: 10 * time.Minute},
+			},
+		}
+	case "patient_password_login":
 		return LoginRateLimitPolicy{
 			Endpoint: endpoint,
 			Rules: []LoginRateLimitRule{
