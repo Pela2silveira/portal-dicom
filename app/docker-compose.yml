@@ -70,6 +70,7 @@ services:
       retries: 10
     volumes:
       - ./volumes/postgres-data:/var/lib/postgresql/data
+      - ./postgres/initdb:/docker-entrypoint-initdb.d:ro
     networks:
       - backend_net
 
