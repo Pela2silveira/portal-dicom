@@ -6,7 +6,7 @@
     <title>Portal de Imágenes</title>
     <link rel="icon" href="/portal-assets/favicon.ico" sizes="32x32">
     <link rel="shortcut icon" href="/favicon.ico">
-    <link rel="stylesheet" href="/portal-assets/portal.css?v=0.9.11">
+    <link rel="stylesheet" href="/portal-assets/portal.css?v=0.9.12">
   </head>
   <body>
     <div class="shell">
@@ -24,21 +24,20 @@
         <section class="panel panel-with-ribbon auth">
           <div class="demo-ribbon" data-demo-ribbon aria-hidden="true" hidden>Demo</div>
           <div class="auth-top">
-            <h3>Acceso al portal</h3>
-            <p>Seleccione su perfil para continuar.</p>
+            <h3>Portal de Imágenes</h3>
           </div>
 
           <div class="auth-body">
             <!-- Step 1: role -->
             <div class="login-step" data-login-step="role">
               <div class="auth-header">
-                <h3>¿Cómo querés ingresar?</h3>
+                <h3>Seleccione su perfil para continuar.</h3>
               </div>
               <div class="choice-list" aria-label="Seleccion de perfil">
                 <button class="choice-button" type="button" data-goto="patient-entry">
                   <span class="choice-copy">
                     <strong>Soy paciente</strong>
-                    <span>Consultá y recuperá tus estudios.</span>
+                    <span>Consultá, recuperá y compartí tus estudios.</span>
                   </span>
                   <span class="choice-arrow" aria-hidden="true"></span>
                 </button>
@@ -54,9 +53,9 @@
 
             <!-- Step 2 (patient): method -->
             <div class="login-step" data-login-step="patient-method" hidden>
-              <button class="step-back" type="button" data-goto="role">Cambiar perfil</button>
+              <button class="step-back" type="button" data-goto="role">Volver</button>
               <div class="auth-header">
-                <h3>Ingreso de paciente</h3>
+                <h3>¿Cómo querés ingresar?</h3>
               </div>
               <div class="choice-list" aria-label="Metodo de ingreso">
                 <button class="choice-button" type="button" data-goto="patient-email">
@@ -97,7 +96,7 @@
                 <div class="field-error" id="patient-mail-code-error" aria-live="polite"></div>
               </div>
 
-              <button class="action action-secondary" id="patient-continue" type="button" disabled>Continuar</button>
+              <button class="action action-secondary login-submit" id="patient-continue" type="button" disabled>Continuar</button>
 
               <div class="note note-accent" id="mail-code-feedback" hidden></div>
             </div>
@@ -120,7 +119,7 @@
                 <div class="field-error" id="patient-password-error" aria-live="polite"></div>
               </div>
 
-              <button class="action action-secondary" id="patient-password-continue" type="button">Ingresar</button>
+              <button class="action action-secondary login-submit" id="patient-password-continue" type="button">Ingresar</button>
 
               <div class="note note-neutral">
                 Use el mismo correo y contraseña de la app o portal Mi Salud.
@@ -129,7 +128,7 @@
 
             <!-- Step 2 (professional) -->
             <div class="login-step" data-login-step="physician" hidden>
-              <button class="step-back" type="button" data-goto="role">Cambiar perfil</button>
+              <button class="step-back" type="button" data-goto="role">Volver</button>
               <div class="auth-header">
                 <h3>Ingreso profesional</h3>
               </div>
@@ -145,7 +144,7 @@
                 <div class="field-error" id="physician-password-error" aria-live="polite"></div>
               </div>
 
-              <button class="action action-secondary" id="physician-continue" type="button" disabled>Continuar</button>
+              <button class="action action-secondary login-submit" id="physician-continue" type="button" disabled>Continuar</button>
 
               <div class="note note-neutral">
                 Ingreso institucional.
@@ -551,7 +550,7 @@
             <a href="https://play.google.com/store/apps/details?id=org.andes.mobile" target="_blank" rel="noopener noreferrer">App Android de Salud</a>
             <a href="https://misalud.andes.gob.ar/login" target="_blank" rel="noopener noreferrer">Portal Mi Salud</a>
           </div>
-          <div class="site-version" aria-label="Versión">v0.9.11</div>
+          <div class="site-version" aria-label="Versión">v0.9.12</div>
         </div>
         <div class="footer-brand-row">
           <div class="footer-logo" aria-label="ANDES">
@@ -570,6 +569,6 @@
       </footer>
     </div>
 
-    <script src="/portal-assets/portal.js?v=0.9.11" defer></script>
+    <script src="/portal-assets/portal.js?v=0.9.12" defer></script>
   </body>
 </html>

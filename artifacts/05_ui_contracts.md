@@ -35,7 +35,7 @@ Allow a patient to see only their authorized studies and open one selected study
   1. **Perfil**: two large stacked buttons `Soy paciente` / `Soy profesional`.
   2. **Paciente** (only when `password_login_enabled = true`): two large stacked buttons with the same visual language as the profile step — `Entrar con correo` / `Usuario y contraseña`. When the flag is `false`, choosing `Soy paciente` goes straight to the email step (this method step is skipped).
   3. **Formulario**: the fields for the chosen path (`Documento + código por mail`, `Correo + Contraseña`, or `DNI + Contraseña`).
-- Every non-initial step shows a `← Volver` / `← Cambiar perfil` control back to the previous step. Selection steps and form steps each reuse a single consistent visual pattern (big choice buttons vs. field form).
+- Every non-initial step shows a single consistent `← Volver` control back to the previous step. Selection steps and form steps each reuse a single consistent visual pattern (big choice buttons vs. field form), and the form submit (`Continuar`/`Ingresar`) is a full-width primary CTA.
 - Patient email flow: `Documento + código por mail`
 - The `Documento` field must accept digits only, sanitize non-numeric input in the browser, and reject implausible lengths before calling backend routes.
 - The `Enviar código` action must call backend prevalidation before any future mail delivery integration.
@@ -48,7 +48,7 @@ Allow a patient to see only their authorized studies and open one selected study
 - The `Continuar` action should use the same primary blue CTA language and must stay disabled until the mail-code request succeeds and the patient enters a code value.
 - The public landing may expose a diagonal `Demo` ribbon on the auth card to signal demo-oriented access modes without changing the login flow itself.
 - The diagonal `Demo` ribbon must be controlled by a shared portal flag and, when enabled, should also appear on the patient and professional workspaces to avoid changing the environment signal after login.
-- Keyboard flow on the public landing starts on the first choice button of the current step. Choice buttons are native `<button>`s, so `Tab` moves between them and `Enter`/`Space` advances to the next step; entering a form step moves focus to its first input, and the `← Volver`/`← Cambiar perfil` control returns to the previous step.
+- Keyboard flow on the public landing starts on the first choice button of the current step. Choice buttons are native `<button>`s, so `Tab` moves between them and `Enter`/`Space` advances to the next step; entering a form step moves focus to its first input, and the `← Volver` control returns to the previous step.
 - Once the patient input flow starts, `Tab` from `Documento` moves to `Enviar código`, successful `Enviar código` moves focus to `Código por mail`, and `Tab`/`Enter` from `Código por mail` moves focus to `Continuar`.
 - The patient `Continuar` step must still validate against backend before opening the workspace; in `master_key` mode the entered code is checked against the configured shared key, but the visible UI remains unchanged.
 - `patient.auth_mode = "mail"` is the final production path; `master_key` is only a temporary operational fallback while real mail delivery and one-time-code verification are still incomplete.

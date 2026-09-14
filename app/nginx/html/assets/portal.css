@@ -556,6 +556,11 @@
         color: rgba(255, 255, 255, 0.92);
       }
 
+      .login-submit {
+        width: 100%;
+        margin-top: 6px;
+      }
+
       .note {
         border-radius: 0;
         padding: 14px 16px;
