@@ -6,7 +6,7 @@
     <title>Portal de Imágenes</title>
     <link rel="icon" href="/portal-assets/favicon.ico" sizes="32x32">
     <link rel="shortcut icon" href="/favicon.ico">
-    <link rel="stylesheet" href="/portal-assets/portal.css?v=0.9.9">
+    <link rel="stylesheet" href="/portal-assets/portal.css?v=0.9.10">
   </head>
   <body>
     <div class="shell">
@@ -51,21 +51,9 @@
             </div>
 
             <section class="flow active" data-flow="patient">
-              <div class="role-switch role-switch-method" data-patient-method-switch aria-label="Metodo de ingreso" hidden>
-                <button class="role-button active" type="button" data-patient-method="email">
-                  <span class="role-radio" aria-hidden="true"></span>
-                  <span class="role-copy">
-                    <strong>Entrar con correo</strong>
-                    <span>Reciba un código por mail.</span>
-                  </span>
-                </button>
-                <button class="role-button" type="button" data-patient-method="password">
-                  <span class="role-radio" aria-hidden="true"></span>
-                  <span class="role-copy">
-                    <strong>Usuario y contraseña</strong>
-                    <span>Use su cuenta de Mi Salud.</span>
-                  </span>
-                </button>
+              <div class="method-tabs" data-patient-method-switch role="tablist" aria-label="Metodo de ingreso" hidden>
+                <button class="method-tab active" type="button" role="tab" aria-selected="true" data-patient-method="email">Con correo</button>
+                <button class="method-tab" type="button" role="tab" aria-selected="false" data-patient-method="password">Usuario y contraseña</button>
               </div>
 
               <div class="patient-method active" data-patient-method-flow="email">
@@ -529,7 +517,7 @@
             <a href="https://play.google.com/store/apps/details?id=org.andes.mobile" target="_blank" rel="noopener noreferrer">App Android de Salud</a>
             <a href="https://misalud.andes.gob.ar/login" target="_blank" rel="noopener noreferrer">Portal Mi Salud</a>
           </div>
-          <div class="site-version" aria-label="Versión">v0.9.9</div>
+          <div class="site-version" aria-label="Versión">v0.9.10</div>
         </div>
         <div class="footer-brand-row">
           <div class="footer-logo" aria-label="ANDES">
@@ -548,6 +536,6 @@
       </footer>
     </div>
 
-    <script src="/portal-assets/portal.js?v=0.9.9" defer></script>
+    <script src="/portal-assets/portal.js?v=0.9.10" defer></script>
   </body>
 </html>

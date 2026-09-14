@@ -266,8 +266,41 @@
         margin-bottom: 18px;
       }
 
-      .role-switch-method {
+      .method-tabs {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 6px;
+        padding: 4px;
+        border-radius: 10px;
         background: rgba(255, 255, 255, 0.06);
+        margin-bottom: 18px;
+      }
+
+      .method-tab {
+        appearance: none;
+        border: 0;
+        border-radius: 7px;
+        padding: 9px 12px;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.72);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        line-height: 1.2;
+        text-align: center;
+        cursor: pointer;
+        transition: background 160ms ease, color 160ms ease;
+      }
+
+      .method-tab:hover {
+        background: rgba(255, 255, 255, 0.08);
+        color: #ffffff;
+      }
+
+      .method-tab.active {
+        background: #ffffff;
+        color: var(--accent-dark);
+        box-shadow: 0 6px 14px rgba(0, 0, 0, 0.14);
       }
 
       .role-button {

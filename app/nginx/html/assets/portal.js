@@ -197,7 +197,9 @@
       function setPatientLoginMethod(method) {
         patientLoginMethod = method === "password" ? "password" : "email";
         patientMethodButtons.forEach(button => {
-          button.classList.toggle("active", button.dataset.patientMethod === patientLoginMethod);
+          const isActive = button.dataset.patientMethod === patientLoginMethod;
+          button.classList.toggle("active", isActive);
+          button.setAttribute("aria-selected", isActive ? "true" : "false");
         });
         patientMethodFlows.forEach(flow => {
           const isActive = flow.dataset.patientMethodFlow === patientLoginMethod;
