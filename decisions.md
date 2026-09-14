@@ -393,5 +393,15 @@ Use this file to record the decisions you make after reviewing the agent discuss
 - **Motivación.** Usar C-MOVE donde la red lo permite evita el camino C-GET afectado por el leak conocido del build actual de Orthanc. C-GET permanece disponible por nodo cuando no existe routing entrante hacia el AET local.
 - **Validación pendiente de entorno.** Los tests de contrato cubren `/move`, `/get`, `RetrieveMethod` y remediación por series. La prueba real contra HPN sigue bloqueada mientras `PACSHPN:11112` no sea alcanzable desde el entorno de prueba y el PACS no pueda devolver C-STORE al AET local.
 
+## Entregabilidad del mail de OTP (anti-spam)
+- **(2026-09-11) Fixes de código en el envío SMTP (`email.go`).** El mail del código de acceso llegaba a spam por señales técnicas del propio mensaje/handshake:
+  - **HELO/EHLO = `localhost`**: `smtp.NewClient` deja `localName="localhost"` y nunca se llamaba a `Hello()`. Ahora se anuncia un FQDN real vía `client.Hello(cfg.heloName())` antes de cualquier comando, con precedencia `SMTP_HELO` → dominio del `From` → hostname del SO → `localhost` (último recurso).
+  - **Falta de headers `Date` y `Message-ID`**: se agregan siempre (`Date` en RFC 1123Z; `Message-ID` único anclado al dominio del `From`). Su ausencia es penalizada fuerte (SpamAssassin `MISSING_DATE`/`MISSING_MID`, desconfianza de Gmail).
+  - **`From` sin display name**: nueva `SMTP_FROM_NAME` (opcional) → header `From` con nombre visible RFC 2047-encodeado; el envelope-from (MAIL FROM) sigue siendo la dirección pelada.
+  - **`Subject` robusto**: se RFC 2047-encodea (los textos actuales son ASCII, pero queda a prueba de tildes).
+  - El armado del mensaje se extrajo a `buildMailMessage` (función pura) con tests de headers/encoding.
+- **Nuevas variables de entorno (opcionales).** `SMTP_FROM_NAME` (nombre visible del remitente) y `SMTP_HELO` (FQDN del emisor; setearlo al hostname real con PTR/rDNS coincidente).
+- **Fuera del código (DNS/relay, responsabilidad de infra).** Los fixes de headers no alcanzan si falta: **SPF** autorizando el IP/relay para el dominio del `From`; **DKIM** aplicado por el relay (la app no firma); **DMARC** con alineación; **PTR/rDNS** del IP emisor coincidente con el HELO; `SMTP_FROM` en un dominio propio (no el del relay). Diagnóstico rápido: enviar un OTP a Gmail y revisar "Mostrar original" (SPF/DKIM/DMARC PASS/FAIL, presencia de `Date`/`Message-ID`, `Received: ... helo=`).
+
 ## Notes For Agents
 - Prefer pragmatic, secure defaults.
