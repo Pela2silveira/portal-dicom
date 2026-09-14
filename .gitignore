@@ -1,8 +1,10 @@
 .venv/
 .env
 app/.env
+app/.env.testing
 app/config/config.json
 app/config/config-prd.json
+app/config/config-testing.json
 artifacts/*
 !artifacts/
 !artifacts/*.md
