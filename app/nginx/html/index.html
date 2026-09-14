@@ -6,7 +6,7 @@
     <title>Portal de Imágenes</title>
     <link rel="icon" href="/portal-assets/favicon.ico" sizes="32x32">
     <link rel="shortcut icon" href="/favicon.ico">
-    <link rel="stylesheet" href="/portal-assets/portal.css?v=0.9.8">
+    <link rel="stylesheet" href="/portal-assets/portal.css?v=0.9.9">
   </head>
   <body>
     <div class="shell">
@@ -51,24 +51,63 @@
             </div>
 
             <section class="flow active" data-flow="patient">
-              <div class="row">
-                <div class="field-group">
-                  <label for="patient-document">Documento</label>
-                  <input id="patient-document" name="patient-document" type="text" inputmode="numeric" maxlength="11" autocomplete="off" spellcheck="false" placeholder="Ingrese su DNI sin puntos">
-                  <div class="field-error" id="patient-document-error" aria-live="polite"></div>
+              <div class="role-switch role-switch-method" data-patient-method-switch aria-label="Metodo de ingreso" hidden>
+                <button class="role-button active" type="button" data-patient-method="email">
+                  <span class="role-radio" aria-hidden="true"></span>
+                  <span class="role-copy">
+                    <strong>Entrar con correo</strong>
+                    <span>Reciba un código por mail.</span>
+                  </span>
+                </button>
+                <button class="role-button" type="button" data-patient-method="password">
+                  <span class="role-radio" aria-hidden="true"></span>
+                  <span class="role-copy">
+                    <strong>Usuario y contraseña</strong>
+                    <span>Use su cuenta de Mi Salud.</span>
+                  </span>
+                </button>
+              </div>
+
+              <div class="patient-method active" data-patient-method-flow="email">
+                <div class="row">
+                  <div class="field-group">
+                    <label for="patient-document">Documento</label>
+                    <input id="patient-document" name="patient-document" type="text" inputmode="numeric" maxlength="11" autocomplete="off" spellcheck="false" placeholder="Ingrese su DNI sin puntos">
+                    <div class="field-error" id="patient-document-error" aria-live="polite"></div>
+                  </div>
+                  <button class="action action-secondary" id="send-mail-code" type="button">Enviar código</button>
                 </div>
-                <button class="action action-secondary" id="send-mail-code" type="button">Enviar código</button>
+
+                <div class="field-group">
+                    <label for="patient-mail-code">Código por mail</label>
+                    <input id="patient-mail-code" name="patient-mail-code" type="password" inputmode="numeric" autocomplete="one-time-code" placeholder="Ingrese el código recibido por mail">
+                    <div class="field-error" id="patient-mail-code-error" aria-live="polite"></div>
+                </div>
+
+                <button class="action action-secondary" id="patient-continue" type="button" disabled>Continuar</button>
+
+                <div class="note note-accent" id="mail-code-feedback" hidden></div>
               </div>
 
-              <div class="field-group">
-                  <label for="patient-mail-code">Código por mail</label>
-                  <input id="patient-mail-code" name="patient-mail-code" type="password" inputmode="numeric" autocomplete="one-time-code" placeholder="Ingrese el código recibido por mail">
-                  <div class="field-error" id="patient-mail-code-error" aria-live="polite"></div>
+              <div class="patient-method" data-patient-method-flow="password" hidden>
+                <div class="field-group">
+                  <label for="patient-password-email">Correo electrónico</label>
+                  <input id="patient-password-email" name="patient-password-email" type="email" autocomplete="username" spellcheck="false" placeholder="Ingrese su correo de Mi Salud">
+                  <div class="field-error" id="patient-password-email-error" aria-live="polite"></div>
+                </div>
+
+                <div class="field-group">
+                  <label for="patient-password">Contraseña</label>
+                  <input id="patient-password" name="patient-password" type="password" autocomplete="current-password" spellcheck="false" placeholder="Ingrese su contraseña">
+                  <div class="field-error" id="patient-password-error" aria-live="polite"></div>
+                </div>
+
+                <button class="action action-secondary" id="patient-password-continue" type="button">Ingresar</button>
+
+                <div class="note note-neutral">
+                  Use el mismo correo y contraseña de la app o portal Mi Salud.
+                </div>
               </div>
-
-              <button class="action action-secondary" id="patient-continue" type="button" disabled>Continuar</button>
-
-              <div class="note note-accent" id="mail-code-feedback" hidden></div>
             </section>
 
             <section class="flow" data-flow="physician" hidden>
@@ -490,7 +529,7 @@
             <a href="https://play.google.com/store/apps/details?id=org.andes.mobile" target="_blank" rel="noopener noreferrer">App Android de Salud</a>
             <a href="https://misalud.andes.gob.ar/login" target="_blank" rel="noopener noreferrer">Portal Mi Salud</a>
           </div>
-          <div class="site-version" aria-label="Versión">v0.9.8</div>
+          <div class="site-version" aria-label="Versión">v0.9.9</div>
         </div>
         <div class="footer-brand-row">
           <div class="footer-logo" aria-label="ANDES">
@@ -509,6 +548,6 @@
       </footer>
     </div>
 
-    <script src="/portal-assets/portal.js?v=0.9.8" defer></script>
+    <script src="/portal-assets/portal.js?v=0.9.9" defer></script>
   </body>
 </html>
