@@ -16,18 +16,14 @@
       const authBody = document.querySelector(".auth-body");
       const patientWorkspace = document.getElementById("patient-workspace");
       const physicianWorkspace = document.getElementById("physician-workspace");
-      const patientFlow = document.querySelector('[data-flow="patient"]');
-      const physicianFlow = document.querySelector('[data-flow="physician"]');
-      const roleButtons = document.querySelectorAll("[data-role]");
+      const loginSteps = document.querySelectorAll("[data-login-step]");
+      const stepNavButtons = document.querySelectorAll("[data-goto]");
       const demoRibbons = document.querySelectorAll("[data-demo-ribbon]");
       const mailCodeButton = document.getElementById("send-mail-code");
       const patientDocument = document.getElementById("patient-document");
       const patientMailCode = document.getElementById("patient-mail-code");
       const patientDocumentError = document.getElementById("patient-document-error");
       const patientMailCodeError = document.getElementById("patient-mail-code-error");
-      const patientMethodSwitch = document.querySelector("[data-patient-method-switch]");
-      const patientMethodButtons = document.querySelectorAll("[data-patient-method]");
-      const patientMethodFlows = document.querySelectorAll("[data-patient-method-flow]");
       const patientPasswordEmail = document.getElementById("patient-password-email");
       const patientPasswordInput = document.getElementById("patient-password");
       const patientPasswordEmailError = document.getElementById("patient-password-email-error");
@@ -109,12 +105,10 @@
       const physicianPacsOnlineList = document.getElementById("physician-pacs-online-list");
       const physicianPacsOfflineList = document.getElementById("physician-pacs-offline-list");
       const physicianLoginButton = document.getElementById("physician-continue");
-      const physicianNote = document.querySelector('[data-flow="physician"] .note');
+      const physicianNote = document.querySelector('[data-login-step="physician"] .note');
       const resetButtons = document.querySelectorAll("[data-reset]");
       const screenAnchor = document.createComment("active-screen");
       shell.insertBefore(screenAnchor, hero);
-      const flowAnchor = document.createComment("active-flow");
-      authBody.insertBefore(flowAnchor, patientFlow);
       const patientShareQROverlayAnchor = document.createComment("patient-share-qr-overlay");
       patientShareQROverlay.parentNode.insertBefore(patientShareQROverlayAnchor, patientShareQROverlay);
       const patientPreviewOverlayAnchor = document.createComment("patient-preview-overlay");
@@ -128,6 +122,7 @@
       });
       const physicianLocalCacheSourceValue = "local_cache";
       let activeRole = "patient";
+      let loginStep = "role";
       let activeScreen = "hero";
       let activeWorkspaceKind = "";
       let activePatientDocument = "";
@@ -155,7 +150,6 @@
       let portalShowDemoRibbon = false;
       let patientAuthMode = "mail";
       let patientPasswordLoginEnabled = false;
-      let patientLoginMethod = "email";
       const patientDateFilter = (() => {
         const now = new Date();
         return {
@@ -178,46 +172,85 @@
         };
       })();
 
-      function setActiveRoleFlow(role) {
-        activeRole = role === "physician" ? "physician" : "patient";
-        patientFlow.hidden = activeRole === "physician";
-        physicianFlow.hidden = activeRole !== "physician";
-        detachNode(patientFlow);
-        detachNode(physicianFlow);
-        mountNodeAfter(flowAnchor, activeRole === "physician" ? physicianFlow : patientFlow);
+      // Login is a small stepped flow inside the auth card:
+      //   role -> (patient-method) -> patient-email | patient-password
+      //   role -> physician
+      // Steps are plain blocks toggled with [hidden]; activeRole stays in sync
+      // so downstream focus/workspace logic keeps working.
+      function showLoginStep(step, options = {}) {
+        loginStep = step;
+        if (step === "physician") {
+          activeRole = "physician";
+        } else if (step.indexOf("patient") === 0) {
+          activeRole = "patient";
+        }
+        loginSteps.forEach(el => {
+          el.hidden = el.dataset.loginStep !== step;
+        });
+        if (options.focus !== false) {
+          focusLoginStep(step);
+        }
       }
 
-      function activateRole(role) {
-        roleButtons.forEach(button => {
-          button.classList.toggle("active", button.dataset.role === role);
-        });
-        setActiveRoleFlow(role);
-      }
-
-      function setPatientLoginMethod(method) {
-        patientLoginMethod = method === "password" ? "password" : "email";
-        patientMethodButtons.forEach(button => {
-          const isActive = button.dataset.patientMethod === patientLoginMethod;
-          button.classList.toggle("active", isActive);
-          button.setAttribute("aria-selected", isActive ? "true" : "false");
-        });
-        patientMethodFlows.forEach(flow => {
-          const isActive = flow.dataset.patientMethodFlow === patientLoginMethod;
-          flow.hidden = !isActive;
-          flow.classList.toggle("active", isActive);
-        });
-        clearPatientLoginErrors();
-        clearPatientPasswordLoginErrors();
-      }
-
-      function applyPatientPasswordLoginVisibility() {
-        if (!patientMethodSwitch) {
+      function goToRole(role) {
+        if (role === "physician") {
+          showLoginStep("physician");
           return;
         }
-        patientMethodSwitch.hidden = !patientPasswordLoginEnabled;
-        if (!patientPasswordLoginEnabled) {
-          setPatientLoginMethod("email");
+        showLoginStep(patientPasswordLoginEnabled ? "patient-method" : "patient-email");
+      }
+
+      function handleLoginNav(goto) {
+        switch (goto) {
+          case "patient-entry":
+            clearLoginForms();
+            goToRole("patient");
+            break;
+          case "physician":
+            clearLoginForms();
+            goToRole("physician");
+            break;
+          case "patient-email":
+            showLoginStep("patient-email");
+            break;
+          case "patient-password":
+            showLoginStep("patient-password");
+            break;
+          case "patient-method":
+            showLoginStep("patient-method");
+            break;
+          case "patient-back":
+            showLoginStep(patientPasswordLoginEnabled ? "patient-method" : "role");
+            break;
+          case "role":
+            showLoginStep("role");
+            break;
         }
+      }
+
+      function focusLoginStep(step) {
+        window.requestAnimationFrame(() => {
+          if (activeScreen !== "hero") {
+            return;
+          }
+          const stepEl = document.querySelector('[data-login-step="' + step + '"]');
+          if (!stepEl) {
+            return;
+          }
+          let target = null;
+          if (step === "role" || step === "patient-method") {
+            target = stepEl.querySelector(".choice-button");
+          } else if (step === "patient-email") {
+            target = patientDocument;
+          } else if (step === "patient-password") {
+            target = patientPasswordEmail;
+          } else if (step === "physician") {
+            target = physicianDni;
+          }
+          if (target instanceof HTMLElement) {
+            target.focus({ preventScroll: true });
+          }
+        });
       }
 
       function showWorkspace(kind) {
@@ -296,7 +329,7 @@
         updateFeedbackAccess();
         clearLoginForms();
         clearPortalWorkspaceState();
-        activateRole("patient");
+        showLoginStep("role", { focus: false });
       }
 
       function clearLoginForms() {
@@ -314,7 +347,6 @@
           patientPasswordButton.disabled = false;
           patientPasswordButton.textContent = "Ingresar";
         }
-        setPatientLoginMethod("email");
 
         physicianDni.value = "";
         physicianPassword.value = "";
@@ -463,7 +495,6 @@
           patientPasswordLoginEnabled = Boolean(payload?.patient?.password_login_enabled);
           applyDemoRibbonVisibility();
           applyPatientCodeInputMode();
-          applyPatientPasswordLoginVisibility();
         } catch (_error) {
         }
       }
@@ -509,14 +540,7 @@
       }
 
       function focusActiveRoleButton() {
-        window.requestAnimationFrame(() => {
-          if (activeScreen === "hero") {
-            const activeRoleButton = document.querySelector(".role-button.active");
-            if (activeRoleButton instanceof HTMLElement) {
-              activeRoleButton.focus({ preventScroll: true });
-            }
-          }
-        });
+        focusLoginStep(loginStep);
       }
 
       function focusPatientDocumentInput() {
@@ -625,7 +649,7 @@
         armPortalSessionTimeout();
 
         if (state?.kind === "patient" && state.patient?.document_number) {
-          activateRole("patient");
+          activeRole = "patient";
           patientDocument.value = state.patient.document_number;
           patientFilterModality.value = state.patient.modality || "";
           if (state.patient.date_from || state.patient.date_to) {
@@ -651,7 +675,7 @@
         }
 
         if (state?.kind === "physician" && state.physician?.username) {
-          activateRole("physician");
+          activeRole = "physician";
           physicianDni.value = state.physician.username;
           physicianSearchPatientID.value = state.physician.document_number || state.physician.patient_id || "";
           physicianSearchDicomID.value = state.physician.dicom_id || "";
@@ -2636,27 +2660,9 @@
         };
       }
 
-      roleButtons.forEach(button => {
+      stepNavButtons.forEach(button => {
         button.addEventListener("click", () => {
-          activateRole(button.dataset.role);
-          if (button.dataset.role === "physician") {
-            physicianDni.focus({ preventScroll: true });
-            return;
-          }
-          patientDocument.focus({ preventScroll: true });
-        });
-        button.addEventListener("keydown", event => {
-          if (event.key !== "Enter") {
-            return;
-          }
-
-          event.preventDefault();
-          activateRole(button.dataset.role);
-          if (button.dataset.role === "physician") {
-            physicianDni.focus({ preventScroll: true });
-            return;
-          }
-          patientDocument.focus({ preventScroll: true });
+          handleLoginNav(button.dataset.goto);
         });
       });
 
@@ -3231,22 +3237,6 @@
         }, 700);
       });
 
-      patientMethodButtons.forEach(button => {
-        button.addEventListener("click", () => {
-          setPatientLoginMethod(button.dataset.patientMethod);
-          window.requestAnimationFrame(() => {
-            if (activeScreen !== "hero" || activeRole !== "patient") {
-              return;
-            }
-            if (patientLoginMethod === "password") {
-              patientPasswordEmail.focus({ preventScroll: true });
-            } else {
-              patientDocument.focus({ preventScroll: true });
-            }
-          });
-        });
-      });
-
       if (patientPasswordButton) {
         patientPasswordButton.addEventListener("click", async () => {
           const emailValue = patientPasswordEmail.value.trim();
@@ -3363,13 +3353,12 @@
 
       detachNode(patientWorkspace);
       detachNode(physicianWorkspace);
-      detachNode(physicianFlow);
       detachNode(patientShareQROverlay);
       detachNode(patientPreviewOverlay);
       detachNode(mailCodeFeedback);
       demoRibbonStates.forEach(({ ribbon }) => detachNode(ribbon));
 
-      activateRole("patient");
+      showLoginStep("role", { focus: false });
       applyPatientPreset("month");
       patientDocument.addEventListener("input", () => {
         patientDocument.value = normalizePatientDocumentInput(patientDocument.value);

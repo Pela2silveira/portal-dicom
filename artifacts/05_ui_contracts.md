@@ -31,7 +31,12 @@ Allow a patient to see only their authorized studies and open one selected study
 
 ### Entry Surface
 
-- Public landing flow: `Documento + código por mail`
+- The public landing is a **stepped flow** inside the auth card (progressive disclosure), not a single screen with everything shown at once:
+  1. **Perfil**: two large stacked buttons `Soy paciente` / `Soy profesional`.
+  2. **Paciente** (only when `password_login_enabled = true`): two large stacked buttons with the same visual language as the profile step — `Entrar con correo` / `Usuario y contraseña`. When the flag is `false`, choosing `Soy paciente` goes straight to the email step (this method step is skipped).
+  3. **Formulario**: the fields for the chosen path (`Documento + código por mail`, `Correo + Contraseña`, or `DNI + Contraseña`).
+- Every non-initial step shows a `← Volver` / `← Cambiar perfil` control back to the previous step. Selection steps and form steps each reuse a single consistent visual pattern (big choice buttons vs. field form).
+- Patient email flow: `Documento + código por mail`
 - The `Documento` field must accept digits only, sanitize non-numeric input in the browser, and reject implausible lengths before calling backend routes.
 - The `Enviar código` action must call backend prevalidation before any future mail delivery integration.
 - The patient auth mode must be switchable through backend config (`patient.auth_mode`) without changing the visible patient flow.
@@ -43,19 +48,19 @@ Allow a patient to see only their authorized studies and open one selected study
 - The `Continuar` action should use the same primary blue CTA language and must stay disabled until the mail-code request succeeds and the patient enters a code value.
 - The public landing may expose a diagonal `Demo` ribbon on the auth card to signal demo-oriented access modes without changing the login flow itself.
 - The diagonal `Demo` ribbon must be controlled by a shared portal flag and, when enabled, should also appear on the patient and professional workspaces to avoid changing the environment signal after login.
-- Keyboard flow on the public landing must start on the active role selector. Natural `Tab` navigation should move between `Paciente` and `Profesional`, and clicking or pressing `Enter` on the selected role must jump to that role's user-identification input.
+- Keyboard flow on the public landing starts on the first choice button of the current step. Choice buttons are native `<button>`s, so `Tab` moves between them and `Enter`/`Space` advances to the next step; entering a form step moves focus to its first input, and the `← Volver`/`← Cambiar perfil` control returns to the previous step.
 - Once the patient input flow starts, `Tab` from `Documento` moves to `Enviar código`, successful `Enviar código` moves focus to `Código por mail`, and `Tab`/`Enter` from `Código por mail` moves focus to `Continuar`.
 - The patient `Continuar` step must still validate against backend before opening the workspace; in `master_key` mode the entered code is checked against the configured shared key, but the visible UI remains unchanged.
 - `patient.auth_mode = "mail"` is the final production path; `master_key` is only a temporary operational fallback while real mail delivery and one-time-code verification are still incomplete.
 
-#### Patient login method sub-switch (email code vs. Andes password)
+#### Patient login methods (email code vs. Andes password)
 
-- When `runtime-config.patient.password_login_enabled` is `true`, the patient flow shows a secondary selector with two methods: `Entrar con correo` (the email-code flow above) and `Usuario y contraseña` (Andes account). When the flag is `false` the selector is hidden and only the email-code flow is shown, so the default contract is unchanged.
-- The professional flow is unaffected by this flag; only the patient card gains the sub-switch.
+- The patient method choice is its own step (see Entry Surface), rendered with the **same big-button pattern as the profile selection** for consistency. It only appears when `runtime-config.patient.password_login_enabled = true`; otherwise `Soy paciente` leads directly to the email step and the default contract is unchanged.
+- The professional flow is unaffected by this flag.
 - The email method keeps its full contract (document + `Enviar código` + `Código por mail` + `Continuar`). The password method shows `Correo electrónico` + `Contraseña` + `Ingresar`.
 - The password method authenticates against the Andes account API server-side (`POST /api/patient/password-login` with `{ email, password }`). On success the backend resolves the patient by the returned document number and issues the same patient session as the email flow, returning the same `PatientLoginResponse` (`patient`, `expires_at`). The Andes JWT never reaches the browser.
 - Password-method error mapping: `401 invalid_credentials` → `Usuario o contraseña inválidos.`; `409 account_action_required` → message directing the citizen to complete their account in Mi Salud; `404 patient_not_found` → no records; `502 provider_unavailable` → retry later.
-- Switching methods and returning to the landing (`Salir`/reset) must clear the password inputs and default the selector back to `Entrar con correo`.
+- Returning to the landing (`Salir`/reset) resets to the profile step and clears both patient methods' inputs.
 - Returning to the public landing, whether by explicit `Salir` or by a session/workspace reset, must clear both patient and professional login forms instead of preserving previous credentials or codes in the browser-rendered inputs.
 - A transient backend/PACS health change (`health_status_changed = unavailable`) or a health SSE reconnection must **not** tear down an active session. The health SSE fires `onerror` on ordinary reconnects/stream closes, so treating those as logouts kicked users out mid-session. The UI keeps the session and only reflects the degraded state in the physician PACS health panel. Ending the session and returning to the landing (always via in-place SPA reset, never a full browser reload) happens only when a session-scoped request actually returns `401`.
 - When a session-scoped request returns `401` (server session expired or invalidated), the UI must reconcile by returning to the landing instead of leaving a logged-in workspace with stale data. Because the server session is already gone, it must not issue a redundant logout call.

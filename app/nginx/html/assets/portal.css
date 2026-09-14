@@ -266,41 +266,84 @@
         margin-bottom: 18px;
       }
 
-      .method-tabs {
+      .choice-list {
         display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 6px;
-        padding: 4px;
-        border-radius: 10px;
-        background: rgba(255, 255, 255, 0.06);
-        margin-bottom: 18px;
+        gap: 12px;
       }
 
-      .method-tab {
+      .choice-button {
+        appearance: none;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 12px;
+        padding: 18px 20px;
+        background: rgba(255, 255, 255, 0.06);
+        color: #ffffff;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        text-align: left;
+        transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+      }
+
+      .choice-button:hover {
+        background: rgba(255, 255, 255, 0.12);
+        border-color: rgba(255, 255, 255, 0.3);
+        transform: translateY(-1px);
+      }
+
+      .choice-button:focus-visible {
+        outline: 2px solid #ffffff;
+        outline-offset: 2px;
+      }
+
+      .choice-copy {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .choice-copy strong {
+        font-size: 16px;
+        font-weight: 700;
+      }
+
+      .choice-copy span {
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.72);
+      }
+
+      .choice-arrow {
+        flex: none;
+        width: 9px;
+        height: 9px;
+        border-right: 2px solid rgba(255, 255, 255, 0.6);
+        border-top: 2px solid rgba(255, 255, 255, 0.6);
+        transform: rotate(45deg);
+      }
+
+      .step-back {
         appearance: none;
         border: 0;
-        border-radius: 7px;
-        padding: 9px 12px;
         background: transparent;
-        color: rgba(255, 255, 255, 0.72);
+        color: rgba(255, 255, 255, 0.75);
         font: inherit;
         font-size: 13px;
         font-weight: 600;
-        line-height: 1.2;
-        text-align: center;
+        padding: 0;
+        margin-bottom: 14px;
         cursor: pointer;
-        transition: background 160ms ease, color 160ms ease;
       }
 
-      .method-tab:hover {
-        background: rgba(255, 255, 255, 0.08);
+      .step-back::before {
+        content: "\2190";
+        margin-right: 6px;
+      }
+
+      .step-back:hover {
         color: #ffffff;
-      }
-
-      .method-tab.active {
-        background: #ffffff;
-        color: var(--accent-dark);
-        box-shadow: 0 6px 14px rgba(0, 0, 0, 0.14);
+        text-decoration: underline;
       }
 
       .role-button {
