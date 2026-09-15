@@ -200,30 +200,38 @@
         showLoginStep(patientPasswordLoginEnabled ? "patient-method" : "patient-email");
       }
 
+      function pushLoginStepHistory(step) {
+        window.history.pushState({ nav: "hero", step }, "");
+      }
+
       function handleLoginNav(goto) {
         switch (goto) {
+          // Forward moves push a history entry so the back button can undo them.
           case "patient-entry":
             clearLoginForms();
             goToRole("patient");
+            pushLoginStepHistory(loginStep);
             break;
           case "physician":
             clearLoginForms();
             goToRole("physician");
+            pushLoginStepHistory(loginStep);
             break;
           case "patient-email":
             showLoginStep("patient-email");
+            pushLoginStepHistory("patient-email");
             break;
           case "patient-password":
             showLoginStep("patient-password");
+            pushLoginStepHistory("patient-password");
             break;
+          // "Volver" controls delegate to browser history so the in-app back and
+          // the OS/browser back button behave identically (see the popstate
+          // handler). These data-goto values are only used by back buttons.
           case "patient-method":
-            showLoginStep("patient-method");
-            break;
           case "patient-back":
-            showLoginStep(patientPasswordLoginEnabled ? "patient-method" : "role");
-            break;
           case "role":
-            showLoginStep("role");
+            window.history.back();
             break;
         }
       }
@@ -253,7 +261,7 @@
         });
       }
 
-      function showWorkspace(kind) {
+      function showWorkspace(kind, options = {}) {
         const workspace = kind === "patient" ? patientWorkspace : physicianWorkspace;
         patientWorkspace.hidden = kind !== "patient";
         physicianWorkspace.hidden = kind !== "physician";
@@ -269,6 +277,17 @@
           refreshPhysicianPACSHealth();
         }
         savePortalWorkspaceState(kind);
+        // Reflect the workspace in browser history so the OS/browser back button
+        // exits it (logout) instead of leaving the portal. "push" on a fresh
+        // login, "replace" when restoring a session on reload (single entry).
+        if (options.history !== "none") {
+          const historyState = { nav: "workspace", kind: activeWorkspaceKind };
+          if (options.history === "replace") {
+            window.history.replaceState(historyState, "");
+          } else {
+            window.history.pushState(historyState, "");
+          }
+        }
       }
 
       async function logoutPortalSession(kind) {
@@ -330,6 +349,10 @@
         clearLoginForms();
         clearPortalWorkspaceState();
         showLoginStep("role", { focus: false });
+        // Collapse history back to the login base so a subsequent back press
+        // walks the login steps (or leaves the portal) rather than re-entering
+        // the workspace we just left.
+        window.history.replaceState({ nav: "hero", step: "role" }, "");
       }
 
       function clearLoginForms() {
@@ -664,7 +687,7 @@
             }
             renderPatientCalendar();
           }
-          showWorkspace("patient");
+          showWorkspace("patient", { history: "replace" });
           try {
             await loadPatientStudies(state.patient.document_number);
           } catch (_error) {
@@ -694,7 +717,7 @@
           }
           physicianSearchModality.value = state.physician.modality || "";
           physicianSearchSource.value = state.physician.source || physicianLocalCacheSourceValue;
-          showWorkspace("physician");
+          showWorkspace("physician", { history: "replace" });
           try {
             await loadPhysicianResults(state.physician.username, {
               useInitialCachePeriod:
@@ -2666,6 +2689,35 @@
         });
       });
 
+      // Browser/OS back button integration. The login steps and the
+      // hero<->workspace transition are mirrored into the History API so the
+      // Android/iOS/browser back button walks the same path as the in-app
+      // "Volver" control instead of leaving the portal. This handler applies
+      // whatever managed state the back button lands on; it never pushes, so it
+      // cannot loop. Purely additive: remove this listener plus the pushState/
+      // replaceState/history.back calls to restore DOM-only navigation.
+      window.addEventListener("popstate", event => {
+        const state = event.state && event.state.nav
+          ? event.state
+          : { nav: "hero", step: "role" };
+        if (state.nav === "workspace") {
+          // An authenticated workspace cannot be recreated from history alone
+          // (it needs a live session). If we are not already there, fall back to
+          // the login landing.
+          if (activeScreen !== "workspace") {
+            showLoginStep("role", { focus: false });
+          }
+          return;
+        }
+        if (activeScreen === "workspace") {
+          // Backing out of the workspace ends the session and returns to the
+          // landing (resetLanding normalizes history back to the login base).
+          resetLanding().catch(() => {});
+          return;
+        }
+        showLoginStep(state.step || "role");
+      });
+
       patientFilterPeriod.addEventListener("change", () => {
         applyPatientPreset(patientFilterPeriod.value);
         savePortalWorkspaceState();
@@ -3359,6 +3411,9 @@
       demoRibbonStates.forEach(({ ribbon }) => detachNode(ribbon));
 
       showLoginStep("role", { focus: false });
+      // Seed the base managed history entry. A restored session (below) replaces
+      // it with a workspace entry; otherwise the login base stays put.
+      window.history.replaceState({ nav: "hero", step: "role" }, "");
       applyPatientPreset("month");
       patientDocument.addEventListener("input", () => {
         patientDocument.value = normalizePatientDocumentInput(patientDocument.value);
