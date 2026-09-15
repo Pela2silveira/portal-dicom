@@ -143,11 +143,14 @@ Current patient access behavior flags.
 
 Fields:
 
-- `auth_mode`: patient auth mode. Accepted values:
-  - `mail`: final production flow, requires an active patient email and preserves the `Documento + código por mail` UX; current code already prevalidates contact and creates a real backend session, but the final mail delivery / one-time-code verification is still pending
+- `auth_mode`: patient login method selector (single source of truth; there is no separate password flag). Accepted values:
+  - `mail`: email one-time code only. Requires an active patient email and preserves the `Documento + código por mail` UX
+  - `api`: Andes user/password only. Delegated server-to-server to `POST {HIS_BASE_URL}/modules/mobileApp/login`; no email code is offered
+  - `both`: email code + Andes user/password. The patient card shows a method chooser first
   - `fake_auth`: demo flow, validates patient existence but skips real mail-code delivery
   - `master_key`: transitional operational bypass, validates patient existence and uses one shared configured key for patient access while the real `mail` delivery/verification integration is incomplete
 - `PATIENT_MASTER_KEY` (env var): required when `auth_mode` is `master_key`
+- `HIS_BASE_URL` (env var): Andes API base used by `api`/`both`; defaults to `https://app.andes.gob.ar/api`
 - `match_debug_nodes`: optional list of PACS node ids for which the backend should log identity-comparison probes between the HIS patient dataset and the remote patient dataset returned by search
 
 Operational note:
@@ -181,7 +184,7 @@ Fields:
 Public exposure note:
 
 - The full `/api/config` endpoint is operational/internal and stays blocked by public Nginx.
-- The landing UI reads only a minimal public runtime payload from `/api/runtime-config`, currently limited to safe `portal` fields such as `session_timeout_minutes` and `show_demo_ribbon`, plus the effective patient `auth_mode` needed to adapt the code-entry input.
+- The landing UI reads only a minimal public runtime payload from `/api/runtime-config`, currently limited to safe `portal` fields such as `session_timeout_minutes` and `show_demo_ribbon`, plus the effective patient `auth_mode` and the derived `mail_login_enabled` / `password_login_enabled` booleans that tell the UI which method(s) to surface.
 - Orthanc viewer/image authorization is separate from backend internal orchestration: browser/viewer traffic remains bound to short-lived viewer grant cookies, while backend requests to Orthanc use env `ORTHANC_INTERNAL_TOKEN` through header `X-Orthanc-Internal-Token`.
 - The same authorization plugin can also protect patient share links for single studies: the portal may mint short-lived resource tokens, expose `/share?t=...`, and rely on Orthanc resource-token validation for downstream Stone/OHIF/DICOMweb access. These links follow their own expiration/usage policy and are not bounded by the creator's remaining patient-session lifetime.
 - The Orthanc authorization plugin must also expose `WebServiceUserProfileUrl` because admin/internal routes such as `/modalities/*`, `/jobs/*`, and `/studies/{id}/archive` are authorized through plugin permissions rather than only through study resource-token parsing.

@@ -149,6 +149,7 @@
       let portalSessionDurationMs = 10 * 60 * 1000;
       let portalShowDemoRibbon = false;
       let patientAuthMode = "mail";
+      let patientMailLoginEnabled = true;
       let patientPasswordLoginEnabled = false;
       const patientDateFilter = (() => {
         const now = new Date();
@@ -197,7 +198,15 @@
           showLoginStep("physician");
           return;
         }
-        showLoginStep(patientPasswordLoginEnabled ? "patient-method" : "patient-email");
+        // auth_mode drives which patient method(s) exist: both -> chooser,
+        // api-only -> straight to password, mail-only -> straight to email.
+        if (patientMailLoginEnabled && patientPasswordLoginEnabled) {
+          showLoginStep("patient-method");
+        } else if (patientPasswordLoginEnabled) {
+          showLoginStep("patient-password");
+        } else {
+          showLoginStep("patient-email");
+        }
       }
 
       function pushLoginStepHistory(step) {
@@ -515,6 +524,8 @@
           }
           portalShowDemoRibbon = Boolean(payload?.portal?.show_demo_ribbon);
           patientAuthMode = String(payload?.patient?.auth_mode || "mail").trim().toLowerCase() || "mail";
+          // Default mail on when the field is absent (older backend responses).
+          patientMailLoginEnabled = payload?.patient?.mail_login_enabled !== false;
           patientPasswordLoginEnabled = Boolean(payload?.patient?.password_login_enabled);
           applyDemoRibbonVisibility();
           applyPatientCodeInputMode();

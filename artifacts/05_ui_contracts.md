@@ -33,7 +33,7 @@ Allow a patient to see only their authorized studies and open one selected study
 
 - The public landing is a **stepped flow** inside the auth card (progressive disclosure), not a single screen with everything shown at once:
   1. **Perfil**: two large stacked buttons `Soy paciente` / `Soy profesional`.
-  2. **Paciente** (only when `password_login_enabled = true`): two large stacked buttons with the same visual language as the profile step — `Entrar con correo` / `Usuario y contraseña`. When the flag is `false`, choosing `Soy paciente` goes straight to the email step (this method step is skipped).
+  2. **Paciente** (only when `auth_mode = "both"`): two large stacked buttons with the same visual language as the profile step — `Entrar con correo` / `Usuario y contraseña`. With `auth_mode = "mail"`, choosing `Soy paciente` goes straight to the email step; with `auth_mode = "api"`, straight to the user/password step (this method step is skipped).
   3. **Formulario**: the fields for the chosen path (`Documento + código por mail`, `Correo + Contraseña`, or `DNI + Contraseña`).
 - Every non-initial step shows a single consistent `← Volver` control back to the previous step. Selection steps and form steps each reuse a single consistent visual pattern (big choice buttons vs. field form), and the form submit (`Continuar`/`Ingresar`) is a full-width primary CTA.
 - Patient email flow: `Documento + código por mail`
@@ -55,7 +55,7 @@ Allow a patient to see only their authorized studies and open one selected study
 
 #### Patient login methods (email code vs. Andes password)
 
-- The patient method choice is its own step (see Entry Surface), rendered with the **same big-button pattern as the profile selection** for consistency. It only appears when `runtime-config.patient.password_login_enabled = true`; otherwise `Soy paciente` leads directly to the email step and the default contract is unchanged.
+- The patient method choice is its own step (see Entry Surface), rendered with the **same big-button pattern as the profile selection** for consistency. It only appears when both methods are enabled (`runtime-config.patient.mail_login_enabled` and `password_login_enabled`, i.e. `auth_mode = "both"`); otherwise `Soy paciente` leads directly to the single enabled method's step.
 - The professional flow is unaffected by this flag.
 - The email method keeps its full contract (document + `Enviar código` + `Código por mail` + `Continuar`). The password method shows `Correo electrónico` + `Contraseña` + `Ingresar`.
 - The password method authenticates against the Andes account API server-side (`POST /api/patient/password-login` with `{ email, password }`). On success the backend resolves the patient by the returned document number and issues the same patient session as the email flow, returning the same `PatientLoginResponse` (`patient`, `expires_at`). The Andes JWT never reaches the browser.
@@ -198,7 +198,7 @@ Allow a patient to see only their authorized studies and open one selected study
   - enqueues background QIDO work and returns `request_id`
 - `POST /api/patient/send-code`, `POST /api/patient/login` and `POST /api/patient/password-login`
   - may return `429` with a neutral retry message when backend login rate limits are exceeded
-  - `POST /api/patient/password-login` is only active when `patient.password_login_enabled = true`; otherwise it returns `404 not_available`
+  - `POST /api/patient/password-login` is only active when `patient.auth_mode` is `api` or `both`; otherwise it returns `404 not_available`
 - `GET /api/patient/search?request_id=...`
   - returns the current worker status for the patient search
 - `POST /api/patient/retrieve`

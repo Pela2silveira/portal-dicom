@@ -317,7 +317,8 @@ func (a *App) handleRuntimeConfig(w http.ResponseWriter, r *http.Request) {
 		},
 		Patient: RuntimePatientConfigResponse{
 			AuthMode:             a.externalConfig.Patient.ResolvedAuthMode(),
-			PasswordLoginEnabled: a.externalConfig.Patient.PasswordLoginEnabled,
+			MailLoginEnabled:     a.externalConfig.Patient.MailLoginEnabled(),
+			PasswordLoginEnabled: a.externalConfig.Patient.PasswordLoginEnabled(),
 		},
 	})
 }
@@ -534,7 +535,7 @@ func validateExternalConfig(cfg ExternalConfig) error {
 	}
 
 	switch cfg.Patient.ResolvedAuthMode() {
-	case PatientAuthModeMail, PatientAuthModeFakeAuth:
+	case PatientAuthModeMail, PatientAuthModeAPI, PatientAuthModeBoth, PatientAuthModeFakeAuth:
 	case PatientAuthModeMasterKey:
 		if strings.TrimSpace(patientMasterKey()) == "" {
 			return errors.New(`PATIENT_MASTER_KEY env var is required when patient.auth_mode = "master_key"`)

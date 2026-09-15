@@ -172,24 +172,32 @@ type patientSessionSnapshot struct {
 
 type RuntimePatientConfigResponse struct {
 	AuthMode string `json:"auth_mode"`
-	// PasswordLoginEnabled tells the portal whether to offer the additional
-	// "usuario y contraseña" method (Andes account) alongside the email code.
+	// MailLoginEnabled / PasswordLoginEnabled tell the portal which patient
+	// login methods to surface. Both are derived from auth_mode
+	// (mail|api|both|fake_auth|master_key), so the config has a single source
+	// of truth for the method selection.
+	MailLoginEnabled     bool `json:"mail_login_enabled"`
 	PasswordLoginEnabled bool `json:"password_login_enabled"`
 }
 
 type PatientConfig struct {
+	// AuthMode selects the patient login method(s):
+	//   mail        -> email one-time code only
+	//   api         -> Andes user/password only (delegated to HIS_BASE_URL)
+	//   both        -> email code + Andes user/password
+	//   fake_auth   -> dev: email step, code not actually validated
+	//   master_key  -> email step, code validated against PATIENT_MASTER_KEY
+	// The mail-code and user/password methods are no longer independent flags:
+	// auth_mode is the single source of truth.
 	AuthMode        string   `json:"auth_mode"`
 	FakeAuth        bool     `json:"fake_auth,omitempty"`
 	MatchDebugNodes []string `json:"match_debug_nodes,omitempty"`
-	// PasswordLoginEnabled enables the optional patient password login that
-	// delegates to the Andes account API (see patient_andes.go). It is an
-	// additive method: the email-code flow keeps working regardless of this
-	// flag. Uses the shared HIS_BASE_URL (Andes API base).
-	PasswordLoginEnabled bool `json:"password_login_enabled,omitempty"`
 }
 
 const (
 	PatientAuthModeMail        = "mail"
+	PatientAuthModeAPI         = "api"
+	PatientAuthModeBoth        = "both"
 	PatientAuthModeFakeAuth    = "fake_auth"
 	PatientAuthModeMasterKey   = "master_key"
 	orthancInternalTokenHeader = "X-Orthanc-Internal-Token"
@@ -198,7 +206,7 @@ const (
 func (c PatientConfig) ResolvedAuthMode() string {
 	mode := strings.ToLower(strings.TrimSpace(c.AuthMode))
 	switch mode {
-	case PatientAuthModeMail, PatientAuthModeFakeAuth, PatientAuthModeMasterKey:
+	case PatientAuthModeMail, PatientAuthModeAPI, PatientAuthModeBoth, PatientAuthModeFakeAuth, PatientAuthModeMasterKey:
 		return mode
 	case "":
 		if c.FakeAuth {
@@ -207,6 +215,42 @@ func (c PatientConfig) ResolvedAuthMode() string {
 		return PatientAuthModeMail
 	default:
 		return mode
+	}
+}
+
+// MailLoginEnabled reports whether the email one-time code method is offered.
+func (c PatientConfig) MailLoginEnabled() bool {
+	switch c.ResolvedAuthMode() {
+	case PatientAuthModeMail, PatientAuthModeBoth, PatientAuthModeFakeAuth, PatientAuthModeMasterKey:
+		return true
+	default:
+		return false
+	}
+}
+
+// PasswordLoginEnabled reports whether the Andes user/password method is offered.
+func (c PatientConfig) PasswordLoginEnabled() bool {
+	switch c.ResolvedAuthMode() {
+	case PatientAuthModeAPI, PatientAuthModeBoth:
+		return true
+	default:
+		return false
+	}
+}
+
+// MailCodeMode returns how the email code is validated when the mail method is
+// active: mail (real OTP), fake_auth (dev bypass) or master_key. Empty when the
+// mail method is disabled (auth_mode = api).
+func (c PatientConfig) MailCodeMode() string {
+	switch c.ResolvedAuthMode() {
+	case PatientAuthModeFakeAuth:
+		return PatientAuthModeFakeAuth
+	case PatientAuthModeMasterKey:
+		return PatientAuthModeMasterKey
+	case PatientAuthModeMail, PatientAuthModeBoth:
+		return PatientAuthModeMail
+	default:
+		return ""
 	}
 }
 
@@ -322,7 +366,12 @@ func (a *App) handlePatientSendCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	patientAuthMode := a.resolvedPatientAuthMode()
+	if !a.patientMailLoginEnabled() {
+		writePatientSendCodeResponse(w, http.StatusNotFound, "not_available", "El ingreso con código por mail no está habilitado.")
+		return
+	}
+
+	patientAuthMode := a.patientMailCodeMode()
 
 	if patientAuthMode == PatientAuthModeFakeAuth {
 		maskedEmail := maskPatientEmail(identity.Email)
@@ -448,7 +497,12 @@ func (a *App) handlePatientLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	patientAuthMode := a.resolvedPatientAuthMode()
+	if !a.patientMailLoginEnabled() {
+		writePatientLoginResponse(w, http.StatusNotFound, "not_available", "El ingreso con código por mail no está habilitado.", PatientSummary{})
+		return
+	}
+
+	patientAuthMode := a.patientMailCodeMode()
 
 	if patientAuthMode == PatientAuthModeMasterKey {
 		expected := strings.TrimSpace(patientMasterKey())
@@ -494,13 +548,13 @@ func (a *App) handlePatientLogin(w http.ResponseWriter, r *http.Request) {
 // (email + password), delegating to the Andes mobile API exactly like the
 // professional flow delegates to LDAP. The Andes JWT never reaches the browser:
 // we only use the returned document number to resolve the patient and mint our
-// own patient_sessions cookie. Gated by patient.password_login_enabled.
+// own patient_sessions cookie. Gated by auth_mode (api|both).
 func (a *App) handlePatientPasswordLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if a.externalConfig == nil || !a.externalConfig.Patient.PasswordLoginEnabled {
+	if !a.patientPasswordLoginEnabled() {
 		writePatientLoginResponse(w, http.StatusNotFound, "not_available", "El ingreso con usuario y contraseña no está habilitado.", PatientSummary{})
 		return
 	}
@@ -589,6 +643,31 @@ func patientMasterKey() string {
 func (a *App) resolvedPatientAuthMode() string {
 	if a != nil && a.externalConfig != nil {
 		return a.externalConfig.Patient.ResolvedAuthMode()
+	}
+	return PatientAuthModeFakeAuth
+}
+
+func (a *App) patientMailLoginEnabled() bool {
+	if a != nil && a.externalConfig != nil {
+		return a.externalConfig.Patient.MailLoginEnabled()
+	}
+	return true
+}
+
+func (a *App) patientPasswordLoginEnabled() bool {
+	if a != nil && a.externalConfig != nil {
+		return a.externalConfig.Patient.PasswordLoginEnabled()
+	}
+	return false
+}
+
+// patientMailCodeMode resolves how the email code is validated. Falls back to
+// fake_auth when no config is loaded, preserving prior dev-default behavior.
+func (a *App) patientMailCodeMode() string {
+	if a != nil && a.externalConfig != nil {
+		if mode := a.externalConfig.Patient.MailCodeMode(); mode != "" {
+			return mode
+		}
 	}
 	return PatientAuthModeFakeAuth
 }

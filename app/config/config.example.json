@@ -80,7 +80,6 @@
   },
   "patient": {
     "auth_mode": "mail",
-    "password_login_enabled": false,
     "match_debug_nodes": []
   },
   "professional": {
