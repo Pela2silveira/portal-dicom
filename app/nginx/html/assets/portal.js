@@ -16,15 +16,19 @@
       const authBody = document.querySelector(".auth-body");
       const patientWorkspace = document.getElementById("patient-workspace");
       const physicianWorkspace = document.getElementById("physician-workspace");
-      const patientFlow = document.querySelector('[data-flow="patient"]');
-      const physicianFlow = document.querySelector('[data-flow="physician"]');
-      const roleButtons = document.querySelectorAll("[data-role]");
+      const loginSteps = document.querySelectorAll("[data-login-step]");
+      const stepNavButtons = document.querySelectorAll("[data-goto]");
       const demoRibbons = document.querySelectorAll("[data-demo-ribbon]");
       const mailCodeButton = document.getElementById("send-mail-code");
       const patientDocument = document.getElementById("patient-document");
       const patientMailCode = document.getElementById("patient-mail-code");
       const patientDocumentError = document.getElementById("patient-document-error");
       const patientMailCodeError = document.getElementById("patient-mail-code-error");
+      const patientPasswordEmail = document.getElementById("patient-password-email");
+      const patientPasswordInput = document.getElementById("patient-password");
+      const patientPasswordEmailError = document.getElementById("patient-password-email-error");
+      const patientPasswordError = document.getElementById("patient-password-error");
+      const patientPasswordButton = document.getElementById("patient-password-continue");
       const patientFilterPeriod = document.getElementById("patient-filter-period");
       const patientFilterModality = document.getElementById("patient-filter-modality");
       const patientDateDropdown = document.getElementById("patient-date-dropdown");
@@ -101,12 +105,10 @@
       const physicianPacsOnlineList = document.getElementById("physician-pacs-online-list");
       const physicianPacsOfflineList = document.getElementById("physician-pacs-offline-list");
       const physicianLoginButton = document.getElementById("physician-continue");
-      const physicianNote = document.querySelector('[data-flow="physician"] .note');
+      const physicianNote = document.querySelector('[data-login-step="physician"] .note');
       const resetButtons = document.querySelectorAll("[data-reset]");
       const screenAnchor = document.createComment("active-screen");
       shell.insertBefore(screenAnchor, hero);
-      const flowAnchor = document.createComment("active-flow");
-      authBody.insertBefore(flowAnchor, patientFlow);
       const patientShareQROverlayAnchor = document.createComment("patient-share-qr-overlay");
       patientShareQROverlay.parentNode.insertBefore(patientShareQROverlayAnchor, patientShareQROverlay);
       const patientPreviewOverlayAnchor = document.createComment("patient-preview-overlay");
@@ -120,6 +122,7 @@
       });
       const physicianLocalCacheSourceValue = "local_cache";
       let activeRole = "patient";
+      let loginStep = "role";
       let activeScreen = "hero";
       let activeWorkspaceKind = "";
       let activePatientDocument = "";
@@ -146,6 +149,8 @@
       let portalSessionDurationMs = 10 * 60 * 1000;
       let portalShowDemoRibbon = false;
       let patientAuthMode = "mail";
+      let patientMailLoginEnabled = true;
+      let patientPasswordLoginEnabled = false;
       const patientDateFilter = (() => {
         const now = new Date();
         return {
@@ -168,23 +173,104 @@
         };
       })();
 
-      function setActiveRoleFlow(role) {
-        activeRole = role === "physician" ? "physician" : "patient";
-        patientFlow.hidden = activeRole === "physician";
-        physicianFlow.hidden = activeRole !== "physician";
-        detachNode(patientFlow);
-        detachNode(physicianFlow);
-        mountNodeAfter(flowAnchor, activeRole === "physician" ? physicianFlow : patientFlow);
-      }
-
-      function activateRole(role) {
-        roleButtons.forEach(button => {
-          button.classList.toggle("active", button.dataset.role === role);
+      // Login is a small stepped flow inside the auth card:
+      //   role -> (patient-method) -> patient-email | patient-password
+      //   role -> physician
+      // Steps are plain blocks toggled with [hidden]; activeRole stays in sync
+      // so downstream focus/workspace logic keeps working.
+      function showLoginStep(step, options = {}) {
+        loginStep = step;
+        if (step === "physician") {
+          activeRole = "physician";
+        } else if (step.indexOf("patient") === 0) {
+          activeRole = "patient";
+        }
+        loginSteps.forEach(el => {
+          el.hidden = el.dataset.loginStep !== step;
         });
-        setActiveRoleFlow(role);
+        if (options.focus !== false) {
+          focusLoginStep(step);
+        }
       }
 
-      function showWorkspace(kind) {
+      function goToRole(role) {
+        if (role === "physician") {
+          showLoginStep("physician");
+          return;
+        }
+        // auth_mode drives which patient method(s) exist: both -> chooser,
+        // api-only -> straight to password, mail-only -> straight to email.
+        if (patientMailLoginEnabled && patientPasswordLoginEnabled) {
+          showLoginStep("patient-method");
+        } else if (patientPasswordLoginEnabled) {
+          showLoginStep("patient-password");
+        } else {
+          showLoginStep("patient-email");
+        }
+      }
+
+      function pushLoginStepHistory(step) {
+        window.history.pushState({ nav: "hero", step }, "");
+      }
+
+      function handleLoginNav(goto) {
+        switch (goto) {
+          // Forward moves push a history entry so the back button can undo them.
+          case "patient-entry":
+            clearLoginForms();
+            goToRole("patient");
+            pushLoginStepHistory(loginStep);
+            break;
+          case "physician":
+            clearLoginForms();
+            goToRole("physician");
+            pushLoginStepHistory(loginStep);
+            break;
+          case "patient-email":
+            showLoginStep("patient-email");
+            pushLoginStepHistory("patient-email");
+            break;
+          case "patient-password":
+            showLoginStep("patient-password");
+            pushLoginStepHistory("patient-password");
+            break;
+          // "Volver" controls delegate to browser history so the in-app back and
+          // the OS/browser back button behave identically (see the popstate
+          // handler). These data-goto values are only used by back buttons.
+          case "patient-method":
+          case "patient-back":
+          case "role":
+            window.history.back();
+            break;
+        }
+      }
+
+      function focusLoginStep(step) {
+        window.requestAnimationFrame(() => {
+          if (activeScreen !== "hero") {
+            return;
+          }
+          const stepEl = document.querySelector('[data-login-step="' + step + '"]');
+          if (!stepEl) {
+            return;
+          }
+          let target = null;
+          if (step === "role" || step === "patient-method") {
+            target = stepEl.querySelector(".choice-button");
+          } else if (step === "patient-email") {
+            target = patientDocument;
+          } else if (step === "patient-password") {
+            target = patientPasswordEmail;
+          } else if (step === "physician") {
+            target = physicianDni;
+          }
+          if (target instanceof HTMLElement) {
+            target.focus({ preventScroll: true });
+          }
+        });
+      }
+
+      function showWorkspace(kind, options = {}) {
         const workspace = kind === "patient" ? patientWorkspace : physicianWorkspace;
         patientWorkspace.hidden = kind !== "patient";
         physicianWorkspace.hidden = kind !== "physician";
@@ -200,6 +286,17 @@
           refreshPhysicianPACSHealth();
         }
         savePortalWorkspaceState(kind);
+        // Reflect the workspace in browser history so the OS/browser back button
+        // exits it (logout) instead of leaving the portal. "push" on a fresh
+        // login, "replace" when restoring a session on reload (single entry).
+        if (options.history !== "none") {
+          const historyState = { nav: "workspace", kind: activeWorkspaceKind };
+          if (options.history === "replace") {
+            window.history.replaceState(historyState, "");
+          } else {
+            window.history.pushState(historyState, "");
+          }
+        }
       }
 
       async function logoutPortalSession(kind) {
@@ -260,7 +357,11 @@
         updateFeedbackAccess();
         clearLoginForms();
         clearPortalWorkspaceState();
-        activateRole("patient");
+        showLoginStep("role", { focus: false });
+        // Collapse history back to the login base so a subsequent back press
+        // walks the login steps (or leaves the portal) rather than re-entering
+        // the workspace we just left.
+        window.history.replaceState({ nav: "hero", step: "role" }, "");
       }
 
       function clearLoginForms() {
@@ -270,6 +371,14 @@
         clearMailCodeFeedback();
         clearPatientLoginErrors();
         syncPatientContinueState();
+
+        if (patientPasswordEmail) {
+          patientPasswordEmail.value = "";
+          patientPasswordInput.value = "";
+          clearPatientPasswordLoginErrors();
+          patientPasswordButton.disabled = false;
+          patientPasswordButton.textContent = "Ingresar";
+        }
 
         physicianDni.value = "";
         physicianPassword.value = "";
@@ -415,6 +524,9 @@
           }
           portalShowDemoRibbon = Boolean(payload?.portal?.show_demo_ribbon);
           patientAuthMode = String(payload?.patient?.auth_mode || "mail").trim().toLowerCase() || "mail";
+          // Default mail on when the field is absent (older backend responses).
+          patientMailLoginEnabled = payload?.patient?.mail_login_enabled !== false;
+          patientPasswordLoginEnabled = Boolean(payload?.patient?.password_login_enabled);
           applyDemoRibbonVisibility();
           applyPatientCodeInputMode();
         } catch (_error) {
@@ -462,14 +574,7 @@
       }
 
       function focusActiveRoleButton() {
-        window.requestAnimationFrame(() => {
-          if (activeScreen === "hero") {
-            const activeRoleButton = document.querySelector(".role-button.active");
-            if (activeRoleButton instanceof HTMLElement) {
-              activeRoleButton.focus({ preventScroll: true });
-            }
-          }
-        });
+        focusLoginStep(loginStep);
       }
 
       function focusPatientDocumentInput() {
@@ -578,7 +683,7 @@
         armPortalSessionTimeout();
 
         if (state?.kind === "patient" && state.patient?.document_number) {
-          activateRole("patient");
+          activeRole = "patient";
           patientDocument.value = state.patient.document_number;
           patientFilterModality.value = state.patient.modality || "";
           if (state.patient.date_from || state.patient.date_to) {
@@ -593,7 +698,7 @@
             }
             renderPatientCalendar();
           }
-          showWorkspace("patient");
+          showWorkspace("patient", { history: "replace" });
           try {
             await loadPatientStudies(state.patient.document_number);
           } catch (_error) {
@@ -604,7 +709,7 @@
         }
 
         if (state?.kind === "physician" && state.physician?.username) {
-          activateRole("physician");
+          activeRole = "physician";
           physicianDni.value = state.physician.username;
           physicianSearchPatientID.value = state.physician.document_number || state.physician.patient_id || "";
           physicianSearchDicomID.value = state.physician.dicom_id || "";
@@ -623,7 +728,7 @@
           }
           physicianSearchModality.value = state.physician.modality || "";
           physicianSearchSource.value = state.physician.source || physicianLocalCacheSourceValue;
-          showWorkspace("physician");
+          showWorkspace("physician", { history: "replace" });
           try {
             await loadPhysicianResults(state.physician.username, {
               useInitialCachePeriod:
@@ -709,6 +814,14 @@
       function clearPatientLoginErrors() {
         clearFieldError(patientDocument, patientDocumentError);
         clearFieldError(patientMailCode, patientMailCodeError);
+      }
+
+      function clearPatientPasswordLoginErrors() {
+        if (!patientPasswordEmail) {
+          return;
+        }
+        clearFieldError(patientPasswordEmail, patientPasswordEmailError);
+        clearFieldError(patientPasswordInput, patientPasswordError);
       }
 
       function clearPhysicianLoginErrors() {
@@ -2386,6 +2499,30 @@
         return payload;
       }
 
+      async function loginPatientPassword(email, password) {
+        const response = await fetch("/api/patient/password-login", {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            email,
+            password
+          })
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const error = new Error(payload.message || "patient password login request failed");
+          error.status = response.status;
+          error.payload = payload;
+          throw error;
+        }
+
+        return payload;
+      }
+
       async function fetchViewerAccessURL(role, studyInstanceUID, viewerKind) {
         const basePath = role === "patient" ? "/api/patient/studies/" : "/api/physician/studies/";
         const response = await fetch(basePath + encodeURIComponent(studyInstanceUID) + "/access?viewer=" + encodeURIComponent(viewerKind), {
@@ -2557,28 +2694,39 @@
         };
       }
 
-      roleButtons.forEach(button => {
+      stepNavButtons.forEach(button => {
         button.addEventListener("click", () => {
-          activateRole(button.dataset.role);
-          if (button.dataset.role === "physician") {
-            physicianDni.focus({ preventScroll: true });
-            return;
-          }
-          patientDocument.focus({ preventScroll: true });
+          handleLoginNav(button.dataset.goto);
         });
-        button.addEventListener("keydown", event => {
-          if (event.key !== "Enter") {
-            return;
-          }
+      });
 
-          event.preventDefault();
-          activateRole(button.dataset.role);
-          if (button.dataset.role === "physician") {
-            physicianDni.focus({ preventScroll: true });
-            return;
+      // Browser/OS back button integration. The login steps and the
+      // hero<->workspace transition are mirrored into the History API so the
+      // Android/iOS/browser back button walks the same path as the in-app
+      // "Volver" control instead of leaving the portal. This handler applies
+      // whatever managed state the back button lands on; it never pushes, so it
+      // cannot loop. Purely additive: remove this listener plus the pushState/
+      // replaceState/history.back calls to restore DOM-only navigation.
+      window.addEventListener("popstate", event => {
+        const state = event.state && event.state.nav
+          ? event.state
+          : { nav: "hero", step: "role" };
+        if (state.nav === "workspace") {
+          // An authenticated workspace cannot be recreated from history alone
+          // (it needs a live session). If we are not already there, fall back to
+          // the login landing.
+          if (activeScreen !== "workspace") {
+            showLoginStep("role", { focus: false });
           }
-          patientDocument.focus({ preventScroll: true });
-        });
+          return;
+        }
+        if (activeScreen === "workspace") {
+          // Backing out of the workspace ends the session and returns to the
+          // landing (resetLanding normalizes history back to the login base).
+          resetLanding().catch(() => {});
+          return;
+        }
+        showLoginStep(state.step || "role");
       });
 
       patientFilterPeriod.addEventListener("change", () => {
@@ -3152,6 +3300,65 @@
         }, 700);
       });
 
+      if (patientPasswordButton) {
+        patientPasswordButton.addEventListener("click", async () => {
+          const emailValue = patientPasswordEmail.value.trim();
+          patientPasswordEmail.value = emailValue;
+          const passwordValue = patientPasswordInput.value;
+          clearPatientPasswordLoginErrors();
+
+          if (!emailValue) {
+            setFieldError(patientPasswordEmail, patientPasswordEmailError, "Ingrese su correo para continuar.");
+            return;
+          }
+          if (!passwordValue) {
+            setFieldError(patientPasswordInput, patientPasswordError, "Ingrese su contraseña para continuar.");
+            return;
+          }
+
+          patientPasswordButton.disabled = true;
+          patientPasswordButton.textContent = "Validando...";
+
+          let patientLoginPayload;
+          try {
+            patientLoginPayload = await loginPatientPassword(emailValue, passwordValue);
+          } catch (error) {
+            patientPasswordButton.disabled = false;
+            patientPasswordButton.textContent = "Ingresar";
+            const message = error?.payload?.message || "No se pudo validar el acceso del paciente.";
+            if (/correo|email|usuario/i.test(message)) {
+              setFieldError(patientPasswordEmail, patientPasswordEmailError, message);
+            } else {
+              setFieldError(patientPasswordInput, patientPasswordError, message);
+            }
+            return;
+          }
+
+          const documentValue = patientLoginPayload?.patient?.document_number || "";
+          patientDocument.value = documentValue;
+
+          window.setTimeout(async () => {
+            startPortalSession(patientLoginPayload?.expires_at);
+            showWorkspace("patient");
+            try {
+              const [_, sync] = await Promise.all([
+                loadPatientStudies(documentValue),
+                startPatientSearch(documentValue)
+              ]);
+              renderPatientSyncStatus(sync);
+            } catch (error) {
+              patientSummary.textContent = "Paciente " + documentValue;
+              patientStudyList.innerHTML =
+                '<div class="empty-state">No se pudieron cargar los estudios disponibles.</div>';
+            } finally {
+              patientPasswordButton.disabled = false;
+              patientPasswordButton.textContent = "Ingresar";
+              patientPasswordInput.value = "";
+            }
+          }, 400);
+        });
+      }
+
       physicianLoginButton.addEventListener("click", async () => {
         const dniValue = normalizePhysicianDocumentInput(physicianDni.value);
         physicianDni.value = dniValue;
@@ -3209,13 +3416,15 @@
 
       detachNode(patientWorkspace);
       detachNode(physicianWorkspace);
-      detachNode(physicianFlow);
       detachNode(patientShareQROverlay);
       detachNode(patientPreviewOverlay);
       detachNode(mailCodeFeedback);
       demoRibbonStates.forEach(({ ribbon }) => detachNode(ribbon));
 
-      activateRole("patient");
+      showLoginStep("role", { focus: false });
+      // Seed the base managed history entry. A restored session (below) replaces
+      // it with a workspace entry; otherwise the login base stays put.
+      window.history.replaceState({ nav: "hero", step: "role" }, "");
       applyPatientPreset("month");
       patientDocument.addEventListener("input", () => {
         patientDocument.value = normalizePatientDocumentInput(patientDocument.value);

@@ -147,7 +147,7 @@
       }
 
       .auth-header {
-        margin-bottom: 14px;
+        margin-bottom: 0;
       }
 
       .auth-header h3 {
@@ -264,6 +264,93 @@
         border-radius: 0;
         background: rgba(255, 255, 255, 0.1);
         margin-bottom: 18px;
+      }
+
+      /* Uniform vertical rhythm inside each login step. :not([hidden]) keeps the
+         hidden attribute working (display:none) on the inactive steps. */
+      .login-step:not([hidden]) {
+        display: grid;
+        gap: 16px;
+      }
+
+      .choice-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .choice-button {
+        appearance: none;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 12px;
+        padding: 18px 20px;
+        background: rgba(255, 255, 255, 0.06);
+        color: #ffffff;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        text-align: left;
+        transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+      }
+
+      .choice-button:hover {
+        background: rgba(255, 255, 255, 0.12);
+        border-color: rgba(255, 255, 255, 0.3);
+        transform: translateY(-1px);
+      }
+
+      .choice-button:focus-visible {
+        outline: 2px solid #ffffff;
+        outline-offset: 2px;
+      }
+
+      .choice-copy {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .choice-copy strong {
+        font-size: 16px;
+        font-weight: 700;
+      }
+
+      .choice-copy span {
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.72);
+      }
+
+      .choice-arrow {
+        flex: none;
+        width: 9px;
+        height: 9px;
+        border-right: 2px solid rgba(255, 255, 255, 0.6);
+        border-top: 2px solid rgba(255, 255, 255, 0.6);
+        transform: rotate(45deg);
+      }
+
+      .step-back {
+        appearance: none;
+        border: 0;
+        background: transparent;
+        color: rgba(255, 255, 255, 0.75);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        padding: 0;
+        margin-bottom: 0;
+        cursor: pointer;
+      }
+
+      .step-back::before {
+        content: "\2190";
+        margin-right: 6px;
+      }
+
+      .step-back:hover {
+        color: #ffffff;
+        text-decoration: underline;
       }
 
       .role-button {
@@ -474,6 +561,11 @@
       .action-secondary:disabled {
         background: rgba(0, 168, 224, 0.45);
         color: rgba(255, 255, 255, 0.92);
+      }
+
+      .login-submit {
+        width: 100%;
+        margin-top: 2px;
       }
 
       .note {

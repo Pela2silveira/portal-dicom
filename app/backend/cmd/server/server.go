@@ -180,6 +180,7 @@ func main() {
 	mux.HandleFunc("/api/runtime-config", app.handleRuntimeConfig)
 	mux.HandleFunc("/api/patient/send-code", app.withBrowserOriginCheck(app.handlePatientSendCode))
 	mux.HandleFunc("/api/patient/login", app.action(ActionPatientLogin, app.handlePatientLogin))
+	mux.HandleFunc("/api/patient/password-login", app.action(ActionPatientLogin, app.handlePatientPasswordLogin))
 	mux.HandleFunc("/api/patient/logout", app.withBrowserOriginCheck(app.handlePatientLogout))
 	mux.HandleFunc("/api/patient/search", app.withBrowserOriginCheck(app.handlePatientSearch))
 	mux.HandleFunc("/api/patient/studies", app.handlePatientStudies)
