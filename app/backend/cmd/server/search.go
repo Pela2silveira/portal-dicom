@@ -33,6 +33,11 @@ type PACSNodeSearchConfig struct {
 	Mode            string         `json:"mode"`
 	DICOMwebBaseURL string         `json:"dicomweb_base_url"`
 	Auth            PACSAuthConfig `json:"auth"`
+	// ClassifyByRetrieveAET post-filters remote search results by Retrieve AE
+	// Title (0008,0054) so a multi-AET shared archive (same DICOMweb host, many
+	// /aets/{AE}/ paths) does not mislabel studies under the queried node.
+	// nil = auto (on when another configured node shares the DICOMweb host).
+	ClassifyByRetrieveAET *bool `json:"classify_by_retrieve_aet,omitempty"`
 }
 
 type CacheConfig struct {
@@ -41,9 +46,10 @@ type CacheConfig struct {
 }
 
 type PACSNodeSearchResponse struct {
-	Mode            string           `json:"mode"`
-	DICOMwebBaseURL string           `json:"dicomweb_base_url"`
-	Auth            PACSAuthResponse `json:"auth"`
+	Mode                  string           `json:"mode"`
+	DICOMwebBaseURL       string           `json:"dicomweb_base_url"`
+	Auth                  PACSAuthResponse `json:"auth"`
+	ClassifyByRetrieveAET bool             `json:"classify_by_retrieve_aet"`
 }
 
 type SearchAdapter interface {

@@ -275,9 +275,10 @@ func (a *App) handleConfig(appliedMigrations []string) http.HandlerFunc {
 				SupportsCGet:        resolved.SupportsCGet,
 				Auth:                authResponse,
 				Search: PACSNodeSearchResponse{
-					Mode:            resolved.SearchMode,
-					DICOMwebBaseURL: resolved.DICOMwebBaseURL,
-					Auth:            authResponse,
+					Mode:                  resolved.SearchMode,
+					DICOMwebBaseURL:       resolved.DICOMwebBaseURL,
+					Auth:                  authResponse,
+					ClassifyByRetrieveAET: a.shouldClassifyByRetrieveAET(node),
 				},
 				Retrieve: PACSNodeRetrieveResponse{
 					Mode:          resolved.RetrieveMode,

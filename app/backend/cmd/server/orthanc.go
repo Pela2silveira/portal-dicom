@@ -40,6 +40,7 @@ var orthancQueryAnswerTagMappings = []struct {
 	{tag: "00081030", keys: []string{"StudyDescription", "0008,1030"}},
 	{tag: "00080061", keys: []string{"ModalitiesInStudy", "0008,0061"}},
 	{tag: "00080050", keys: []string{"AccessionNumber", "0008,0050"}},
+	{tag: "00080054", keys: []string{"RetrieveAETitle", "0008,0054"}},
 	{tag: "00201208", keys: []string{"NumberOfStudyRelatedInstances", "0020,1208"}},
 }
 
@@ -1772,6 +1773,7 @@ func (a *App) runOrthancStudyCFindWithRefresh(ctx context.Context, node PACSNode
 			"PatientSex":                    "",
 			"AccessionNumber":               "",
 			"NumberOfStudyRelatedInstances": "",
+			"RetrieveAETitle":               "",
 		},
 		"Timeout": 60,
 	}

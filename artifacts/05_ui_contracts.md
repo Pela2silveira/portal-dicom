@@ -382,6 +382,7 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
   - with active filters, runs remote QIDO search against the configured PACS node
   - without filters, may return persisted recent queries as a fallback
   - includes per-result `source_node_available` so the UI can disable retrieve when the origin PACS is offline
+  - for multi-AET shared archives (several nodes on the same DICOMweb host), results are post-filtered by Retrieve AE Title so `locations` / hospital label match the queried node’s `retrieve.aet` (fewer rows than the raw QIDO catalog is expected and correct)
 - `GET /api/search/stream`
   - SSE stream for federated search results
 - `POST /api/physician/retrieve`
