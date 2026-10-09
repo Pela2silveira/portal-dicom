@@ -2345,6 +2345,7 @@ func (a *App) fetchPatientStudiesFromQIDOIdentifier(ctx context.Context, node PA
 	query.Add("includefield", "PatientName")
 	query.Add("includefield", "AccessionNumber")
 	query.Add("includefield", "NumberOfStudyRelatedInstances")
+	query.Add("includefield", "RetrieveAETitle")
 	endpoint.RawQuery = query.Encode()
 
 	a.log("info", "patient_qido_request_started", map[string]any{
@@ -2390,6 +2391,9 @@ func (a *App) fetchPatientStudiesFromQIDOIdentifier(ctx context.Context, node PA
 	if identifier.Type == "document_number" {
 		authorizationBasis = "patient_document_qido_match"
 	}
+	classifyByRetrieveAET := a.shouldClassifyByRetrieveAET(node)
+	expectedRetrieveAET := nodeExpectedRetrieveAET(node)
+	droppedByRetrieveAET := 0
 
 	for _, item := range payload {
 		studyUID := dicomFirstString(item, "0020000D")
@@ -2397,6 +2401,21 @@ func (a *App) fetchPatientStudiesFromQIDOIdentifier(ctx context.Context, node PA
 			continue
 		}
 		a.logAccessionNumberProbe("patient_remote_qido", node.ID, studyUID, dicomFirstString(item, "00080050"))
+
+		decision := classifyStudyByRetrieveAET(classifyByRetrieveAET, expectedRetrieveAET, retrieveAETitlesFromItem(item))
+		if !decision.Keep {
+			droppedByRetrieveAET++
+			a.log("info", "patient_qido_retrieve_aet_filtered", map[string]any{
+				"document_number":    patient.DocumentNumber,
+				"node_id":            node.ID,
+				"study_instance_uid": studyUID,
+				"expected_aet":       expectedRetrieveAET,
+				"retrieve_aets":      decision.RetrieveAETs,
+				"reason":             decision.Reason,
+			})
+			continue
+		}
+
 		a.logPatientIdentityComparison(patient, remotePatientMatchCandidate{
 			NodeID:           node.ID,
 			StudyInstanceUID: studyUID,
@@ -2435,6 +2454,16 @@ func (a *App) fetchPatientStudiesFromQIDOIdentifier(ctx context.Context, node PA
 		studies = append(studies, study)
 	}
 
+	if classifyByRetrieveAET && droppedByRetrieveAET > 0 {
+		a.log("info", "patient_qido_retrieve_aet_summary", map[string]any{
+			"document_number":         patient.DocumentNumber,
+			"node_id":                 node.ID,
+			"kept":                    len(studies),
+			"dropped_by_retrieve_aet": droppedByRetrieveAET,
+			"expected_retrieve_aet":   expectedRetrieveAET,
+		})
+	}
+
 	return studies, patientName, nil
 }
 
@@ -2442,12 +2471,29 @@ func (a *App) fetchPatientStudiesFromCFind(ctx context.Context, node PACSNodeCon
 	observedStudies := make(map[string]struct{})
 	studyByUID := make(map[string]PatientStudy)
 	identifierIndex := patientIdentifierSet(identifiers)
+	classifyByRetrieveAET := a.shouldClassifyByRetrieveAET(node)
+	expectedRetrieveAET := nodeExpectedRetrieveAET(node)
+
 	collectAuthorizedStudy := func(item qidoResponseItem) error {
 		studyUID := dicomFirstString(item, "0020000D")
 		if studyUID == "" {
 			return nil
 		}
 		observedStudies[studyUID] = struct{}{}
+
+		decision := classifyStudyByRetrieveAET(classifyByRetrieveAET, expectedRetrieveAET, retrieveAETitlesFromItem(item))
+		if !decision.Keep {
+			a.log("info", "patient_cfind_retrieve_aet_filtered", map[string]any{
+				"document_number":    patient.DocumentNumber,
+				"node_id":            node.ID,
+				"study_instance_uid": studyUID,
+				"expected_aet":       expectedRetrieveAET,
+				"retrieve_aets":      decision.RetrieveAETs,
+				"reason":             decision.Reason,
+			})
+			return nil
+		}
+
 		remotePatientID := dicomFirstString(item, "00100020")
 		candidate := remotePatientMatchCandidate{
 			NodeID:           node.ID,

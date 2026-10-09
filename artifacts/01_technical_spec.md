@@ -236,10 +236,11 @@ Proveer un portal operativo mínimo capaz de:
    - En paralelo, consulta Orthanc local (para marcar “cache hit”).
 3. Backend deduplica por `StudyInstanceUID`, agregando `locations[]` (nodos donde existe).
 4. La UI del portal expone esas locaciones con etiquetas legibles para usuario usando `pacs_nodes.name` como nombre de hospital/sede.
-5. Backend transmite resultados parciales por:
+5. **Archivo multi-AET compartido:** cuando varios `pacs_nodes` apuntan al mismo host DICOMweb (mismo `scheme://host`, distintos `/aets/{AE}/rs`), el path QIDO del AE **no** aísla el catálogo. El backend pide `RetrieveAETitle (0008,0054)` y post-filtra para conservar solo estudios cuyo Retrieve AET coincide con `retrieve.aet` del nodo consultado (`search.classify_by_retrieve_aet`; auto-on si hay peer en el mismo host). Así `locations`/`source_node_id` no etiquetan el hospital equivocado. El param propietario dcm4chee `ExternalRetrieveAET` **no** se usa (semántica distinta; en pruebas devolvió vacío).
+6. Backend transmite resultados parciales por:
    - **SSE**: `GET /api/search/{id}/events` (recomendado por simplicidad), o
    - WebSocket (si se requiere bidireccional).
-6. UI renderiza incrementalmente.
+7. UI renderiza incrementalmente.
 
 **Decisión explícita (MVP):** usar **SSE** salvo que haya requisito concreto de WS (SSE es más simple detrás de Nginx).
 

@@ -1150,6 +1150,7 @@ func (a *App) searchPhysicianResultsFromQIDONode(ctx context.Context, physician 
 	query.Add("includefield", "PatientID")
 	query.Add("includefield", "AccessionNumber")
 	query.Add("includefield", "NumberOfStudyRelatedInstances")
+	query.Add("includefield", "RetrieveAETitle")
 	if filters.PatientID != "" {
 		query.Set("PatientID", filters.PatientID)
 	}
@@ -1199,6 +1200,10 @@ func (a *App) searchPhysicianResultsFromQIDONode(ctx context.Context, physician 
 		payload = []qidoResponseItem{}
 	}
 
+	classifyByRetrieveAET := a.shouldClassifyByRetrieveAET(node)
+	expectedRetrieveAET := nodeExpectedRetrieveAET(node)
+	droppedByRetrieveAET := 0
+
 	results := make([]PhysicianResult, 0, len(payload))
 	for _, item := range payload {
 		studyUID := dicomFirstString(item, "0020000D")
@@ -1206,6 +1211,20 @@ func (a *App) searchPhysicianResultsFromQIDONode(ctx context.Context, physician 
 			continue
 		}
 		a.logAccessionNumberProbe("physician_remote_qido", node.ID, studyUID, dicomFirstString(item, "00080050"))
+
+		decision := classifyStudyByRetrieveAET(classifyByRetrieveAET, expectedRetrieveAET, retrieveAETitlesFromItem(item))
+		if !decision.Keep {
+			droppedByRetrieveAET++
+			a.log("info", "physician_qido_retrieve_aet_filtered", map[string]any{
+				"physician_id":       physician.ID,
+				"node_id":            node.ID,
+				"study_instance_uid": studyUID,
+				"expected_aet":       expectedRetrieveAET,
+				"retrieve_aets":      decision.RetrieveAETs,
+				"reason":             decision.Reason,
+			})
+			continue
+		}
 
 		result := PhysicianResult{
 			StudyInstanceUID:    studyUID,
@@ -1268,11 +1287,14 @@ func (a *App) searchPhysicianResultsFromQIDONode(ctx context.Context, physician 
 	}
 
 	a.log("info", "physician_qido_search_completed", map[string]any{
-		"physician_id": physician.ID,
-		"username":     physician.Username,
-		"node_id":      node.ID,
-		"result_count": len(results),
-		"duration_ms":  time.Since(searchStartedAt).Milliseconds(),
+		"physician_id":             physician.ID,
+		"username":                 physician.Username,
+		"node_id":                  node.ID,
+		"result_count":             len(results),
+		"duration_ms":              time.Since(searchStartedAt).Milliseconds(),
+		"classify_by_retrieve_aet": classifyByRetrieveAET,
+		"dropped_by_retrieve_aet":  droppedByRetrieveAET,
+		"expected_retrieve_aet":    expectedRetrieveAET,
 	})
 
 	return results, nil
@@ -1297,10 +1319,28 @@ func (a *App) searchPhysicianResultsFromDIMSENode(ctx context.Context, physician
 		return nil, fmt.Errorf("run physician c-find on %s: %w", node.ID, err)
 	}
 
+	classifyByRetrieveAET := a.shouldClassifyByRetrieveAET(node)
+	expectedRetrieveAET := nodeExpectedRetrieveAET(node)
+	droppedByRetrieveAET := 0
+
 	results := make([]PhysicianResult, 0, len(payload))
 	for _, item := range payload {
 		studyUID := dicomFirstString(item, "0020000D")
 		if studyUID == "" {
+			continue
+		}
+
+		decision := classifyStudyByRetrieveAET(classifyByRetrieveAET, expectedRetrieveAET, retrieveAETitlesFromItem(item))
+		if !decision.Keep {
+			droppedByRetrieveAET++
+			a.log("info", "physician_cfind_retrieve_aet_filtered", map[string]any{
+				"physician_id":       physician.ID,
+				"node_id":            node.ID,
+				"study_instance_uid": studyUID,
+				"expected_aet":       expectedRetrieveAET,
+				"retrieve_aets":      decision.RetrieveAETs,
+				"reason":             decision.Reason,
+			})
 			continue
 		}
 
@@ -1365,11 +1405,14 @@ func (a *App) searchPhysicianResultsFromDIMSENode(ctx context.Context, physician
 	}
 
 	a.log("info", "physician_cfind_search_completed", map[string]any{
-		"physician_id": physician.ID,
-		"username":     physician.Username,
-		"node_id":      node.ID,
-		"result_count": len(results),
-		"duration_ms":  time.Since(searchStartedAt).Milliseconds(),
+		"physician_id":             physician.ID,
+		"username":                 physician.Username,
+		"node_id":                  node.ID,
+		"result_count":             len(results),
+		"duration_ms":              time.Since(searchStartedAt).Milliseconds(),
+		"classify_by_retrieve_aet": classifyByRetrieveAET,
+		"dropped_by_retrieve_aet":  droppedByRetrieveAET,
+		"expected_retrieve_aet":    expectedRetrieveAET,
 	})
 
 	return results, nil

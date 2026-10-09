@@ -418,5 +418,11 @@ Use this file to record the decisions you make after reviewing the agent discuss
   - **JWT compartido cross-domain**: descartado (frágil, expone el token de Andes al browser, choca con el aislamiento de origins y con `Authorization: JWT`).
 - **Camino elegido para este corte:** delegación por **usuario/contraseña** (el ciudadano reingresa una vez las **mismas** credenciales de Andes, familiares para él). No es SSO, pero unifica la fuente de identidad sin bloquear la migración futura a OIDC: cuando exista "Login con Andes", se agrega como tercer método detrás de otro flag y este método puede convivir o retirarse.
 
+## Multi-AET shared archive (pacssss): classify by Retrieve AE Title
+- **(2026-10-09) Problema.** Varios nodos (`hba`/`hlc`/`hmm`/`hrdls`/`htm`/`hvt`) comparten `https://pacssss.andes.gob.ar` con AE distintos (`PACSHBA`…). En dcm4chee-arc, QIDO contra `/aets/PACSHRDLS/rs` **no** aísla el catálogo: la misma fecha devolvió los mismos 6 UIDs vía `PACSHRDLS` y `PACSHTM`, con `RetrieveAETitle (0008,0054)` repartido (`PACSHMM×3`, `PACSHTM×2`, `PACSHRDLS×1`). El portal etiquetaba todos con el nodo del dropdown → hospital incorrecto en UI/`physician_recent_queries`/`cached_studies`, y retrieve vía el AE consultado fallaba para estudios ajenos.
+- **`ExternalRetrieveAET` descartado.** Filtrar QIDO con `ExternalRetrieveAET=PACSHRDLS` respondió `204` vacío aunque existía un estudio con RetrieveAETitle=`PACSHRDLS` (otra semántica en dcm4chee). `RetrieveAETitle=` como matching key tampoco aísla de forma confiable.
+- **Decisión: post-filtro por (0008,0054).** QIDO/C-FIND piden `RetrieveAETitle`; se conservan solo estudios cuyo tag contiene `retrieve.aet` del nodo consultado. Flag `search.classify_by_retrieve_aet` (tri-state): `true`/`false` fuerza; omitido = **auto-on** si otro nodo comparte el mismo `scheme://host` DICOMweb. Nodos 1:1 host (p. ej. `hpn`) no se filtran.
+- **Alcance.** Physician + patient, QIDO-RS y C-FIND remoto. No reclasifica hacia otro hospital en la misma búsqueda: el estudio aparece al consultar el nodo cuyo AET coincide. Resultados históricos mal etiquetados no se reescriben solos (hay que reconsultar).
+
 ## Notes For Agents
 - Prefer pragmatic, secure defaults.

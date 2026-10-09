@@ -41,6 +41,7 @@ El primer entregable debe enfocarse en una base operativa mínima. No se impleme
 * **Búsqueda paciente multi-PACS:** cuando existan varios nodos con `search.mode = qido_rs`, el flujo paciente debe consultar todos los nodos elegibles y consolidar los estudios en una única lista autorizada.
 * **Configuración de PACS remotos:** el sistema debe permitir cargar detalles de conexión para nodos dcm4chee remotos.
 * **Capacidades por nodo PACS:** la configuración de cada nodo debe distinguir al menos `search`, `retrieve` y `health`, para soportar combinaciones `dicomweb`, `dimse` e `hybrid`.
+* **Archivo multi-AET compartido:** si varios nodos comparten el mismo host DICOMweb con AE distintos, la búsqueda remota debe post-filtrar por `Retrieve AE Title (0008,0054)` contra el `retrieve.aet` del nodo consultado (auto o vía `search.classify_by_retrieve_aet`), para no etiquetar ni recuperar estudios de otro hospital del mismo archivo.
 * **Health remoto por capacidad:** el modo `health` de un nodo debe poder definirse al menos como `auth_qido` o `dimse_c_echo`.
 * **Visualización desacoplada:** OHIF debe consumir estudios desde el Orthanc local y no desde los PACS remotos.
 * **Portal assets propios:** el logo, favicon y assets de la landing deben ser servidos por Nginx sin mezclarse con los assets del contenedor OHIF.
@@ -268,7 +269,8 @@ El sistema debe estar preparado para recibir por configuración:
       "priority": 1,
       "search": {
         "mode": "qido_rs",
-        "dicomweb_base_url": "https://pending-host/dcm4chee-arc/aets/CENTRAL_PACS/rs"
+        "dicomweb_base_url": "https://pending-host/dcm4chee-arc/aets/CENTRAL_PACS/rs",
+        "classify_by_retrieve_aet": true
       },
       "retrieve": {
         "mode": "c_move",

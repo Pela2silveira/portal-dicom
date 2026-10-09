@@ -20,6 +20,7 @@
       "search": {
         "mode": "qido_rs",
         "dicomweb_base_url": "https://pending-host/dcm4chee-arc/aets/PACSHPN/rs",
+        "classify_by_retrieve_aet": false,
         "auth": {
           "type": "keycloak_client_credentials",
           "token_url": "https://pending-keycloak-host/auth/realms/dcm4che/protocol/openid-connect/token",

@@ -54,6 +54,7 @@ Required fields per node:
 
 - `mode`: `qido_rs` or `c_find`
 - `dicomweb_base_url`: required for `qido_rs`
+- `classify_by_retrieve_aet` (optional bool): when `true`/`false`, forces post-filtering of remote QIDO/C-FIND results by Retrieve AE Title `(0008,0054)` against `retrieve.aet`. When omitted, the backend auto-enables this for any node that shares a DICOMweb host (`scheme://host`) with another configured node — typical of a multi-AET central archive (e.g. several `/aets/PACSxxx/rs` URLs on the same host). Dedicated single-host PACS nodes stay unfiltered.
 - `auth`: authentication config for DICOMweb access when needed
 
 `retrieve` fields:
