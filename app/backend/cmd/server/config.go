@@ -103,11 +103,16 @@ type PACSNodeConfig struct {
 	//   "dni"      -> the document number (default when empty)
 	//   "mongo_id" -> the patient's Mongo _id (mongo_object_id)
 	//   <other>    -> reserved for a future HIS-provider field (not implemented)
-	PatientIDSource string                 `json:"patient_id_source,omitempty"`
-	Auth            PACSAuthConfig         `json:"auth"`
-	Search          PACSNodeSearchConfig   `json:"search"`
-	Retrieve        PACSNodeRetrieveConfig `json:"retrieve"`
-	Health          PACSNodeHealthConfig   `json:"health"`
+	PatientIDSource string `json:"patient_id_source,omitempty"`
+	// SearchOrigin groups nodes that appear as one professional search origin.
+	// Empty means the node is its own origin. The value must not match a node id
+	// or "local_cache". The visible label is the name of the member with the
+	// lowest priority.
+	SearchOrigin string                 `json:"search_origin,omitempty"`
+	Auth         PACSAuthConfig         `json:"auth"`
+	Search       PACSNodeSearchConfig   `json:"search"`
+	Retrieve     PACSNodeRetrieveConfig `json:"retrieve"`
+	Health       PACSNodeHealthConfig   `json:"health"`
 }
 
 type PACSAuthConfig struct {
@@ -169,6 +174,7 @@ type PACSNodeResolvedConfig struct {
 	SupportsCMove       bool
 	SupportsCGet        bool
 	PatientIDSource     string
+	SearchOrigin        string
 	Auth                PACSAuthConfig
 	SearchMode          string
 	RetrieveMode        string
@@ -292,6 +298,7 @@ func (a *App) handleConfig(appliedMigrations []string) http.HandlerFunc {
 					Mode:       resolved.HealthMode,
 					CallingAET: resolved.HealthCallingAET,
 				},
+				SearchOrigin: resolved.SearchOrigin,
 			})
 		}
 
@@ -354,6 +361,7 @@ func (n PACSNodeConfig) Resolved() PACSNodeResolvedConfig {
 		SupportsCMove:       n.SupportsCMove,
 		SupportsCGet:        n.SupportsCGet,
 		PatientIDSource:     normalizePatientIDSource(n.PatientIDSource),
+		SearchOrigin:        normalizeSearchOrigin(n.SearchOrigin),
 		Auth:                n.Auth,
 		SearchMode:          strings.TrimSpace(n.Protocol),
 		HealthMode:          "http",
@@ -547,6 +555,9 @@ func validateExternalConfig(cfg ExternalConfig) error {
 
 	if len(cfg.PACSNodes) == 0 {
 		return errors.New("config must include at least one PACS node")
+	}
+	if err := validateSearchOrigins(cfg.PACSNodes); err != nil {
+		return err
 	}
 
 	for _, node := range cfg.PACSNodes {

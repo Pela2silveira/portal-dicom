@@ -26,6 +26,7 @@ const (
 	ActionUsageRead         ActionID = "usage.read"
 	ActionFeedbackCreate    ActionID = "feedback.create"
 	ActionFeedbackRead      ActionID = "feedback.read"
+	ActionStudyCacheDelete  ActionID = "study.cache_delete"
 )
 
 // SubjectKind is the type of actor that can perform an action.
@@ -168,6 +169,19 @@ var actionCatalog = map[ActionID]Action{
 		Mutating:   false,
 		Auditable:  true,
 		Metered:    false,
+	},
+	// Operator-only removal of one study from the local Orthanc cache and the
+	// portal rows that say it is cached. Resolved as a physician session whose
+	// role is operator (rbac.operators, wildcard). Not granted to patient,
+	// physician, or physician_sharer.
+	ActionStudyCacheDelete: {
+		ID:         ActionStudyCacheDelete,
+		Resource:   "study",
+		Permission: "study:cache_delete",
+		Subjects:   []SubjectKind{SubjectPhysician},
+		Mutating:   true,
+		Auditable:  true,
+		Metered:    true,
 	},
 }
 

@@ -563,6 +563,15 @@
         color: rgba(255, 255, 255, 0.92);
       }
 
+      .action-danger {
+        background: var(--danger);
+        color: #ffffff;
+      }
+
+      .action-danger:hover {
+        background: #8d1b13;
+      }
+
       .login-submit {
         width: 100%;
         margin-top: 2px;
@@ -1114,7 +1123,24 @@
 
       .filter-action {
         display: flex;
-        align-items: end;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+      }
+
+      .help-faq-link {
+        padding: 0;
+        border: 0;
+        background: none;
+        color: var(--accent, #1e6fd9);
+        font: inherit;
+        font-size: 0.9rem;
+        text-decoration: underline;
+        cursor: pointer;
+      }
+
+      .feedback-hint .help-faq-link {
+        font-size: inherit;
       }
 
       .filter-action .action {
@@ -1196,11 +1222,13 @@
       }
 
       .date-filter-summary {
+        flex: 1;
+        min-width: 0;
         color: var(--accent-dark);
         font-size: 0.94rem;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        font-weight: 600;
+        line-height: 1.25;
+        white-space: normal;
       }
 
       .date-filter-panel-shell {
@@ -1422,6 +1450,15 @@
         margin: 0;
       }
 
+      .operator-comment-detail {
+        margin-bottom: 4px;
+        font-size: 0.82rem;
+      }
+
+      .operator-comment-detail span {
+        color: var(--muted, #64748b);
+      }
+
       .operator-comments-list {
         display: grid;
         gap: 10px;
@@ -1533,6 +1570,68 @@
         margin: 0 0 10px;
         font-size: 0.85rem;
         color: var(--muted, #64748b);
+      }
+
+      .feedback-label {
+        display: block;
+        margin: 10px 0 6px;
+        font-size: 0.82rem;
+        font-weight: 600;
+      }
+
+      .feedback-optional {
+        font-weight: 500;
+        color: var(--muted, #64748b);
+      }
+
+      .feedback-body input,
+      .feedback-body textarea {
+        width: 100%;
+        box-sizing: border-box;
+      }
+
+      .feedback-body input {
+        min-height: 40px;
+        padding: 8px 12px;
+        border: 1px solid rgba(15, 23, 42, 0.18);
+        border-radius: 10px;
+        font: inherit;
+      }
+
+      .help-faq-overlay {
+        z-index: 80;
+      }
+
+      .help-faq-body {
+        padding: 8px 18px 18px;
+        max-height: min(70vh, 560px);
+        overflow-y: auto;
+      }
+
+      .help-faq-body details {
+        border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+        padding: 10px 0;
+      }
+
+      .help-faq-body summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      .help-faq-body p,
+      .help-faq-body li {
+        margin: 8px 0 0;
+        color: var(--muted, #334155);
+        line-height: 1.45;
+      }
+
+      .help-faq-body ul {
+        margin: 0;
+        padding-left: 1.2rem;
+      }
+
+      .help-faq-body li {
+        margin: 2px 0 0;
       }
 
       .feedback-body textarea {

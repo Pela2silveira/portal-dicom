@@ -320,8 +320,8 @@ Proveer un portal operativo mínimo capaz de:
 8. La grilla del profesional debe recalcular `cacheStatus`, `retrieveStatus` y `viewer_url` a partir de `cached_studies`, `retrieve_jobs` y verificación real en Orthanc.
 9. La carga inicial del panel profesional sin filtros, con `source=local_cache`, debe consultar Orthanc local en vivo y devolver los estudios en cache para la ventana relativa configurada en `professional.initial_cache_period`.
 10. El card de resultados del panel profesional debe mostrar un resumen `PACS en línea X/Y` basado en los componentes `remote_pacs:*` de `/api/health`, con tooltip/hover que detalle nodos online y offline usando el nombre visible del PACS.
-11. El panel profesional debe exponer un selector `Origen de búsqueda` con `Cache local` y los PACS remotos actualmente online; el origen remoto elegido debe viajar como `source=<node_id>` en `GET /api/physician/results`.
-12. Cuando el profesional aplica filtros con `source=local_cache`, `GET /api/physician/results` debe filtrar sobre Orthanc local; si el profesional ejecuta manualmente `Buscar` sobre `local_cache` sin filtros adicionales, el portal debe devolver toda la cache local en lugar de reimponer `professional.initial_cache_period`. Con `source=<node_id>`, debe ejecutar QIDO-RS únicamente contra ese nodo remoto y persistir el resultado como búsqueda reciente.
+11. El panel profesional debe exponer un selector `Origen de búsqueda` con la caché local y los PACS remotos actualmente online, ordenados alfabéticamente por nombre visible. El valor seleccionado por defecto es `local_cache`. El origen remoto elegido viaja como `source` en `GET /api/physician/results`: el `id` del nodo, o el `search_origin` cuando varios nodos comparten ese valor. En `/api/health`, cada componente `remote_pacs:*` de un grupo trae `search_origin` y `search_origin_name`; el selector colapsa esos componentes en una opción. El panel de salud sigue listando cada nodo por separado.
+12. Cuando el profesional aplica filtros con `source=local_cache`, `GET /api/physician/results` debe filtrar sobre Orthanc local; si el profesional ejecuta manualmente `Buscar` sobre `local_cache` sin filtros adicionales, el portal debe devolver toda la cache local en lugar de reimponer `professional.initial_cache_period`. Con `source=<node_id>`, debe consultar únicamente ese nodo remoto y persistir el resultado como búsqueda reciente. Con `source=<search_origin>`, consulta en paralelo todos los nodos del grupo, mapea el DNI con el `patient_id_source` de cada uno, deduplica por `StudyInstanceUID` quedándose con el miembro de menor `priority`, y no falla la búsqueda si al menos un miembro responde. El `source_node_id` de cada resultado sigue siendo el nodo real, y ese valor es el que usa el retrieve.
     - La consulta al caché local del profesional debe usar `POST /tools/find` (Study level, `Expand`, `RequestedTags` para `ModalitiesInStudy`/`NumberOfStudyRelatedInstances`) y **no** QIDO interno `GET /dicom-web/studies?PatientID=...`: bajo el plugin de autorización (`CheckedLevel: studies`) una QIDO filtrada por `PatientID` de un paciente sin estudios cacheados se rechaza con `403 Unknown resource` (ver también punto de autorización sobre `/tools/find`).
 13. El backend debe rechazar las búsquedas profesionales remotas vacías sin filtros adicionales para evitar consultas amplias innecesarias.
 14. El retrieve profesional sobre resultados remotos debe resolver el `source_node_id` a partir del snapshot persistido de la búsqueda reciente para reinyectar el estudio desde el mismo PACS que devolvió el resultado.
@@ -386,7 +386,7 @@ Proveer un portal operativo mínimo capaz de:
 - **RBAC simple por config.** Roles/permisos con defaults en código, sobrescribibles desde `config.json` (`rbac.roles`); elevación de profesionales puntuales vía `rbac.physician_sharers` (rol `physician_sharer`). Sin integración de roles con LDAP/IdP.
 - **Auditoría** = JSON a stdout con `"channel":"audit"` (ruteado a `audit.log`), esquema who/when/what/subject/result + dimensiones por acción. Los rechazos también se auditan. PHI: minimización diferida (hoy se loguea todo; hook `PHIFields` por acción para el futuro).
 - **Métricas de uso (Opción B)** en PostgreSQL: tabla append-only `usage_events` (no se derivan de logs), detrás de la interfaz `UsageRecorder`. Toggles en `observability` (`audit_enabled`/`metrics_enabled` + allowlists).
-- Estado: en producción, enganchado en logins (paciente/profesional), `viewer_access.grant`, `study.retrieve`, `study.download`, `share_link.create` y `share_link.consume`. `share_link.revoke` declarada (sin endpoint aún). Ver `decisions.md`.
+- Estado: en producción, enganchado en logins (paciente/profesional), `viewer_access.grant`, `study.retrieve`, `study.download`, `share_link.create`, `share_link.consume` y `study.cache_delete` (solo operador; ver §7.3). `share_link.revoke` declarada (sin endpoint aún). Ver `decisions.md`.
 
 ---
 
@@ -411,6 +411,15 @@ Proveer un portal operativo mínimo capaz de:
   - `local_partial`: presente pero faltan series/instancias respecto al conteo esperado (visualizable, pero se debe remediar/reintentar).
   - `local_unverified`: presente, pero **no se pudo** obtener un conteo esperado confiable del origen (p. ej. Synapse no reporta `NumberOfSeriesRelatedInstances`), así que no se puede afirmar completitud. Visualizable; nunca se enmascara como `local_complete`.
 - Regla clave: la ausencia de datos de completitud degrada a `local_unverified` (o `local_partial` si hay señal de faltantes), **nunca** a `local_complete`. Un `local_complete` falso oculta estudios incompletos y es el bug histórico de Synapse.
+
+### 7.3 Quitar un estudio de la caché (operador)
+- `DELETE /api/physician/studies/{study_instance_uid}/cache`, acción `study.cache_delete`, permiso `study:cache_delete`.
+- Lo pasa solo el rol `operator` (wildcard de `rbac.operators`). Paciente, profesional y `physician_sharer` reciben 403.
+- Borra el estudio en Orthanc por su id interno (`DELETE /studies/{orthanc-id}`, permiso `all` del token interno). Un 404 de Orthanc se trata como ya borrado.
+- En la misma transacción de Postgres deja `cached_studies.cache_status=not_local` (limpia id de Orthanc y completitud), pasa `patient_study_access` de `available_local` a `pending_retrieve` y revoca los `study_share_links` activos de ese estudio.
+- No toca `qido_study_cache` ni `retrieve_jobs`. La próxima búsqueda remota reescribe el nombre; el historial de retrieves queda.
+- Si hay un retrieve `queued` o `running` no vencido, responde 409 y no borra.
+- El botón `Quitar de caché` aparece en el resultado del profesional solo si `can_delete_cache` y el estudio está en Orthanc, y no mientras el retrieve está en curso.
 
 ---
 
@@ -655,6 +664,7 @@ Problema: Orthanc recibe instancias progresivamente y algunos orígenes (Synapse
 ### 12.1 Archivo `config.json` (alineado con tu ejemplo)
 - `pacs_nodes[]`: incluye campos por protocolo (QIDO-RS vs DIMSE).
 - `pacs_nodes[].patient_id_source` (opcional, default `"dni"`): regla de mapeo que decide qué identificador del paciente viaja como `PatientID` DICOM cuando la búsqueda profesional es por DNI. Valores soportados: `"dni"`, `"mongo_id"`, `"legacy_his"` (alias `"mssql_codigo"`/`"codigo"`); otros valores quedan reservados para campos de otros HIS providers (aún no implementados).
+- `pacs_nodes[].search_origin` (opcional): agrupa nodos en un solo origen del selector profesional. Vacío deja al nodo como origen propio. El valor no puede ser `local_cache` ni coincidir con el `id` de un nodo. La etiqueta visible es el `name` del miembro con menor `priority`. Hospital Provincial Neuquén usa `provincial-neuquen` en `hpn` y `hpnsyn`.
 - `legacy_his` (opcional): conexión al HIS legacy Microsoft SQL Server usado para mapear DNI→`Codigo` en nodos con `patient_id_source: "legacy_his"`. Campos: `enabled`, `host`, `port` (default 1433), `database` (default `Hospital`), `user`, `password_env` (default `LEGACY_HIS_PASSWORD`, la contraseña se lee de esa env var), `encrypt` (default `disable`), `connect_timeout_ms`, `query_timeout_ms`. Query: `SELECT TOP 1 [Codigo] FROM [<db>].[dbo].[Historias_Clinicas] WHERE HC_Documento = @dni`. Driver `github.com/microsoft/go-mssqldb` fijado en `v1.7.2` (última compatible con Go 1.22). El mapeo se cachea en `patient_identifiers` (`source_system=legacy_his`, `identifier_type=legacy_his_code`, best-effort sobre pacientes ya existentes). Arranque resiliente: si falla construir/pingear, se registra startup issue y el cliente queda nil (no bloquea boot).
 - `cache_config`: retención, límite disco, parámetros Orthanc.
 - `his_config`: persistir valores (no ejecutar lógica obligatoria).

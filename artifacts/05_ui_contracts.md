@@ -139,6 +139,7 @@ Allow a patient to see only their authorized studies and open one selected study
   same-day rule: if the user clicks the same date again while choosing the end of a range, the picker should collapse back to a single-day selection
   state rule: after the first click the picker enters an intermediate "awaiting end date" state and stays open until the user chooses the end date or clicks outside
   copy rule: the visible summary should stay concise and should not explain the interaction mechanics
+  collapsed summary: the closed field shows the selected day (`1/10/2026`) or range (`1/10/2026 al 5/10/2026`); while the end date is still pending it shows `Desde 1/10/2026`; with no selection it shows `Elegir fecha`. The same copy applies to the physician date filter.
 - `modality`
   values: `all` or one enumerated public-facing modality at a time, shown to the patient with plain-language labels in Spanish
   visual: the modality selector should use the same transparent grouped container language as the date filter block
@@ -349,7 +350,9 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 - `Recuperar estudio`
 - `Reintentar recuperacion` when the latest retrieve status is `failed`
 - while `retrieve_status` is `queued|running`, the action must stay disabled and the backend should reuse the active job instead of enqueuing duplicates
-- once `retrieve_status = done`, the professional surface should hide the retrieve action instead of rendering a disabled `Recuperado` button
+- once `retrieve_status = done` and the study is still in local Orthanc (`viewer_url` set), the professional surface should hide the retrieve action instead of rendering a disabled `Recuperado` button
+- if the last retrieve is `done` but `cache_status` is `not_local`, the chip must read `No disponible localmente` and the retrieve action must stay available
+- `Quitar de caché` is shown only to an operator (`can_delete_cache`) on a study that is already local and is not mid-retrieve (`queued`/`running`). It asks for confirmation, calls `DELETE /api/physician/studies/{uid}/cache`, and refreshes the result list. A plain physician does not see the button.
 - `Visualizar estudio` only when the study is available in local Orthanc
 - `Visualizar con OHIF Viewer` only when the study is available in local Orthanc
 - `Descargar DICOM` only when the study is available in local Orthanc
@@ -385,6 +388,10 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
   - for multi-AET shared archives (several nodes on the same DICOMweb host), results are post-filtered by Retrieve AE Title so `locations` / hospital label match the queried node’s `retrieve.aet` (fewer rows than the raw QIDO catalog is expected and correct)
 - `GET /api/search/stream`
   - SSE stream for federated search results
+- `DELETE /api/physician/studies/{study_instance_uid}/cache`
+  - operator only (`study:cache_delete` / `can_delete_cache`)
+  - removes the local Orthanc copy and resets portal cache state to `not_local`
+  - `409` when a retrieve for that study is still queued or running
 - `POST /api/physician/retrieve`
   - current first retrieve contract from the physician panel
   - receives `username` + `study_instance_uid`
@@ -404,6 +411,13 @@ Allow a physician to search, inspect, and retrieve studies from remote PACS node
 
 - Backend and proxy must restrict OHIF/image access by active session and allowed `StudyInstanceUID`
 - Physician access should reflect authorization context and not rely on hidden viewer UI
+
+## Help
+
+- The comment form collects where the study was performed (`study_site`, optional) and a contact phone (`contact_phone`, optional). The free-text message stays required.
+- `Preguntas frecuentes` opens the same dialog from the patient search, the physician search, and the comment form. Closing it returns to the surface that was already open.
+- FAQ answers cover patient login, a missing mail code, a study that does not appear, recovering images before viewing, waiting a few minutes when a retrieve (especially CT) is still arriving, linking a parent's email at a service desk to see a minor child's studies, the integrated hospitals and sites, DNI versus DICOM id, and sharing.
+- The integrated list is the configured portal nodes, shown once per place: Centro de Salud Villa Traful, Hospital Bajada del Agrio, Hospital Centenario, Hospital Chos Malal, Hospital Cutral Co, Hospital Horacio Heller, Hospital Las Coloradas, Hospital Mariano Moreno, Hospital Plottier, Hospital Provincial Neuquén, Hospital Rincón de los Sauces, Hospital San Martín, Hospital Tricao Malal, Hospital Villa La Angostura, and Hospital Zapala.
 
 ## Contract Status
 

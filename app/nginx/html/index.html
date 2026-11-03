@@ -6,7 +6,7 @@
     <title>Portal de Imágenes</title>
     <link rel="icon" href="/portal-assets/favicon.ico" sizes="32x32">
     <link rel="shortcut icon" href="/favicon.ico">
-    <link rel="stylesheet" href="/portal-assets/portal.css?v=0.9.19">
+    <link rel="stylesheet" href="/portal-assets/portal.css?v=0.9.23">
   </head>
   <body>
     <div class="shell">
@@ -210,7 +210,7 @@
                     <div class="field-group">
                       <details class="date-filter-dropdown" id="patient-date-dropdown">
                         <summary>
-                          <span class="date-filter-summary" id="patient-date-summary">Sin rango seleccionado.</span>
+                          <span class="date-filter-summary" id="patient-date-summary">Elegir fecha</span>
                         </summary>
                         <div class="date-filter-panel-shell">
                           <div class="date-filter-panel">
@@ -258,6 +258,7 @@
               </div>
               <div class="filter-action">
                 <button class="action action-secondary" id="patient-apply-filters" type="button">Buscar</button>
+                <button class="help-faq-link" type="button" data-open-faq>Preguntas frecuentes</button>
               </div>
             </section>
 
@@ -386,7 +387,7 @@
                     <div class="field-group">
                       <details class="date-filter-dropdown" id="physician-date-dropdown">
                         <summary>
-                          <span class="date-filter-summary" id="physician-date-summary">Sin rango seleccionado.</span>
+                          <span class="date-filter-summary" id="physician-date-summary">Elegir fecha</span>
                         </summary>
                         <div class="date-filter-panel-shell">
                           <div class="date-filter-panel">
@@ -442,6 +443,7 @@
               </div>
               <div class="filter-action professional-filter-action">
                 <button class="action action-secondary" id="physician-apply-filters" type="button">Buscar</button>
+                <button class="help-faq-link" type="button" data-open-faq>Preguntas frecuentes</button>
               </div>
             </section>
 
@@ -532,12 +534,81 @@
             <button class="action ghost" type="button" id="feedback-close" aria-label="Cerrar">✕</button>
           </div>
           <div class="feedback-body">
-            <p class="feedback-hint">Contanos qué te pareció el portal o reportá un problema. No incluyas datos sensibles.</p>
-            <textarea id="feedback-message" rows="5" maxlength="2000" placeholder="Escribí tu comentario..." spellcheck="true"></textarea>
+            <p class="feedback-hint">Contanos qué pasó para que podamos ayudarte. Si ya miraste las <button class="help-faq-link" type="button" data-open-faq>preguntas frecuentes</button>, dejá el lugar del estudio y, si querés, un teléfono.</p>
+            <label class="feedback-label" for="feedback-study-site">¿Dónde te hiciste el estudio?</label>
+            <input id="feedback-study-site" type="text" maxlength="160" autocomplete="off" placeholder="Hospital o centro de salud">
+            <label class="feedback-label" for="feedback-phone">Teléfono de contacto <span class="feedback-optional">opcional</span></label>
+            <input id="feedback-phone" type="tel" maxlength="30" inputmode="tel" autocomplete="tel" placeholder="Solo si querés que te llamemos">
+            <label class="feedback-label" for="feedback-message">Qué pasó</label>
+            <textarea id="feedback-message" rows="5" maxlength="2000" placeholder="Contanos qué estabas haciendo y qué viste..." spellcheck="true"></textarea>
             <div class="feedback-footer">
               <span class="feedback-status" id="feedback-status" role="status" aria-live="polite"></span>
               <button class="action action-primary" type="button" id="feedback-send">Enviar</button>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="feedback-overlay help-faq-overlay" id="help-faq-dialog" role="dialog" aria-modal="true" aria-labelledby="help-faq-title" hidden>
+        <div class="feedback-dialog help-faq-dialog">
+          <div class="feedback-header">
+            <h4 id="help-faq-title">Preguntas frecuentes</h4>
+            <button class="action ghost" type="button" id="help-faq-close" aria-label="Cerrar">✕</button>
+          </div>
+          <div class="help-faq-body">
+            <details>
+              <summary>¿Cómo ingreso si soy paciente?</summary>
+              <p>Podés entrar con tu DNI y un código que llega por mail, o con el correo y la contraseña de Mi Salud o de la App.</p>
+            </details>
+            <details>
+              <summary>No me llega el código</summary>
+              <p>Revisá el correo no deseado. El mensaje sale al mail de tu cuenta. Si no llega, escribinos desde Comentarios.</p>
+            </details>
+            <details>
+              <summary>No encuentro mi estudio</summary>
+              <p>El filtro de fecha empieza en un período corto. Probá un rango más amplio o Todos. Si sigue sin aparecer, en Comentarios decinos el hospital o centro donde te lo hiciste.</p>
+            </details>
+            <details>
+              <summary>Veo el estudio, pero no las imágenes</summary>
+              <p>Si el botón dice Recuperar estudio, primero recuperá el estudio y esperá a que termine. Después usá Visualizar. La vista previa no sirve para diagnóstico.</p>
+            </details>
+            <details>
+              <summary>Recuperé el estudio y sigue sin aparecer</summary>
+              <p>Si intentaste recuperar el estudio y no aparece, volvé a ingresar unos minutos más tarde. Estudios como las tomografías pueden demorar.</p>
+            </details>
+            <details>
+              <summary>¿Puedo ver los estudios de mis hijos o hijas?</summary>
+              <p>Si querés ver los estudios de tus hijos o hijas, solicitá en una ventanilla de atención que vinculen tu cuenta de correo electrónico en los datos de tus hijos o hijas menores de edad.</p>
+            </details>
+            <details>
+              <summary>¿En qué hospitales están los estudios?</summary>
+              <p>Estos hospitales y centros ya están integrados al portal:</p>
+              <ul>
+                <li>Centro de Salud Villa Traful</li>
+                <li>Hospital Bajada del Agrio</li>
+                <li>Hospital Centenario</li>
+                <li>Hospital Chos Malal</li>
+                <li>Hospital Cutral Co</li>
+                <li>Hospital Horacio Heller</li>
+                <li>Hospital Las Coloradas</li>
+                <li>Hospital Mariano Moreno</li>
+                <li>Hospital Plottier</li>
+                <li>Hospital Provincial Neuquén</li>
+                <li>Hospital Rincón de los Sauces</li>
+                <li>Hospital San Martín</li>
+                <li>Hospital Tricao Malal</li>
+                <li>Hospital Villa La Angostura</li>
+                <li>Hospital Zapala</li>
+              </ul>
+            </details>
+            <details>
+              <summary>Busco por DNI y no aparece</summary>
+              <p>En algunos hospitales el estudio no está guardado con el DNI. Un profesional puede buscar también por ID DICOM. Si sos paciente y no lo ves, dejá el lugar del estudio en Comentarios.</p>
+            </details>
+            <details>
+              <summary>¿Puedo compartir un estudio?</summary>
+              <p>Desde el estudio podés generar un enlace. Enviáselo solo a la persona que tiene que verlo.</p>
+            </details>
           </div>
         </div>
       </section>
@@ -550,7 +621,7 @@
             <a href="https://play.google.com/store/apps/details?id=org.andes.mobile" target="_blank" rel="noopener noreferrer">App Android de Salud</a>
             <a href="https://misalud.andes.gob.ar/login" target="_blank" rel="noopener noreferrer">Portal Mi Salud</a>
           </div>
-          <div class="site-version" aria-label="Versión">v0.9.19</div>
+          <div class="site-version" aria-label="Versión">v0.9.23</div>
         </div>
         <div class="footer-brand-row">
           <div class="footer-logo" aria-label="ANDES">
@@ -569,6 +640,6 @@
       </footer>
     </div>
 
-    <script src="/portal-assets/portal.js?v=0.9.19" defer></script>
+    <script src="/portal-assets/portal.js?v=0.9.23" defer></script>
   </body>
 </html>

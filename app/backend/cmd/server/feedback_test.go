@@ -35,6 +35,34 @@ func TestSanitizeFeedbackMessage(t *testing.T) {
 	}
 }
 
+func TestNormalizeFeedbackStudySite(t *testing.T) {
+	if got := normalizeFeedbackStudySite("  Hospital\nCastro   Rendón  "); got != "Hospital Castro Rendón" {
+		t.Fatalf("study site = %q", got)
+	}
+	if got := normalizeFeedbackStudySite("   "); got != "" {
+		t.Fatalf("empty study site = %q", got)
+	}
+	long := strings.Repeat("a", feedbackStudySiteMaxLen+20)
+	if utf8.RuneCountInString(normalizeFeedbackStudySite(long)) > feedbackStudySiteMaxLen {
+		t.Fatal("study site exceeds cap")
+	}
+}
+
+func TestNormalizeFeedbackPhone(t *testing.T) {
+	got, ok := normalizeFeedbackPhone("  +54 299 555-1234  ")
+	if !ok || got != "+54 299 555-1234" {
+		t.Fatalf("phone = %q, %v", got, ok)
+	}
+	if got, ok := normalizeFeedbackPhone("   "); !ok || got != "" {
+		t.Fatalf("empty phone = %q, %v", got, ok)
+	}
+	for _, in := range []string{"123", "abc123456", "299 555 1234 ext 9", strings.Repeat("1", 16)} {
+		if _, ok := normalizeFeedbackPhone(in); ok {
+			t.Fatalf("phone %q must be rejected", in)
+		}
+	}
+}
+
 func TestParseFeedbackLimit(t *testing.T) {
 	cases := map[string]int{
 		"":       feedbackDefaultLimit,
