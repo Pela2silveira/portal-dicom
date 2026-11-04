@@ -94,7 +94,11 @@
       const feedbackOpenButton = document.getElementById("feedback-open");
       const feedbackDialog = document.getElementById("feedback-dialog");
       const feedbackCloseButton = document.getElementById("feedback-close");
+      const feedbackStudySite = document.getElementById("feedback-study-site");
+      const feedbackPhone = document.getElementById("feedback-phone");
       const feedbackMessage = document.getElementById("feedback-message");
+      const helpFaqDialog = document.getElementById("help-faq-dialog");
+      const helpFaqCloseButton = document.getElementById("help-faq-close");
       const feedbackSendButton = document.getElementById("feedback-send");
       const feedbackStatus = document.getElementById("feedback-status");
       const physicianFullNameValue = document.getElementById("physician-full-name-value");
@@ -1163,6 +1167,20 @@
         return new Date(value + "T00:00:00").toLocaleDateString("es-AR");
       }
 
+      function dateFilterSummaryText(filter) {
+        if (!filter.from) {
+          return "Elegir fecha";
+        }
+        const fromLabel = formatDateLabel(filter.from);
+        if (filter.to && filter.to !== filter.from) {
+          return fromLabel + " al " + formatDateLabel(filter.to);
+        }
+        if (filter.awaitingRangeEnd) {
+          return "Desde " + fromLabel;
+        }
+        return fromLabel;
+      }
+
       function formatDICOMPersonName(value) {
         const raw = String(value || "").trim();
         if (!raw) {
@@ -1182,25 +1200,9 @@
       }
 
       function syncPatientDateSummary() {
-        if (patientDateFilter.from && patientDateFilter.to) {
-          patientDateSummary.textContent =
-            "Desde " + formatDateLabel(patientDateFilter.from) +
-            " hasta " + formatDateLabel(patientDateFilter.to) + ".";
-          return;
-        }
-
-        if (patientDateFilter.from) {
-          if (patientDateFilter.awaitingRangeEnd) {
-            patientDateSummary.textContent =
-              "Inicio: " + formatDateLabel(patientDateFilter.from);
-          } else {
-            patientDateSummary.textContent =
-              "Fecha seleccionada: " + formatDateLabel(patientDateFilter.from) + ".";
-          }
-          return;
-        }
-
-        patientDateSummary.textContent = "Sin rango seleccionado.";
+        const text = dateFilterSummaryText(patientDateFilter);
+        patientDateSummary.textContent = text;
+        patientDateSummary.title = text;
       }
 
       function renderPatientCalendar() {
@@ -1283,25 +1285,9 @@
       }
 
       function syncPhysicianDateSummary() {
-        if (physicianDateFilter.from && physicianDateFilter.to) {
-          physicianDateSummary.textContent =
-            "Desde " + formatDateLabel(physicianDateFilter.from) +
-            " hasta " + formatDateLabel(physicianDateFilter.to) + ".";
-          return;
-        }
-
-        if (physicianDateFilter.from) {
-          if (physicianDateFilter.awaitingRangeEnd) {
-            physicianDateSummary.textContent =
-              "Inicio: " + formatDateLabel(physicianDateFilter.from);
-          } else {
-            physicianDateSummary.textContent =
-              "Fecha seleccionada: " + formatDateLabel(physicianDateFilter.from) + ".";
-          }
-          return;
-        }
-
-        physicianDateSummary.textContent = "Sin rango seleccionado.";
+        const text = dateFilterSummaryText(physicianDateFilter);
+        physicianDateSummary.textContent = text;
+        physicianDateSummary.title = text;
       }
 
       function renderPhysicianCalendar() {
@@ -1496,6 +1482,37 @@
         return parts.join(" · ");
       }
 
+      function operatorCommentDetail(label, value) {
+        const text = String(value || "").trim();
+        if (!text) {
+          return "";
+        }
+        return '<div class="operator-comment-detail"><span>' + escapeHTML(label) + "</span> " + escapeHTML(text) + "</div>";
+      }
+
+      function renderOperatorComments(comments) {
+        if (!operatorCommentsList) {
+          return;
+        }
+        if (!comments.length) {
+          operatorCommentsList.innerHTML = '<div class="empty-state">Sin comentarios.</div>';
+          return;
+        }
+        operatorCommentsList.innerHTML = comments
+          .map(comment =>
+            '<article class="operator-comment">' +
+              '<div class="operator-comment-meta">' +
+                '<span class="operator-comment-author">' + escapeHTML(operatorCommentAuthor(comment)) + "</span>" +
+                '<span class="operator-comment-time">' + escapeHTML(operatorTimestamp(comment.created_at)) + "</span>" +
+              "</div>" +
+              operatorCommentDetail("Lugar del estudio", comment.study_site) +
+              operatorCommentDetail("Teléfono", comment.contact_phone) +
+              '<div class="operator-comment-body">' + escapeHTML(comment.message || "") + "</div>" +
+            "</article>"
+          )
+          .join("");
+      }
+
       async function loadOperatorComments() {
         if (!operatorCommentsList) {
           return;
@@ -1503,22 +1520,7 @@
         operatorCommentsList.innerHTML = '<div class="empty-state">Cargando comentarios...</div>';
         try {
           const payload = await fetchOperatorJSON("/api/operator/feedback?limit=50");
-          const comments = payload.comments || [];
-          if (!comments.length) {
-            operatorCommentsList.innerHTML = '<div class="empty-state">Sin comentarios.</div>';
-            return;
-          }
-          operatorCommentsList.innerHTML = comments
-            .map(comment =>
-              '<article class="operator-comment">' +
-                '<div class="operator-comment-meta">' +
-                  '<span class="operator-comment-author">' + escapeHTML(operatorCommentAuthor(comment)) + "</span>" +
-                  '<span class="operator-comment-time">' + escapeHTML(operatorTimestamp(comment.created_at)) + "</span>" +
-                "</div>" +
-                '<div class="operator-comment-body">' + escapeHTML(comment.message || "") + "</div>" +
-              "</article>"
-            )
-            .join("");
+          renderOperatorComments(payload.comments || []);
         } catch (error) {
           const msg = error?.status === 403
             ? "No tiene permisos para ver comentarios."
@@ -1834,6 +1836,7 @@
           return "Recuperación incompleta";
         }
         if (status === "idle") return "Recuperación pendiente";
+        if (status === "done" && cacheStatus === "not_local") return "No disponible localmente";
         if (status === "done") return "Recuperación completa";
         if (status === "running") {
           const phaseLabel = retrievePhaseLabel(phase);
@@ -1849,6 +1852,7 @@
         if (isIdleRetrieveStatus(status) && isViewableIncompleteCache(cacheStatus)) {
           return "chip danger";
         }
+        if (status === "done" && cacheStatus === "not_local") return "chip";
         if (status === "done") return "chip success";
         if (status === "running" || status === "queued") return "chip warn";
         if (status === "failed") return "chip danger";
@@ -1889,16 +1893,28 @@
           { value: physicianLocalCacheSourceValue, label: "Local" }
         ];
 
+        const seenOrigins = new Set();
         (onlineComponents || []).forEach(component => {
           const nodeID = String(component.name || "").replace(/^remote_pacs:/, "").trim();
           if (!nodeID) {
             return;
           }
+          const origin = String(component.search_origin || "").trim();
+          const value = origin || nodeID;
+          if (seenOrigins.has(value)) {
+            return;
+          }
+          seenOrigins.add(value);
           options.push({
-            value: nodeID,
-            label: component.display_name || nodeID
+            value,
+            label: (origin && component.search_origin_name) || component.display_name || nodeID
           });
         });
+
+        options.sort((left, right) => left.label.localeCompare(right.label, "es", {
+          sensitivity: "base",
+          numeric: true
+        }));
 
         physicianSearchSource.innerHTML = options
           .map(option => '<option value="' + escapeHTML(option.value) + '">' + escapeHTML(option.label) + '</option>')
@@ -1992,6 +2008,7 @@
         physicianDniValue.textContent = payload.physician.dni || "-";
         physicianLicenseValue.textContent = payload.physician.license_number || "-";
         const canShare = Boolean(payload.can_share);
+        const canDeleteCache = Boolean(payload.can_delete_cache);
         if (typeof payload.can_view_metrics !== "undefined") {
           setOperatorAccess(Boolean(payload.can_view_metrics));
         }
@@ -2024,6 +2041,9 @@
               : "";
             const downloadAction = result.download_url
               ? '<a class="action action-primary" href="' + escapeHTML(result.download_url) + '" rel="noopener noreferrer">Descargar DICOM</a>'
+              : "";
+            const deleteCacheAction = canDeleteCache && result.viewer_url && result.retrieve_status !== "running" && result.retrieve_status !== "queued"
+              ? '<button class="action action-danger" type="button" data-physician-delete-cache="' + escapeHTML(result.study_instance_uid) + '">Quitar de caché</button>'
               : "";
             const andesReportAction = result.andes_prestacion_id
               ? '<a class="action action-primary" href="/api/physician/report?study_instance_uid=' + encodeURIComponent(result.study_instance_uid || "") + '" rel="noopener noreferrer">Descargar informe</a>'
@@ -2086,6 +2106,7 @@
                   ohifAction +
                   andesReportAction +
                   downloadAction +
+                  deleteCacheAction +
                 '</div>' +
               '</article>'
             );
@@ -2844,6 +2865,34 @@
         operatorCommentsRefresh.addEventListener("click", () => loadOperatorComments());
       }
 
+      function isFeedbackPhone(value) {
+        const cleaned = String(value || "").trim();
+        if (!cleaned || cleaned.length > 30) {
+          return false;
+        }
+        if (/[^0-9+\-() ]/.test(cleaned)) {
+          return false;
+        }
+        const digits = cleaned.replace(/\D/g, "");
+        return digits.length >= 6 && digits.length <= 15;
+      }
+
+      function openHelpFaq() {
+        if (!helpFaqDialog) {
+          return;
+        }
+        helpFaqDialog.hidden = false;
+        if (helpFaqCloseButton) {
+          helpFaqCloseButton.focus();
+        }
+      }
+
+      function closeHelpFaq() {
+        if (helpFaqDialog) {
+          helpFaqDialog.hidden = true;
+        }
+      }
+
       function setFeedbackStatus(text, kind) {
         if (!feedbackStatus) {
           return;
@@ -2858,10 +2907,24 @@
         }
         feedbackDialog.hidden = false;
         setFeedbackStatus("");
+        if (feedbackStudySite) {
+          feedbackStudySite.value = "";
+        }
+        if (feedbackPhone) {
+          feedbackPhone.value = "";
+        }
         if (feedbackMessage) {
           feedbackMessage.value = "";
-          window.setTimeout(() => feedbackMessage.focus(), 50);
         }
+        window.setTimeout(() => {
+          if (feedbackStudySite) {
+            feedbackStudySite.focus();
+            return;
+          }
+          if (feedbackMessage) {
+            feedbackMessage.focus();
+          }
+        }, 50);
       }
 
       function closeFeedbackDialog() {
@@ -2874,9 +2937,18 @@
         if (!feedbackMessage) {
           return;
         }
+        const studySite = feedbackStudySite ? feedbackStudySite.value.trim() : "";
+        const contactPhone = feedbackPhone ? feedbackPhone.value.trim() : "";
         const message = feedbackMessage.value.trim();
+        if (contactPhone && !isFeedbackPhone(contactPhone)) {
+          setFeedbackStatus("El teléfono no parece válido. Podés dejarlo vacío.", "error");
+          if (feedbackPhone) {
+            feedbackPhone.focus();
+          }
+          return;
+        }
         if (!message) {
-          setFeedbackStatus("Escribí un comentario antes de enviar.", "error");
+          setFeedbackStatus("Contanos qué pasó antes de enviar.", "error");
           feedbackMessage.focus();
           return;
         }
@@ -2891,12 +2963,22 @@
               Accept: "application/json",
               "Content-Type": "application/json"
             },
-            body: JSON.stringify({ message })
+            body: JSON.stringify({
+              study_site: studySite,
+              contact_phone: contactPhone,
+              message
+            })
           });
           if (!response.ok) {
             throw new Error("feedback_failed");
           }
-          setFeedbackStatus("¡Gracias por tu comentario!", "ok");
+          setFeedbackStatus("¡Gracias! Vamos a revisar tu comentario.", "ok");
+          if (feedbackStudySite) {
+            feedbackStudySite.value = "";
+          }
+          if (feedbackPhone) {
+            feedbackPhone.value = "";
+          }
           feedbackMessage.value = "";
           window.setTimeout(closeFeedbackDialog, 1200);
         } catch (_error) {
@@ -2932,8 +3014,31 @@
           }
         });
       }
+      document.querySelectorAll("[data-open-faq]").forEach(button => {
+        button.addEventListener("click", event => {
+          event.preventDefault();
+          openHelpFaq();
+        });
+      });
+      if (helpFaqCloseButton) {
+        helpFaqCloseButton.addEventListener("click", closeHelpFaq);
+      }
+      if (helpFaqDialog) {
+        helpFaqDialog.addEventListener("click", event => {
+          if (event.target === helpFaqDialog) {
+            closeHelpFaq();
+          }
+        });
+      }
       document.addEventListener("keydown", event => {
-        if (event.key === "Escape" && feedbackDialog && !feedbackDialog.hidden) {
+        if (event.key !== "Escape") {
+          return;
+        }
+        if (helpFaqDialog && !helpFaqDialog.hidden) {
+          closeHelpFaq();
+          return;
+        }
+        if (feedbackDialog && !feedbackDialog.hidden) {
           closeFeedbackDialog();
         }
       });
@@ -3149,6 +3254,43 @@
           } finally {
             shareButton.disabled = false;
             shareButton.textContent = originalLabel;
+          }
+          return;
+        }
+
+        const deleteCacheButton = event.target.closest("[data-physician-delete-cache]");
+        if (deleteCacheButton) {
+          const studyInstanceUID = deleteCacheButton.getAttribute("data-physician-delete-cache");
+          if (!studyInstanceUID) {
+            return;
+          }
+          if (!window.confirm("¿Quitar este estudio de la caché local? Las imágenes locales se borran. El estudio se puede volver a recuperar desde el origen.")) {
+            return;
+          }
+          deleteCacheButton.disabled = true;
+          const originalLabel = deleteCacheButton.textContent;
+          deleteCacheButton.textContent = "Quitando...";
+          try {
+            const response = await fetch("/api/physician/studies/" + encodeURIComponent(studyInstanceUID) + "/cache", {
+              method: "DELETE",
+              headers: { Accept: "application/json" }
+            });
+            if (response.status === 401) {
+              handlePortalSessionExpired();
+              return;
+            }
+            if (!response.ok) {
+              const text = (await response.text()).trim();
+              throw new Error(text || "No se pudo quitar el estudio de la caché.");
+            }
+            await loadPhysicianResults(activePhysicianUsername, {
+              silentRefresh: true,
+              restoreStudyUID: studyInstanceUID
+            });
+          } catch (error) {
+            alert(error?.message || "No se pudo quitar el estudio de la caché.");
+            deleteCacheButton.disabled = false;
+            deleteCacheButton.textContent = originalLabel;
           }
           return;
         }

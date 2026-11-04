@@ -358,6 +358,8 @@ Key fields:
 - `expected_series_count`, `present_series_count`, `missing_series_json`, `last_completeness_checked_at` — completeness bookkeeping (migration `013`) written by the retrieve completeness check.
 - `locations_json`
 
+An operator cache delete does not remove the row. It sets `cache_status` back to `not_local`, clears `orthanc_study_id` and the completeness columns, and leaves `locations_json`. The same operation moves matching `patient_study_access` rows from `available_local` to `pending_retrieve` and revokes active `study_share_links` for that `study_instance_uid`. `qido_study_cache` and `retrieve_jobs` stay.
+
 ## Audit
 
 ### `integration_audit`
@@ -387,6 +389,18 @@ Key fields:
 - `occurred_at`
 
 Indexes: `(action, occurred_at desc)`, `(actor_kind, actor_id)`, `(occurred_at desc)`.
+
+## Feedback
+
+### `feedback_comments` (migrations `012_add_feedback_comments.sql`, `014_add_feedback_contact_details.sql`)
+
+- `study_site` — optional place where the study was performed, single line, max 160 runes.
+- `contact_phone` — optional phone left by the person. Empty, or 6 to 15 digits with `+`, spaces, hyphens and parentheses.
+- `message` — sanitized free text, max 2000 runes.
+- `actor_kind`, `actor_id`, `actor_role`, `actor_name`, `client_ip` — taken from the server session, not from the client body.
+- `created_at`
+
+The operator list joins `actor_id` to `patients` or `physicians` to show DNI and contact. It does not store those values on the comment row.
 
 ## Design Notes
 

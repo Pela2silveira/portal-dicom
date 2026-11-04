@@ -46,6 +46,7 @@ Required fields per node:
 - `tipoPrestacion`: optional list of HIS/Mongo procedure descriptors associated with the node
 - `protocol`: high-level node kind, for example `dicomweb`, `dimse`, or `hybrid`
 - `priority`: numeric priority, lower means more preferred
+- `search_origin`: optional. Nodes with the same value appear as one professional search origin. Leave it empty to keep the node as its own origin. The value must not be `local_cache` or equal to any node `id`. The selector label is the `name` of the member with the lowest `priority`. A search on that origin queries every member, and each study keeps the node that returned it for retrieve. Hospital Provincial Neuquén uses `provincial-neuquen` on both `hpn` and `hpnsyn`.
 - `search`: search capability config
 - `retrieve`: retrieve capability config
 - `health`: health-check mode

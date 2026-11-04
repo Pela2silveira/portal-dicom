@@ -146,6 +146,7 @@ type PACSNodeResponse struct {
 	Search              PACSNodeSearchResponse     `json:"search"`
 	Retrieve            PACSNodeRetrieveResponse   `json:"retrieve"`
 	Health              PACSNodeHealthResponse     `json:"health"`
+	SearchOrigin        string                     `json:"search_origin,omitempty"`
 }
 
 type StudyQuery struct {

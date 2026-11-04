@@ -27,12 +27,14 @@ const (
 )
 
 type ComponentHealth struct {
-	Name        string            `json:"name"`
-	DisplayName string            `json:"display_name,omitempty"`
-	Category    string            `json:"category"`
-	Severity    ComponentSeverity `json:"severity"`
-	Status      ComponentStatus   `json:"status"`
-	Message     string            `json:"message,omitempty"`
+	Name             string            `json:"name"`
+	DisplayName      string            `json:"display_name,omitempty"`
+	Category         string            `json:"category"`
+	Severity         ComponentSeverity `json:"severity"`
+	Status           ComponentStatus   `json:"status"`
+	Message          string            `json:"message,omitempty"`
+	SearchOrigin     string            `json:"search_origin,omitempty"`
+	SearchOriginName string            `json:"search_origin_name,omitempty"`
 }
 
 type SystemHealthEvent struct {
@@ -234,6 +236,11 @@ func (a *App) remotePACSComponents(ctx context.Context) []ComponentHealth {
 		return nil
 	}
 
+	originLabels := map[string]string{}
+	for _, origin := range physicianSearchOrigins(a.externalConfig.PACSNodes) {
+		originLabels[origin.ID] = origin.Label
+	}
+
 	components := make([]ComponentHealth, 0, len(a.externalConfig.PACSNodes))
 	for _, node := range a.externalConfig.PACSNodes {
 		resolved := node.Resolved()
@@ -259,14 +266,19 @@ func (a *App) remotePACSComponents(ctx context.Context) []ComponentHealth {
 			message = "health check result"
 		}
 
-		components = append(components, ComponentHealth{
+		component := ComponentHealth{
 			Name:        "remote_pacs:" + node.ID,
 			DisplayName: strings.TrimSpace(resolved.Name),
 			Category:    "optional",
 			Severity:    ComponentSeverityOptional,
 			Status:      status,
 			Message:     message,
-		})
+		}
+		if origin := normalizeSearchOrigin(node.SearchOrigin); origin != "" {
+			component.SearchOrigin = origin
+			component.SearchOriginName = originLabels[origin]
+		}
+		components = append(components, component)
 	}
 
 	return components

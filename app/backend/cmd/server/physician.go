@@ -22,6 +22,7 @@ type PhysicianResultsResponse struct {
 	Results        []PhysicianResult      `json:"results"`
 	CanShare       bool                   `json:"can_share"`
 	CanViewMetrics bool                   `json:"can_view_metrics"`
+	CanDeleteCache bool                   `json:"can_delete_cache"`
 }
 
 type PhysicianLoginRequest struct {
@@ -36,6 +37,7 @@ type PhysicianLoginResponse struct {
 	SessionToken   string           `json:"session_token,omitempty"`
 	CanShare       bool             `json:"can_share"`
 	CanViewMetrics bool             `json:"can_view_metrics"`
+	CanDeleteCache bool             `json:"can_delete_cache"`
 	ExpiresAt      string           `json:"expires_at,omitempty"`
 }
 
@@ -138,6 +140,7 @@ func (a *App) writePhysicianLoginResponse(w http.ResponseWriter, statusCode int,
 		payload.Physician = physician
 		payload.CanShare = a.physicianCanShare(physician)
 		payload.CanViewMetrics = a.physicianCanViewMetrics(physician)
+		payload.CanDeleteCache = a.physicianCanDeleteCache(physician)
 	}
 	writeJSON(w, statusCode, payload)
 }
@@ -150,6 +153,8 @@ func (a *App) handlePhysicianStudyRoute(w http.ResponseWriter, r *http.Request) 
 		a.handlePhysicianStudyPreview(w, r)
 	case strings.HasSuffix(r.URL.Path, "/share"):
 		a.action(ActionShareLinkCreate, a.handlePhysicianStudyShare)(w, r)
+	case strings.HasSuffix(r.URL.Path, "/cache"):
+		a.action(ActionStudyCacheDelete, a.handlePhysicianStudyCacheDelete)(w, r)
 	default:
 		http.NotFound(w, r)
 	}
@@ -439,6 +444,7 @@ func (a *App) handlePhysicianResults(w http.ResponseWriter, r *http.Request) {
 		Results:        results,
 		CanShare:       a.physicianCanShare(physician),
 		CanViewMetrics: a.physicianCanViewMetrics(physician),
+		CanDeleteCache: a.physicianCanDeleteCache(physician),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -591,6 +597,7 @@ func (a *App) handlePhysicianLogin(w http.ResponseWriter, r *http.Request) {
 		Physician:      physician,
 		CanShare:       a.physicianCanShare(physician),
 		CanViewMetrics: a.physicianCanViewMetrics(physician),
+		CanDeleteCache: a.physicianCanDeleteCache(physician),
 		ExpiresAt:      expiresAt.UTC().Format(time.RFC3339),
 	})
 }
@@ -1773,6 +1780,10 @@ func (a *App) listPhysicianResults(ctx context.Context, physicianID string, filt
 			return a.searchPhysicianLocalCacheByDNI(ctx, physician, filters, useInitialCachePeriod)
 		}
 		return a.searchPhysicianResultsFromLocalCache(ctx, physician, filters, useInitialCachePeriod)
+	}
+
+	if nodes := a.configuredNodesForPhysicianSource(filters.Source); len(nodes) > 0 {
+		return a.searchPhysicianResultsFromNodes(ctx, physician, nodes, filters, searchByDNI)
 	}
 
 	node, ok := a.configuredPACSNodeByID(filters.Source)
